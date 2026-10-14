@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@theme {
+  /* Brand palette (a nod to WooCommerce purple) */
+  --color-brand-50: #f6f2fb;
+  --color-brand-100: #ece4f6;
+  --color-brand-200: #d9c9ec;
+  --color-brand-300: #bfa6de;
+  --color-brand-400: #a27fcc;
+  --color-brand-500: #8c61bd;
+  --color-brand-600: #7f54b3;
+  --color-brand-700: #67429a;
+  --color-brand-800: #54377c;
+  --color-brand-900: #452f64;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", sans-serif;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-neutral-50 text-neutral-900 antialiased;
+}
+
+/* Small reusable primitives */
+@utility container-page {
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+@utility card {
+  @apply rounded-xl border border-neutral-200 bg-white shadow-sm;
+}
+
+@utility input-base {
+  @apply block w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900
+    placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200
+    disabled:cursor-not-allowed disabled:bg-neutral-100;
+}

@@ -1,0 +1,96 @@
+"use client";
+
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { useSyncExternalStore } from "react";
+import { MAX_QTY_PER_LINE } from "./config";
+
+export type CartItem = {
+  productId: string;
+  slug: string;
+  name: string;
+  priceCents: number;
+  imageUrl: string | null;
+  stock: number;
+  quantity: number;
+};
+
+type CartState = {
+  items: CartItem[];
+  addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
+  setQuantity: (productId: string, quantity: number) => void;
+  removeItem: (productId: string) => void;
+  clear: () => void;
+};
+
+function clampQty(qty: number, stock: number) {
+  return Math.max(1, Math.min(qty, MAX_QTY_PER_LINE, Math.max(stock, 1)));
+}
+
+/**
+ * Guest-friendly cart persisted in localStorage.
+ * Prices here are only for display – the `place_order` RPC re-prices
+ * everything from the database at checkout.
+ */
+export const useCartStore = create<CartState>()(
+  persist(
+    (set) => ({
+      items: [],
+
+      addItem: (item, quantity = 1) =>
+        set((state) => {
+          const existing = state.items.find((i) => i.productId === item.productId);
+          if (existing) {
+            return {
+              items: state.items.map((i) =>
+                i.productId === item.productId
+                  ? { ...i, ...item, quantity: clampQty(i.quantity + quantity, item.stock) }
+                  : i,
+              ),
+            };
+          }
+          return { items: [...state.items, { ...item, quantity: clampQty(quantity, item.stock) }] };
+        }),
+
+      setQuantity: (productId, quantity) =>
+        set((state) => ({
+          items:
+            quantity <= 0
+              ? state.items.filter((i) => i.productId !== productId)
+              : state.items.map((i) =>
+                  i.productId === productId ? { ...i, quantity: clampQty(quantity, i.stock) } : i,
+                ),
+        })),
+
+      removeItem: (productId) =>
+        set((state) => ({ items: state.items.filter((i) => i.productId !== productId) })),
+
+      clear: () => set({ items: [] }),
+    }),
+    {
+      name: "woo-solution-cart",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({ items: state.items }),
+    },
+  ),
+);
+
+export const selectCartCount = (state: CartState) =>
+  state.items.reduce((n, i) => n + i.quantity, 0);
+
+export const selectCartSubtotal = (state: CartState) =>
+  state.items.reduce((n, i) => n + i.quantity * i.priceCents, 0);
+
+const noopSubscribe = () => () => {};
+
+/**
+ * `true` once the component is running in the browser. Use it to avoid
+ * hydration mismatches when rendering localStorage-backed cart state.
+ */
+export function useHydrated() {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
+}
