@@ -43,7 +43,7 @@ export function CartView() {
             <div className="flex flex-1 flex-col gap-2">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <Link href={`/products/${item.slug}`} className="font-medium hover:text-brand-700">
+                  <Link href={`/products/${item.slug}`} className="font-medium hover:text-brand-700 dark:hover:text-brand-300">
                     {item.name}
                   </Link>
                   <p className="text-sm text-neutral-500">{formatPrice(item.priceCents)} each</p>
@@ -71,7 +71,7 @@ export function CartView() {
         ))}
 
         <div className="flex items-center justify-between p-4 text-sm sm:p-5">
-          <Link href="/shop" className="font-medium text-brand-700 hover:underline">
+          <Link href="/shop" className="font-medium text-brand-700 dark:text-brand-300 hover:underline">
             ← Continue shopping
           </Link>
           <button type="button" onClick={clear} className="text-neutral-500 hover:text-red-600">

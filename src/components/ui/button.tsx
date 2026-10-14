@@ -6,15 +6,15 @@ type Variant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "light
 type Size = "sm" | "md" | "lg";
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-[color,background-color,border-color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 disabled:pointer-events-none disabled:opacity-50";
 
 const variants: Record<Variant, string> = {
   primary: "bg-brand-600 text-white hover:bg-brand-700",
-  secondary: "bg-neutral-900 text-white hover:bg-neutral-800",
-  outline: "border border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-100",
+  secondary: "bg-neutral-900 text-neutral-50 hover:bg-neutral-800",
+  outline: "border border-neutral-300 bg-surface text-neutral-800 hover:bg-neutral-100",
   ghost: "text-neutral-700 hover:bg-neutral-100",
   danger: "bg-red-600 text-white hover:bg-red-700",
-  light: "bg-white text-brand-800 hover:bg-brand-50",
+  light: "bg-white text-brand-800 hover:bg-brand-100",
 };
 
 const sizes: Record<Size, string> = {

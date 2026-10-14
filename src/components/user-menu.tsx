@@ -1,23 +1,23 @@
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/auth";
+import { getAdminStatus } from "@/lib/admin/auth";
 import { signOut } from "@/app/auth/actions";
-import { UserIcon } from "./icons";
+import { ShieldIcon, UserIcon } from "./icons";
 
 export async function UserMenu() {
-  const user = await getCurrentUser();
+  const { user, isAdmin } = await getAdminStatus();
 
   if (!user) {
     return (
       <div className="flex items-center gap-1">
         <Link
           href="/login"
-          className="rounded-md px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+          className="rounded-md px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
         >
           Sign in
         </Link>
         <Link
           href="/signup"
-          className="hidden rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 sm:inline-flex"
+          className="hidden rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-neutral-50 transition-colors hover:bg-neutral-800 sm:inline-flex"
         >
           Create account
         </Link>
@@ -29,9 +29,19 @@ export async function UserMenu() {
 
   return (
     <div className="flex items-center gap-1">
+      {isAdmin && (
+        <Link
+          href="/nemesis"
+          className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-brand-700 dark:text-brand-300 transition-colors hover:bg-brand-50 md:flex"
+          title="Admin dashboard"
+        >
+          <ShieldIcon className="h-4 w-4" />
+          Admin
+        </Link>
+      )}
       <Link
         href="/orders"
-        className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+        className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
         title={user.email ?? undefined}
       >
         {user.avatarUrl ? (
@@ -54,7 +64,7 @@ export async function UserMenu() {
       <form action={signOut}>
         <button
           type="submit"
-          className="rounded-md px-3 py-2 text-sm font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+          className="rounded-md px-3 py-2 text-sm font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
         >
           Sign out
         </button>

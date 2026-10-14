@@ -55,7 +55,7 @@ async function OrdersList() {
             return (
               <tr key={order.id} className="hover:bg-neutral-50">
                 <td className="px-5 py-4 font-medium">
-                  <Link href={`/orders/${order.id}`} className="text-brand-700 hover:underline">
+                  <Link href={`/orders/${order.id}`} className="text-brand-700 dark:text-brand-300 hover:underline">
                     {formatOrderNumber(order.order_number)}
                   </Link>
                 </td>

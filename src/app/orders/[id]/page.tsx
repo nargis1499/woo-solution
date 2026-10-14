@@ -70,7 +70,7 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
               </div>
               <div className="flex-1">
                 {item.product_slug ? (
-                  <Link href={`/products/${item.product_slug}`} className="font-medium hover:text-brand-700">
+                  <Link href={`/products/${item.product_slug}`} className="font-medium hover:text-brand-700 dark:hover:text-brand-300">
                     {item.product_name}
                   </Link>
                 ) : (

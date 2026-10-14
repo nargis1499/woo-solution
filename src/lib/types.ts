@@ -7,6 +7,8 @@ export type Category = {
   name: string;
   slug: string;
   sort_order: number;
+  /** Only present in admin queries (`products(count)`). */
+  product_count?: number;
 };
 
 export type Product = {
@@ -22,6 +24,7 @@ export type Product = {
   is_active: boolean;
   is_featured: boolean;
   created_at: string;
+  updated_at?: string;
   category?: Pick<Category, "id" | "name" | "slug"> | null;
 };
 
@@ -79,4 +82,41 @@ export type CurrentUser = {
   email: string | null;
   name: string | null;
   avatarUrl: string | null;
+};
+
+export type PaymentStatus = Order["payment_status"];
+
+export type Profile = {
+  id: string;
+  full_name: string | null;
+  phone: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  is_admin: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SiteSettings = {
+  store_name: string;
+  tagline: string | null;
+  support_email: string | null;
+};
+
+/** Shape returned by the `admin_stats()` SQL function. */
+export type AdminStats = {
+  revenue_cents: number;
+  revenue_30d_cents: number;
+  orders_total: number;
+  orders_30d: number;
+  orders_pending: number;
+  orders_processing: number;
+  orders_completed: number;
+  orders_cancelled: number;
+  products_total: number;
+  products_active: number;
+  products_low_stock: number;
+  categories_total: number;
+  customers_total: number;
+  customers_30d: number;
 };

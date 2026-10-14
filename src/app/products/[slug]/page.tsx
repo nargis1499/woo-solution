@@ -71,7 +71,7 @@ async function ProductDetails({ params }: { params: Params }) {
         <div className="space-y-6">
           <div>
             {product.category && (
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-700">{product.category.name}</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">{product.category.name}</p>
             )}
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{product.name}</h1>
             <Price

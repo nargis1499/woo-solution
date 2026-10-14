@@ -1,4 +1,7 @@
 import type { NextConfig } from "next";
+import { OPTIMIZED_IMAGE_HOSTS, supabaseImageHost } from "./src/lib/image-hosts";
+
+const supabaseHost = supabaseImageHost();
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
@@ -13,15 +16,17 @@ const nextConfig: NextConfig = {
   },
   images: {
     remotePatterns: [
-      // Seed/demo product images
-      { protocol: "https", hostname: "picsum.photos" },
-      { protocol: "https", hostname: "images.unsplash.com" },
-      // Google account avatars (OAuth sign-in)
-      { protocol: "https", hostname: "*.googleusercontent.com" },
-      // Supabase Storage (public buckets) – e.g. https://xyz.supabase.co/storage/v1/object/public/...
-      { protocol: "https", hostname: "*.supabase.co" },
-      { protocol: "https", hostname: "*.supabase.in" },
+      // Seed/demo product images, Google avatars, Supabase Storage (see src/lib/image-hosts.ts)
+      ...OPTIMIZED_IMAGE_HOSTS.map((hostname) => ({ protocol: "https" as const, hostname })),
+      // Whatever NEXT_PUBLIC_SUPABASE_URL points at (covers self-hosted Supabase on a custom domain)
+      ...(supabaseHost && supabaseHost.protocol === "https" ? [{ protocol: "https" as const, hostname: supabaseHost.hostname, port: supabaseHost.port }] : []),
     ],
+  },
+  experimental: {
+    serverActions: {
+      // product image uploads go through a Server Action (bucket limit is 5 MB)
+      bodySizeLimit: "6mb",
+    },
   },
 };
 

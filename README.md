@@ -12,6 +12,8 @@ A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Comp
 | Checkout | Shipping form → atomic `place_order()` Postgres function (prices re-read from DB, stock locked & decremented, order number generated) |
 | Orders | `/orders` history and `/orders/[id]` confirmation page, protected by Row Level Security |
 | Security | RLS on every table, `SECURITY DEFINER` checkout RPC only executable by `authenticated`, JWT verified with `getClaims()` |
+| Admin | `/nemesis` dashboard for users with `profiles.is_admin = true`: products (with image upload to Supabase Storage), categories, orders, users/roles and site settings – see [Admin dashboard](#admin-dashboard) |
+| UX | Dark mode (system / light / dark, remembered), route-change progress bar, page transitions, pointer cursors on every control |
 
 ---
 
@@ -37,7 +39,13 @@ cp .env.example .env.local
 2. Run the migrations **in order** – paste each file and execute it:
    1. [`supabase/migrations/20261014000000_init.sql`](supabase/migrations/20261014000000_init.sql) – schema, RLS, `place_order()`
    2. [`supabase/migrations/20261015000000_google_auth.sql`](supabase/migrations/20261015000000_google_auth.sql) – `profiles.avatar_url` + Google-aware profile trigger (safe to run on an existing project)
+   3. [`supabase/migrations/20261016000000_admin.sql`](supabase/migrations/20261016000000_admin.sql) – `profiles.is_admin`, admin RLS policies, `site_settings`, the public `product-images` Storage bucket, `admin_stats()` / `admin_delete_user()` (safe to run on an existing project)
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
+4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
+
+   ```sql
+   update public.profiles set is_admin = true where email = 'you@example.com';
+   ```
 
 > Using the Supabase CLI instead? `supabase link --project-ref <ref> && supabase db push`, then run the seed file with `supabase db query -f supabase/seed.sql` (or paste it in the SQL editor).
 
@@ -88,6 +96,33 @@ npm run dev
 
 Visit <http://localhost:3000>, add something to the cart, create an account and place an order. 🎉
 
+### Admin dashboard
+
+The back office lives at **`/nemesis`** (deliberately not linked anywhere public). Access is decided by one flag in the database – `public.profiles.is_admin` – and enforced in three layers:
+
+1. `src/proxy.ts` redirects signed-out visitors to `/login?next=/nemesis`.
+2. `src/app/nemesis/layout.tsx` calls `requireAdmin()`; a signed-in user without the flag gets the normal **404** page (the route doesn't reveal itself).
+3. Every Server Action re-checks the flag **and** Postgres RLS only lets admins write to `products`, `categories`, `orders`, other users' `profiles`, `site_settings` and the `product-images` bucket. Promoting someone through the UI or the API without being an admin is rejected by a trigger.
+
+**Bootstrapping the first admin** – nobody is an admin by default. Sign up in the app (e-mail or Google), then run in the SQL Editor:
+
+```sql
+update public.profiles set is_admin = true where email = 'you@example.com';
+```
+
+Reload the page and an **Admin** link appears in the header. From then on you can grant/revoke admin for other users in *Users*.
+
+| Section | What you can do |
+| --- | --- |
+| Dashboard | Revenue / order / product / customer stats, orders by status, recent orders, low-stock list |
+| Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **image** = upload a file (stored in the `product-images` bucket, the previous file is deleted automatically when you replace/remove it) **or** paste any image URL |
+| Categories | Create, rename, reorder, delete (products become uncategorised) |
+| Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
+| Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
+| Settings | Store name (used in the `<title>`, header, footer and hero), tagline (footer + meta description), support e-mail |
+
+Images: the bucket is created by the migration (public read, admin-only write, 5 MB limit, JPEG/PNG/WebP/GIF/AVIF). Uploaded images are served through `next/image`; `*.supabase.co` and a few stock-photo hosts are allow-listed in `src/lib/image-hosts.ts` – add your own CDN there. Plain-`http` URLs (e.g. a local Supabase on `127.0.0.1`) are rendered unoptimised.
+
 ---
 
 ## 2. Project structure
@@ -96,6 +131,8 @@ Visit <http://localhost:3000>, add something to the cart, create an account and 
 woo-solution/
 ├── supabase/
 │   ├── migrations/20261014000000_init.sql   # schema, RLS, triggers, place_order() RPC
+│   ├── migrations/20261015000000_google_auth.sql
+│   ├── migrations/20261016000000_admin.sql  # is_admin flag, admin RLS, site_settings, Storage bucket
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
@@ -110,10 +147,17 @@ woo-solution/
 │   │   ├── login/, signup/                  # auth pages
 │   │   ├── auth/actions.ts                  # signIn / signUp / signOut server actions
 │   │   ├── auth/callback/route.ts           # e-mail confirmation (PKCE code exchange)
+│   │   ├── nemesis/                         # admin: layout (requireAdmin), actions.ts, dashboard,
+│   │   │                                    #   products/, categories/, orders/, users/, settings/
+│   │   ├── template.tsx                     # page-enter animation
 │   │   ├── error.tsx, not-found.tsx
 │   │   └── globals.css                      # Tailwind v4 theme (brand palette)
 │   ├── components/                          # UI: header, product card, cart view, checkout form …
+│   │   ├── admin/                           # dashboard UI: sidebar, forms, tables
+│   │   ├── theme-provider.tsx, theme-toggle.tsx, top-loader.tsx
 │   └── lib/
+│       ├── admin/{auth,data,storage}.ts     # requireAdmin(), admin queries, Storage upload/cleanup
+│       ├── site-settings.ts, image-hosts.ts # cached store settings, next/image allow-list
 │       ├── supabase/{client,server,proxy}.ts# Supabase clients (browser / server / proxy)
 │       ├── auth.ts                          # getCurrentUser() – verified via getClaims()
 │       ├── data/{products,orders}.ts        # data-access layer
@@ -151,9 +195,12 @@ The project uses Next.js 16's **Cache Components** (`cacheComponents: true`). Ev
 | Store name / currency | `.env.local` → `NEXT_PUBLIC_STORE_NAME`, `NEXT_PUBLIC_CURRENCY` (also update `orders.currency` default in the migration if you change currency) |
 | Shipping rules | `src/lib/config.ts` **and** `calculate_shipping()` in the migration (keep in sync) |
 | Max quantity per line | `src/lib/config.ts` → `MAX_QTY_PER_LINE` |
-| Products / categories | Supabase dashboard → Table Editor (or SQL). Set `is_active = false` to hide a product, `is_featured = true` to show it on the home page |
-| Product images | Any public URL. For Supabase Storage, upload to a public bucket and paste the URL – `*.supabase.co` is already allowed in `next.config.ts` |
-| Order status | Update `orders.status` (`pending` → `processing` → `completed` / `cancelled`) and `payment_status` in the dashboard – a proper admin UI is on the roadmap |
+| Store name / tagline / support e-mail | `/nemesis/settings` (stored in `site_settings`; `NEXT_PUBLIC_STORE_NAME` is only the fallback) |
+| Products / categories | `/nemesis/products` and `/nemesis/categories` (or the Supabase Table Editor). *Draft* products are hidden from the shop, *Featured* ones show on the home page |
+| Product images | Upload from the product form (Supabase Storage bucket `product-images`) or paste any public URL – allow-listed hosts live in `src/lib/image-hosts.ts` |
+| Orders | `/nemesis/orders` – change `status` (`pending` → `processing` → `completed` / `cancelled`) and `payment_status` |
+| Admins | `/nemesis/users` → *Administrator* checkbox, or `update public.profiles set is_admin = true where email = '…'` |
+| Admin URL | Rename the `src/app/nemesis` folder, then search-and-replace `/nemesis` in `src/` (links, `ADMIN_PATH` in `src/lib/admin/auth.ts`, `PROTECTED_PREFIXES` in `src/lib/supabase/proxy.ts`) |
 
 ---
 
@@ -177,8 +224,9 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 ## 6. Roadmap (post-MVP)
 
 - [ ] **Online payments** – Stripe Checkout (or SSLCommerz / bKash for Bangladesh) and a webhook that marks `payment_status = 'paid'`
-- [ ] **Admin dashboard** – manage products, categories, stock and order statuses (`is_admin` flag on `profiles` + RLS policies)
-- [ ] **Product images in Supabase Storage** with an upload UI
+- [x] **Admin dashboard** – products, categories, orders, users, settings (`/nemesis`)
+- [x] **Product images in Supabase Storage** with an upload UI
+- [ ] Admin extras – bulk actions, CSV export, audit log, per-section roles
 - [ ] **Server-side cart** (`cart_items` table) synced across devices, merged on login
 - [ ] **Coupons & discounts**, tax rules, multiple shipping methods
 - [ ] **Transactional e-mails** (order confirmation) via Resend / Supabase Edge Functions

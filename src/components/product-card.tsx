@@ -8,16 +8,16 @@ export function ProductCard({ product, priority }: { product: Product; priority?
   const onSale = product.compare_at_price_cents != null && product.compare_at_price_cents > product.price_cents;
 
   return (
-    <article className="card group flex flex-col overflow-hidden transition-shadow hover:shadow-md">
+    <article className="card group flex flex-col overflow-hidden transition-[box-shadow,transform] duration-300 hover:-translate-y-0.5 hover:shadow-md">
       <Link href={`/products/${product.slug}`} className="relative block">
-        <ProductImage src={product.image_url} alt={product.name} priority={priority} />
+        <ProductImage src={product.image_url} alt={product.name} priority={priority} className="transition-transform duration-500 group-hover:scale-[1.03]" />
         {onSale && (
           <span className="absolute left-3 top-3 rounded-full bg-brand-600 px-2.5 py-1 text-xs font-semibold text-white">
             Sale
           </span>
         )}
         {product.stock <= 0 && (
-          <span className="absolute right-3 top-3 rounded-full bg-neutral-900/80 px-2.5 py-1 text-xs font-semibold text-white">
+          <span className="absolute right-3 top-3 rounded-full bg-neutral-900/80 px-2.5 py-1 text-xs font-semibold text-neutral-50">
             Sold out
           </span>
         )}
@@ -27,13 +27,13 @@ export function ProductCard({ product, priority }: { product: Product; priority?
         {product.category && (
           <Link
             href={`/shop?category=${product.category.slug}`}
-            className="text-xs font-medium uppercase tracking-wide text-neutral-500 hover:text-brand-700"
+            className="text-xs font-medium uppercase tracking-wide text-neutral-500 hover:text-brand-700 dark:hover:text-brand-300"
           >
             {product.category.name}
           </Link>
         )}
         <h3 className="line-clamp-2 font-medium leading-snug text-neutral-900">
-          <Link href={`/products/${product.slug}`} className="hover:text-brand-700">
+          <Link href={`/products/${product.slug}`} className="hover:text-brand-700 dark:hover:text-brand-300">
             {product.name}
           </Link>
         </h3>

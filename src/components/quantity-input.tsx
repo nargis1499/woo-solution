@@ -23,7 +23,7 @@ export function QuantityInput({
   const field = size === "sm" ? "h-8 w-10 text-sm" : "h-10 w-14 text-base";
 
   return (
-    <div className="inline-flex items-center overflow-hidden rounded-lg border border-neutral-300 bg-white">
+    <div className="inline-flex items-center overflow-hidden rounded-lg border border-neutral-300 bg-surface">
       <button
         type="button"
         className={`${btn} text-neutral-600 hover:bg-neutral-100 disabled:opacity-40`}

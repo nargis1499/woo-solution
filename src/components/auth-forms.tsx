@@ -32,7 +32,7 @@ export function LoginForm({ next, error }: { next: string; error?: string }) {
       </Button>
       <p className="text-center text-sm text-neutral-600">
         New customer?{" "}
-        <Link href={`/signup?next=${encodeURIComponent(next)}`} className="font-medium text-brand-700 hover:underline">
+        <Link href={`/signup?next=${encodeURIComponent(next)}`} className="font-medium text-brand-700 dark:text-brand-300 hover:underline">
           Create an account
         </Link>
       </p>
@@ -48,7 +48,7 @@ export function SignupForm({ next }: { next: string }) {
     return (
       <div className="space-y-4">
         <FormSuccess message={state.message} />
-        <Link href={`/login?next=${encodeURIComponent(next)}`} className="block text-center text-sm font-medium text-brand-700 hover:underline">
+        <Link href={`/login?next=${encodeURIComponent(next)}`} className="block text-center text-sm font-medium text-brand-700 dark:text-brand-300 hover:underline">
           Go to sign in
         </Link>
       </div>
@@ -80,7 +80,7 @@ export function SignupForm({ next }: { next: string }) {
       </Button>
       <p className="text-center text-sm text-neutral-600">
         Already have an account?{" "}
-        <Link href={`/login?next=${encodeURIComponent(next)}`} className="font-medium text-brand-700 hover:underline">
+        <Link href={`/login?next=${encodeURIComponent(next)}`} className="font-medium text-brand-700 dark:text-brand-300 hover:underline">
           Sign in
         </Link>
       </p>

@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: next-themes toggles `class="dark"` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* Brand palette (a nod to WooCommerce purple) */
   --color-brand-50: #f6f2fb;
@@ -13,16 +16,98 @@
   --color-brand-800: #54377c;
   --color-brand-900: #452f64;
 
+  /* Elevated surfaces (cards, header, inputs). White in light mode, charcoal in dark mode. */
+  --color-surface: #ffffff;
+
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
     Arial, "Noto Sans", sans-serif;
+
+  --animate-page-in: page-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  @keyframes page-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
 }
 
 html {
   color-scheme: light;
 }
 
+/*
+ * Dark theme = re-map the neutral scale + the semantic tints that the UI uses.
+ * Tailwind v4 utilities reference these CSS variables (`bg-neutral-100` →
+ * `var(--color-neutral-100)`), so one block flips the whole app without
+ * sprinkling `dark:` classes everywhere. Brand colours stay the same.
+ */
+.dark {
+  color-scheme: dark;
+
+  --color-surface: #171717;
+
+  --color-neutral-50: #0b0b0c;   /* page background */
+  --color-neutral-100: #222224;  /* subtle fills, hovers */
+  --color-neutral-200: #2c2c2f;  /* borders, dividers */
+  --color-neutral-300: #3d3d41;  /* input borders */
+  --color-neutral-400: #7a7a80;
+  --color-neutral-500: #a1a1a8;  /* muted text */
+  --color-neutral-600: #c2c2c8;
+  --color-neutral-700: #d6d6db;
+  --color-neutral-800: #e7e7ea;
+  --color-neutral-900: #f4f4f5;  /* primary text */
+  --color-neutral-950: #fafafa;
+
+  --color-brand-50: #2a2140;     /* tinted hovers / selected states */
+
+  --color-red-50: #3a1212;
+  --color-red-200: #7a2525;
+  --color-red-600: #f87171;
+  --color-red-700: #fca5a5;
+
+  --color-emerald-50: #0c2a1f;
+  --color-emerald-100: #0f3d2c;
+  --color-emerald-200: #1b5a42;
+  --color-emerald-700: #6ee7b7;
+  --color-emerald-800: #a7f3d0;
+  --color-emerald-900: #d1fae5;
+
+  --color-amber-50: #3a2608;
+  --color-amber-100: #4f350c;
+  --color-amber-600: #fbbf24;
+  --color-amber-800: #fde68a;
+  --color-amber-900: #fef3c7;
+
+  --color-blue-100: #1e2f5a;
+  --color-blue-800: #bfdbfe;
+}
+
 body {
   @apply bg-neutral-50 text-neutral-900 antialiased;
+}
+
+@layer base {
+  /* Tailwind v4 resets buttons to `cursor: default` – bring the pointer back for anything clickable. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="button"]:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  select:not(:disabled),
+  summary,
+  label[for],
+  a[href] {
+    cursor: pointer;
+  }
+  button:disabled,
+  input:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
+
+  ::selection {
+    @apply bg-brand-200 text-brand-900;
+  }
 }
 
 /* Small reusable primitives */
@@ -31,11 +116,11 @@ body {
 }
 
 @utility card {
-  @apply rounded-xl border border-neutral-200 bg-white shadow-sm;
+  @apply rounded-xl border border-neutral-200 bg-surface shadow-sm;
 }
 
 @utility input-base {
-  @apply block w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900
+  @apply block w-full rounded-lg border border-neutral-300 bg-surface px-3 py-2 text-sm text-neutral-900
     placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200
     disabled:cursor-not-allowed disabled:bg-neutral-100;
 }

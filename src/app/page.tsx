@@ -1,19 +1,21 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { getCategories, getProducts } from "@/lib/data/products";
-import { FREE_SHIPPING_THRESHOLD_CENTS, STORE_NAME } from "@/lib/config";
+import { FREE_SHIPPING_THRESHOLD_CENTS } from "@/lib/config";
+import { getSiteSettings } from "@/lib/site-settings";
 import { formatPrice } from "@/lib/format";
 import { ProductGrid, ProductGridSkeleton } from "@/components/product-grid";
 import { ButtonLink } from "@/components/ui/button";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const { store_name } = await getSiteSettings();
   return (
     <div className="container-page space-y-14 py-10">
       {/* Hero – fully static, part of the prerendered shell */}
       <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-6 py-16 text-white sm:px-12 sm:py-24">
         <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-brand-100">New season</p>
         <h1 className="max-w-2xl text-4xl font-bold tracking-tight sm:text-5xl">
-          Everything you love about {STORE_NAME}, now faster.
+          Everything you love about {store_name}, now faster.
         </h1>
         <p className="mt-4 max-w-xl text-lg text-brand-100">
           Browse the catalog, add to your cart and check out in seconds. Free shipping on orders over{" "}
@@ -41,7 +43,7 @@ export default function HomePage() {
       <section>
         <div className="mb-5 flex items-end justify-between">
           <h2 className="text-2xl font-bold tracking-tight">Featured products</h2>
-          <Link href="/shop" className="text-sm font-medium text-brand-700 hover:underline">
+          <Link href="/shop" className="text-sm font-medium text-brand-700 dark:text-brand-300 hover:underline">
             View all →
           </Link>
         </div>
