@@ -15,12 +15,15 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const claims = data.claims as {
     sub: string;
     email?: string;
-    user_metadata?: { full_name?: string; name?: string };
+    // e-mail sign-ups set `full_name`; Google adds `name`, `avatar_url`, `picture`
+    user_metadata?: { full_name?: string; name?: string; avatar_url?: string; picture?: string };
   };
+  const meta = claims.user_metadata ?? {};
 
   return {
     id: claims.sub,
     email: claims.email ?? null,
-    name: claims.user_metadata?.full_name ?? claims.user_metadata?.name ?? null,
+    name: meta.full_name ?? meta.name ?? null,
+    avatarUrl: meta.avatar_url ?? meta.picture ?? null,
   };
 }

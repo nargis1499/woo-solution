@@ -71,6 +71,32 @@ export async function signUp(_prev: AuthFormState, formData: FormData): Promise<
   redirect(next);
 }
 
+/**
+ * Starts the Google OAuth (PKCE) flow. Supabase returns the Google consent URL;
+ * the code verifier is stored in a cookie and `/auth/callback` finishes the
+ * exchange. Requires the Google provider to be enabled in the Supabase dashboard.
+ */
+export async function signInWithGoogle(formData: FormData) {
+  const next = safeNext(formData.get("next"));
+  const supabase = await createClient();
+  const origin = await siteOrigin();
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
+      queryParams: { prompt: "select_account" },
+    },
+  });
+
+  if (error || !data?.url) {
+    const message = error?.message ?? "Could not start Google sign-in.";
+    redirect(`/login?error=oauth&message=${encodeURIComponent(message)}&next=${encodeURIComponent(next)}`);
+  }
+
+  redirect(data.url);
+}
+
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();

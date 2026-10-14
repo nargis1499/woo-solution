@@ -4,7 +4,7 @@ import { LoginForm } from "@/components/auth-forms";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-type SearchParams = Promise<{ next?: string; error?: string }>;
+type SearchParams = Promise<{ next?: string; error?: string; message?: string }>;
 
 export default function LoginPage({ searchParams }: { searchParams: SearchParams }) {
   return (
@@ -21,11 +21,13 @@ export default function LoginPage({ searchParams }: { searchParams: SearchParams
 }
 
 async function LoginFormWithParams({ searchParams }: { searchParams: SearchParams }) {
-  const { next, error } = await searchParams;
+  const { next, error, message } = await searchParams;
   const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
-  const message =
-    error === "auth-code-error"
-      ? "That confirmation link is invalid or has expired. Please sign in or request a new one."
-      : undefined;
-  return <LoginForm next={safeNext} error={message} />;
+  let errorMessage: string | undefined;
+  if (error === "auth-code-error") {
+    errorMessage = "That sign-in link is invalid or has expired. Please try again.";
+  } else if (error === "oauth") {
+    errorMessage = `Google sign-in failed: ${message ?? "unknown error"}`;
+  }
+  return <LoginForm next={safeNext} error={errorMessage} />;
 }

@@ -34,7 +34,21 @@ export async function UserMenu() {
         className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
         title={user.email ?? undefined}
       >
-        <UserIcon className="h-4 w-4" />
+        {user.avatarUrl ? (
+          // Plain <img>: avatars are tiny and Google's CDN rate-limits image proxies,
+          // so skipping the Next.js optimizer is both faster and more reliable here.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={user.avatarUrl}
+            alt=""
+            width={24}
+            height={24}
+            className="h-6 w-6 rounded-full bg-neutral-200 object-cover"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <UserIcon className="h-4 w-4" />
+        )}
         <span className="hidden sm:inline">{label}</span>
       </Link>
       <form action={signOut}>

@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { signIn, signUp, type AuthFormState } from "@/app/auth/actions";
 import { Button } from "./ui/button";
 import { FormError, FormSuccess, Input, Label } from "./ui/field";
+import { GoogleSignInButton, OrDivider } from "./google-button";
 
 const initial: AuthFormState = {};
 
@@ -12,7 +13,10 @@ export function LoginForm({ next, error }: { next: string; error?: string }) {
   const [state, action, pending] = useActionState(signIn, initial);
 
   return (
-    <form action={action} className="space-y-4">
+    <div className="space-y-5">
+      <GoogleSignInButton next={next} />
+      <OrDivider />
+      <form action={action} className="space-y-4">
       <input type="hidden" name="next" value={next} />
       <FormError message={state.error ?? error} />
       <div>
@@ -32,7 +36,8 @@ export function LoginForm({ next, error }: { next: string; error?: string }) {
           Create an account
         </Link>
       </p>
-    </form>
+      </form>
+    </div>
   );
 }
 
@@ -51,7 +56,10 @@ export function SignupForm({ next }: { next: string }) {
   }
 
   return (
-    <form action={action} className="space-y-4">
+    <div className="space-y-5">
+      <GoogleSignInButton next={next} label="Sign up with Google" />
+      <OrDivider />
+      <form action={action} className="space-y-4">
       <input type="hidden" name="next" value={next} />
       <FormError message={state.error} />
       <div>
@@ -76,6 +84,7 @@ export function SignupForm({ next }: { next: string }) {
           Sign in
         </Link>
       </p>
-    </form>
+      </form>
+    </div>
   );
 }

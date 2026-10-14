@@ -8,7 +8,7 @@ A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Comp
 | --- | --- |
 | Catalog | Home page with categories & featured products, `/shop` with category filter + search, product detail pages with related products |
 | Cart | Guest-friendly cart persisted in `localStorage` (Zustand), quantity controls, stock limits, shipping preview |
-| Auth | E-mail + password sign up / sign in / sign out via Supabase Auth, protected routes, open-redirect-safe `?next=` handling |
+| Auth | E-mail + password **and "Continue with Google"** (Supabase Auth, PKCE flow), sign out, protected routes, open-redirect-safe `?next=` handling |
 | Checkout | Shipping form → atomic `place_order()` Postgres function (prices re-read from DB, stock locked & decremented, order number generated) |
 | Orders | `/orders` history and `/orders/[id]` confirmation page, protected by Row Level Security |
 | Security | RLS on every table, `SECURITY DEFINER` checkout RPC only executable by `authenticated`, JWT verified with `getClaims()` |
@@ -34,7 +34,9 @@ cp .env.example .env.local
 ### Set up the database
 
 1. Open your Supabase project → **SQL Editor** → *New query*.
-2. Paste the contents of [`supabase/migrations/20261014000000_init.sql`](supabase/migrations/20261014000000_init.sql) and run it.
+2. Run the migrations **in order** – paste each file and execute it:
+   1. [`supabase/migrations/20261014000000_init.sql`](supabase/migrations/20261014000000_init.sql) – schema, RLS, `place_order()`
+   2. [`supabase/migrations/20261015000000_google_auth.sql`](supabase/migrations/20261015000000_google_auth.sql) – `profiles.avatar_url` + Google-aware profile trigger (safe to run on an existing project)
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 
 > Using the Supabase CLI instead? `supabase link --project-ref <ref> && supabase db push`, then run the seed file with `supabase db query -f supabase/seed.sql` (or paste it in the SQL editor).
@@ -56,6 +58,27 @@ NEXT_PUBLIC_CURRENCY=USD
 - **URL Configuration → Site URL**: `http://localhost:3000` (your production URL later)
 - **URL Configuration → Redirect URLs**: add `http://localhost:3000/auth/callback`
 - **Providers → Email → Confirm email**: turn **off** for frictionless local testing, or leave it on – the app handles both (users get a confirmation e-mail that lands on `/auth/callback`).
+
+### Google sign-in (optional, ~5 minutes)
+
+The "Continue with Google" button uses Supabase's built-in Google provider – no extra packages or environment variables. Until the provider is enabled, clicking the button shows *"Google sign-in failed: provider is not enabled"*; e-mail/password keeps working regardless.
+
+1. **Supabase** → **Authentication → Sign In / Providers → Google**. Copy the **Callback URL (for OAuth)** shown there – it looks like
+   `https://<project-ref>.supabase.co/auth/v1/callback`. Keep this tab open.
+2. **Google Cloud Console** → <https://console.cloud.google.com/auth/overview> (Google Auth Platform). Pick or create a project and, if asked, finish the *Branding* / audience setup (External, add your e-mail as a test user while the app is in *Testing*).
+3. **Clients → Create client** → *Application type: Web application*:
+   - **Authorized JavaScript origins**: `http://localhost:3000` (add your production URL later)
+   - **Authorized redirect URIs**: the Supabase callback URL from step 1
+   - Create → copy the **Client ID** and **Client secret**.
+4. Back in Supabase: toggle **Enable Sign in with Google** on, paste **Client ID** and **Client Secret**, save.
+5. Make sure `http://localhost:3000/auth/callback` (and your production `/auth/callback`) is in **Authentication → URL Configuration → Redirect URLs** – you already added it above.
+6. Run the `20261015000000_google_auth.sql` migration if you haven't (see *Set up the database*).
+
+That's it – `npm run dev`, open <http://localhost:3000/login> and click **Continue with Google**.
+
+How it works: `signInWithGoogle` (server action) asks Supabase for the Google consent URL → Google → `https://<ref>.supabase.co/auth/v1/callback` → back to the app's `/auth/callback?code=…&next=…` → `exchangeCodeForSession` sets the session cookie → redirect to `next` (so a guest who hits *Checkout* ends up back on `/checkout`, cart intact). The profile trigger copies Google's `name` → `profiles.full_name` and `picture` → `profiles.avatar_url`, and the header shows the avatar. Supabase links a Google login to an existing account with the same **verified** e-mail automatically.
+
+> **Going to production?** Publish the Google app (Auth Platform → *Audience* → *Publish*) so people other than your test users can sign in, and add your production domain to the JavaScript origins. For a branded consent screen (your domain instead of `<ref>.supabase.co`) set up a Supabase *custom domain*.
 
 ### Run
 
@@ -98,6 +121,8 @@ woo-solution/
 │       ├── config.ts                        # store name, currency, shipping rules
 │       ├── format.ts, types.ts, utils.ts
 └── .github/workflows/ci.yml                 # lint + type-check + build on every push
+
+Google sign-in lives in `src/app/auth/actions.ts` (`signInWithGoogle`), `src/components/google-button.tsx` and `src/app/auth/callback/route.ts`.
 ```
 
 ### Database schema
@@ -145,7 +170,7 @@ npm run lint    # eslint
 
 ## 5. Deploying
 
-Works out of the box on [Vercel](https://vercel.com): import the repo, add the environment variables from `.env.example`, and set `NEXT_PUBLIC_SITE_URL` to your deployed URL. Then add `https://<your-domain>/auth/callback` to Supabase's *Redirect URLs*.
+Works out of the box on [Vercel](https://vercel.com): import the repo, add the environment variables from `.env.example`, and set `NEXT_PUBLIC_SITE_URL` to your deployed URL. Then add `https://<your-domain>/auth/callback` to Supabase's *Redirect URLs* and `https://<your-domain>` to the Google OAuth client's *Authorized JavaScript origins*.
 
 ---
 
@@ -158,6 +183,7 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 - [ ] **Coupons & discounts**, tax rules, multiple shipping methods
 - [ ] **Transactional e-mails** (order confirmation) via Resend / Supabase Edge Functions
 - [ ] **Account page** – edit profile, saved addresses, password reset
+- [ ] More social providers (GitHub, Facebook, Apple) – same pattern as Google, one `provider` string away
 - [ ] Product variants (size / colour), reviews, wishlists
 
 ---
