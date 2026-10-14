@@ -9,15 +9,24 @@ export function SearchForm({
   placeholder = "Search…",
   children,
   isFiltered,
+  hidden,
+  clearHref = action,
 }: {
   action: string;
   q?: string;
   placeholder?: string;
   children?: ReactNode;
   isFiltered?: boolean;
+  /** Extra params to keep while filtering (e.g. the page size). A new filter always starts on page 1. */
+  hidden?: Record<string, string | number | undefined>;
+  clearHref?: string;
 }) {
   return (
     <form action={action} className="flex flex-wrap items-center gap-2">
+      {hidden &&
+        Object.entries(hidden).map(([name, value]) =>
+          value === undefined || value === "" ? null : <input key={name} type="hidden" name={name} value={String(value)} />,
+        )}
       <div className="relative">
         <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
         <input
@@ -34,7 +43,7 @@ export function SearchForm({
         Filter
       </button>
       {isFiltered && (
-        <Link href={action} className="text-sm text-neutral-500 hover:text-neutral-900">
+        <Link href={clearHref} className="text-sm text-neutral-500 hover:text-neutral-900">
           Clear
         </Link>
       )}

@@ -116,7 +116,7 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Section | What you can do |
 | --- | --- |
 | Dashboard | Revenue / order / product / customer stats, orders by status, recent orders, low-stock list |
-| Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **image** = upload a file (stored in the `product-images` bucket, the previous file is deleted automatically when you replace/remove it) **or** paste any image URL |
+| Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **image** = upload a file (stored in the `product-images` bucket, the previous file is deleted automatically when you replace/remove it) **or** paste any image URL. **Paginated** (`?page=`) with a 10 / 20 / 50 / 100 **per-page** selector (`?per=`, remembered per admin in a cookie): changing the size keeps the first visible row on screen, a new filter starts on page 1, a page that no longer exists redirects to the last one, and edit / delete return you to the exact page you came from |
 | Categories | Create, rename, reorder, delete (products become uncategorised); **Show in header menu** toggle decides which categories appear in the storefront navigation |
 | Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |

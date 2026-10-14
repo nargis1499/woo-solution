@@ -16,7 +16,16 @@ function slugify(input: string) {
   return input.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-export function ProductForm({ product, categories }: { product?: Product | null; categories: Category[] }) {
+export function ProductForm({
+  product,
+  categories,
+  returnTo = "/nemesis/products",
+}: {
+  product?: Product | null;
+  categories: Category[];
+  /** List URL (page / size / filter) to go back to after saving or cancelling. */
+  returnTo?: string;
+}) {
   const [state, formAction] = useActionState<AdminFormState, FormData>(saveProduct, null);
   useFormToast(state);
   const v = state?.values ?? {};
@@ -39,6 +48,7 @@ export function ProductForm({ product, categories }: { product?: Product | null;
   return (
     <form action={formAction} className="grid gap-6 lg:grid-cols-[1fr_340px]" noValidate>
       {product && <input type="hidden" name="id" value={product.id} />}
+      <input type="hidden" name="return_to" value={returnTo} />
 
       <div className="space-y-6">
         <section className="card space-y-4 p-5 sm:p-6">
@@ -210,7 +220,7 @@ export function ProductForm({ product, categories }: { product?: Product | null;
           <SubmitButton className="flex-1" pendingLabel={isEdit ? "Saving…" : "Creating…"}>
             {isEdit ? "Save changes" : "Create product"}
           </SubmitButton>
-          <ButtonLink href="/nemesis/products" variant="outline">Cancel</ButtonLink>
+          <ButtonLink href={returnTo} variant="outline">Cancel</ButtonLink>
         </div>
         {product && (
           <p className="text-xs text-neutral-500">

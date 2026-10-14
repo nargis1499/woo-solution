@@ -7,6 +7,7 @@ import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { removeProductImageIfOwned, uploadProductImage, validateImageFile } from "@/lib/admin/storage";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { MENU_TAG } from "@/lib/menu";
+import { safeListReturn } from "@/lib/admin/pagination";
 import { createClient } from "@/lib/supabase/server";
 import type { OrderStatus, PaymentStatus } from "@/lib/types";
 
@@ -77,8 +78,13 @@ function revalidateStore() {
   revalidatePath("/", "layout");
 }
 
-const notice = (path: string, message: string) => `${path}?notice=${encodeURIComponent(message)}`;
-const failure = (path: string, message: string) => `${path}?error=${encodeURIComponent(message)}`;
+const withFlash = (path: string, key: "notice" | "error", message: string) =>
+  `${path}${path.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(message)}`;
+const notice = (path: string, message: string) => withFlash(path, "notice", message);
+const failure = (path: string, message: string) => withFlash(path, "error", message);
+
+/** Where a product action sends the admin afterwards: the exact list page (page / size / filter) they came from. */
+const productsReturn = (fd: FormData) => safeListReturn(str(fd, "return_to", 600), "/nemesis/products") ?? "/nemesis/products";
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Products
@@ -177,7 +183,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
     }
 
     revalidateStore();
-    redirect(notice("/nemesis/products", isEdit ? `"${name}" updated.` : `"${name}" created.`));
+    redirect(notice(isEdit ? productsReturn(formData) : "/nemesis/products", isEdit ? `"${name}" updated.` : `"${name}" created.`));
   } catch (e) {
     if (isRedirectError(e)) throw e;
     return { error: friendlyError(e), values };
@@ -186,22 +192,23 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
 
 export async function deleteProduct(formData: FormData): Promise<void> {
   const id = str(formData, "id", 40);
-  if (!UUID_RE.test(id)) redirect(failure("/nemesis/products", "Invalid product id."));
+  const back = productsReturn(formData);
+  if (!UUID_RE.test(id)) redirect(failure(back, "Invalid product id."));
   try {
     const { supabase } = await adminClient();
     const { data: product, error } = await supabase.from("products").select("name, image_url").eq("id", id).maybeSingle();
     if (error) throw error;
-    if (!product) redirect(failure("/nemesis/products", "Product not found."));
+    if (!product) redirect(failure(back, "Product not found."));
 
     const { error: delError } = await supabase.from("products").delete().eq("id", id);
     if (delError) throw delError;
     await removeProductImageIfOwned(supabase, product.image_url);
 
     revalidateStore();
-    redirect(notice("/nemesis/products", `"${product.name}" deleted.`));
+    redirect(notice(back, `"${product.name}" deleted.`));
   } catch (e) {
     if (isRedirectError(e)) throw e;
-    redirect(failure("/nemesis/products", friendlyError(e)));
+    redirect(failure(back, friendlyError(e)));
   }
 }
 

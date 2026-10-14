@@ -63,7 +63,8 @@ export function StatCard({
 
 export function Table({ children, className, tableClassName }: { children: ReactNode; className?: string; tableClassName?: string }) {
   return (
-    <div className={cn("card overflow-x-auto", className)}>
+    // `relative` keeps absolutely positioned helpers (sr-only headers) inside the scroll container
+    <div className={cn("card relative overflow-x-auto", className)}>
       <table className={cn("w-full min-w-[640px] text-left text-sm", tableClassName)}>{children}</table>
     </div>
   );

@@ -63,18 +63,43 @@ export async function adminGetLowStockProducts(limit = 6): Promise<Product[]> {
 
 // ─── Products ───────────────────────────────────────────────────────────────
 
-export async function adminListProducts(options: { q?: string; category?: string } = {}): Promise<Product[]> {
+export type ProductListOptions = { q?: string; category?: string; page?: number; perPage?: number };
+export type ProductListPage = { items: Product[]; total: number };
+
+/** One page of the admin product list plus the total for the same filter (drives the pager). */
+export async function adminListProducts(options: ProductListOptions = {}): Promise<ProductListPage> {
   await requireAdmin();
   const supabase = await createClient();
-  let query = supabase.from("products").select(PRODUCT_COLUMNS).order("created_at", { ascending: false });
-  if (options.q) {
-    const term = `%${escapeLike(options.q)}%`;
-    query = query.or(`name.ilike.${term},slug.ilike.${term}`);
+  const perPage = Math.max(1, options.perPage ?? 10);
+  const from = (Math.max(1, options.page ?? 1) - 1) * perPage;
+
+  const term = options.q ? `%${escapeLike(options.q)}%` : null;
+  const search = term ? `name.ilike.${term},slug.ilike.${term}` : null;
+  const categoryId = options.category && isUuid(options.category) ? options.category : null;
+
+  let query = supabase.from("products").select(PRODUCT_COLUMNS, { count: "exact" });
+  if (search) query = query.or(search);
+  if (categoryId) query = query.eq("category_id", categoryId);
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false }) // stable order for rows created in the same instant (e.g. seed data)
+    .range(from, from + perPage - 1);
+
+  if (error) {
+    // PGRST103 = offset past the last row (page no longer exists after deletes / a size change).
+    // Return the total so the page can redirect to the last valid page.
+    if (error.code === "PGRST103") {
+      let countQuery = supabase.from("products").select("id", { count: "exact", head: true });
+      if (search) countQuery = countQuery.or(search);
+      if (categoryId) countQuery = countQuery.eq("category_id", categoryId);
+      const { count: total, error: countError } = await countQuery;
+      if (countError) throw new Error(`Failed to load products: ${countError.message}`);
+      return { items: [], total: total ?? 0 };
+    }
+    throw new Error(`Failed to load products: ${error.message}`);
   }
-  if (options.category && isUuid(options.category)) query = query.eq("category_id", options.category);
-  const { data, error } = await query;
-  if (error) throw new Error(`Failed to load products: ${error.message}`);
-  return (data ?? []) as unknown as Product[];
+  const items = (data ?? []) as unknown as Product[];
+  return { items, total: count ?? from + items.length };
 }
 
 export async function adminGetProduct(id: string): Promise<Product | null> {

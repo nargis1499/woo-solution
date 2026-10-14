@@ -15,18 +15,24 @@ export function FlashToast() {
   const searchParams = useSearchParams();
   const notice = searchParams.get("notice");
   const error = searchParams.get("error");
-  const lastShown = useRef<string | null>(null);
+  const lastShown = useRef<{ key: string; at: number } | null>(null);
 
   useEffect(() => {
     if (!notice && !error) return;
+
+    // Show each message once, even when the same flash travels through a redirect
+    // chain (e.g. "deleted" on a page that no longer exists → last valid page) or
+    // when Strict Mode re-runs the effect.
     const key = `${pathname}|${notice ?? ""}|${error ?? ""}`;
-    if (lastShown.current === key) return; // React Strict Mode re-runs effects
-    lastShown.current = key;
+    const repeat = lastShown.current?.key === key && Date.now() - lastShown.current.at < 3000;
+    if (!repeat) {
+      lastShown.current = { key, at: Date.now() };
+      if (error) toast.error(error);
+      else if (notice) toast.success(notice);
+    }
 
-    if (error) toast.error(error);
-    else if (notice) toast.success(notice);
-
-    // Strip the one-shot params without a server round-trip.
+    // Always strip the one-shot params (no server round-trip) so a refresh or a
+    // shared link doesn't repeat the message.
     const params = new URLSearchParams(searchParams.toString());
     params.delete("notice");
     params.delete("error");

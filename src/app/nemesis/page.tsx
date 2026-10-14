@@ -43,7 +43,7 @@ export default async function AdminDashboardPage() {
         ))}
       </div>
 
-      <div className="mt-8 grid gap-6 2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="mt-8 grid gap-6 *:min-w-0 2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <Section title="Recent orders" actions={<Link href="/nemesis/orders" className="text-sm font-medium text-brand-700 dark:text-brand-300 hover:underline">View all →</Link>} className="p-0 sm:p-0">
           <Table className="border-0 shadow-none" tableClassName="min-w-[480px]">
             <THead>

@@ -19,7 +19,7 @@ export function AdminSidebar({ user }: { user: CurrentUser }) {
   const pathname = usePathname();
 
   return (
-    <aside className="lg:sticky lg:top-24 lg:self-start">
+    <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
       <div className="card p-3">
         <div className="mb-3 hidden items-center gap-3 px-2 py-1 lg:flex">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">

@@ -1,31 +1,67 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { adminListCategories, adminListProducts } from "@/lib/admin/data";
+import { PER_PAGE_COOKIE, listHref, pageCount, parsePage, parsePerPage } from "@/lib/admin/pagination";
 import { formatPrice } from "@/lib/format";
 import { deleteProduct } from "@/app/nemesis/actions";
 import { ButtonLink } from "@/components/ui/button";
 import { ConfirmForm, DeleteButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
+import { Pagination } from "@/components/admin/pagination";
 import { Badge, EmptyRow, PageHeader, TBody, THead, Table, Td, Th, Thumb, Tr } from "@/components/admin/ui";
 
 export const metadata: Metadata = { title: "Products" };
 
-type SearchParams = Promise<{ q?: string; category?: string }>;
+const LIST_PATH = "/nemesis/products";
+
+type SearchParams = Promise<{ q?: string; category?: string; page?: string; per?: string; notice?: string; error?: string }>;
 
 export default async function AdminProductsPage({ searchParams }: { searchParams: SearchParams }) {
-  const { q, category } = await searchParams;
-  const [products, categories] = await Promise.all([adminListProducts({ q, category }), adminListCategories()]);
+  const sp = await searchParams;
+  const q = sp.q?.trim() || undefined;
+  const category = sp.category || undefined;
+  const filters = { q, category };
+
+  // page size: ?per= → remembered preference → 10
+  const cookieStore = await cookies();
+  const perPage = parsePerPage(sp.per, parsePerPage(cookieStore.get(PER_PAGE_COOKIE)?.value));
+  const requestedPage = parsePage(sp.page);
+
+  const [{ items: products, total }, categories] = await Promise.all([
+    adminListProducts({ ...filters, page: requestedPage, perPage }),
+    adminListCategories(),
+  ]);
+
+  // Keep the URL honest: a page that no longer exists (after deletes or a size
+  // change) redirects to the last valid page – any pending toast comes along.
+  const pages = pageCount(total, perPage);
+  if (requestedPage > pages) {
+    const flash = sp.notice ? { notice: sp.notice } : sp.error ? { error: sp.error } : {};
+    redirect(listHref(LIST_PATH, { ...filters, ...flash, per: perPage, page: pages }));
+  }
+  const page = requestedPage;
+  const listUrl = listHref(LIST_PATH, { ...filters, per: perPage, page });
+  const isFiltered = Boolean(q || category);
 
   return (
     <>
       <PageHeader
         title="Products"
-        description={`${products.length} ${products.length === 1 ? "product" : "products"}${q || category ? " match your filter" : ""}.`}
+        description={`${total} ${total === 1 ? "product" : "products"}${isFiltered ? " match your filter" : ""}.`}
         actions={<ButtonLink href="/nemesis/products/new">+ New product</ButtonLink>}
       />
 
       <div className="mb-4">
-        <SearchForm action="/nemesis/products" q={q} placeholder="Search name or slug…" isFiltered={Boolean(q || category)}>
+        <SearchForm
+          action={LIST_PATH}
+          q={q}
+          placeholder="Search name or slug…"
+          isFiltered={isFiltered}
+          hidden={{ per: perPage }}
+          clearHref={listHref(LIST_PATH, { per: perPage })}
+        >
           <select name="category" defaultValue={category ?? ""} className="input-base w-auto" aria-label="Category">
             <option value="">All categories</option>
             {categories.map((c) => (
@@ -49,7 +85,7 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
         <TBody>
           {products.length === 0 && (
             <EmptyRow colSpan={6}>
-              {q || category ? "No products match your filter." : (
+              {isFiltered ? "No products match your filter." : (
                 <>No products yet. <Link href="/nemesis/products/new" className="text-brand-700 dark:text-brand-300 hover:underline">Create the first one</Link>.</>
               )}
             </EmptyRow>
@@ -60,7 +96,7 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
                 <div className="flex items-center gap-3">
                   <Thumb src={p.image_url} />
                   <div className="min-w-0">
-                    <Link href={`/nemesis/products/${p.id}`} className="block truncate font-medium hover:underline">{p.name}</Link>
+                    <Link href={`/nemesis/products/${p.id}?from=${encodeURIComponent(listUrl)}`} className="block truncate font-medium hover:underline">{p.name}</Link>
                     <p className="truncate text-xs text-neutral-500">/{p.slug}</p>
                   </div>
                 </div>
@@ -83,9 +119,10 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
               </Td>
               <Td className="text-right">
                 <div className="flex items-center justify-end gap-2">
-                  <Link href={`/nemesis/products/${p.id}`} className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-medium hover:bg-neutral-100">Edit</Link>
+                  <Link href={`/nemesis/products/${p.id}?from=${encodeURIComponent(listUrl)}`} className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-medium hover:bg-neutral-100">Edit</Link>
                   <ConfirmForm action={deleteProduct} message={`Delete "${p.name}"? This cannot be undone.`}>
                     <input type="hidden" name="id" value={p.id} />
+                    <input type="hidden" name="return_to" value={listUrl} />
                     <DeleteButton />
                   </ConfirmForm>
                 </div>
@@ -94,6 +131,8 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
           ))}
         </TBody>
       </Table>
+
+      <Pagination pathname={LIST_PATH} params={filters} page={page} perPage={perPage} total={total} itemLabel={total === 1 ? "product" : "products"} />
     </>
   );
 }
