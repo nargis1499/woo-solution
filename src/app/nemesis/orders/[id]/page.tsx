@@ -8,11 +8,20 @@ import { OrderStatusBadge } from "@/components/order-status-badge";
 import { OrderStatusForm } from "@/components/admin/order-form";
 import { ConfirmForm, DeleteButton } from "@/components/admin/form-bits";
 import { Badge, DescriptionList, PageHeader, Section, Thumb } from "@/components/admin/ui";
+import { safeListReturn } from "@/lib/admin/pagination";
 
 export const metadata: Metadata = { title: "Order" };
 
-export default async function AdminOrderPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function AdminOrderPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
+}) {
+  const [{ id }, { from }] = await Promise.all([params, searchParams]);
+  // Back + delete return to the exact list page (page / size / filter) the admin came from.
+  const backHref = safeListReturn(from, "/nemesis/orders") ?? "/nemesis/orders";
   const order = await adminGetOrder(id);
   if (!order) notFound();
   const items = order.order_items ?? [];
@@ -22,11 +31,12 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
       <PageHeader
         title={<span className="flex items-center gap-3">Order {formatOrderNumber(order.order_number)} <OrderStatusBadge status={order.status} /></span>}
         description={`Placed ${formatDate(order.created_at)} · ${order.payment_method.toUpperCase()} · ${order.payment_status}`}
-        backHref="/nemesis/orders"
+        backHref={backHref}
         backLabel="Orders"
         actions={
           <ConfirmForm action={deleteOrder} message={`Delete order ${formatOrderNumber(order.order_number)}? This cannot be undone.`}>
             <input type="hidden" name="id" value={order.id} />
+            <input type="hidden" name="return_to" value={backHref} />
             <DeleteButton label="Delete order" size="md" />
           </ConfirmForm>
         }

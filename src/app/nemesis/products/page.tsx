@@ -1,15 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { adminListCategories, adminListProducts } from "@/lib/admin/data";
-import { PER_PAGE_COOKIE, listHref, pageCount, parsePage, parsePerPage } from "@/lib/admin/pagination";
+import { listHref } from "@/lib/admin/pagination";
+import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatPrice } from "@/lib/format";
 import { deleteProduct } from "@/app/nemesis/actions";
 import { ButtonLink } from "@/components/ui/button";
 import { ConfirmForm, DeleteButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
-import { Pagination } from "@/components/admin/pagination";
+import { ListToolbar, Pagination } from "@/components/admin/pagination";
 import { Badge, EmptyRow, PageHeader, TBody, THead, Table, Td, Th, Thumb, Tr } from "@/components/admin/ui";
 
 export const metadata: Metadata = { title: "Products" };
@@ -20,30 +19,18 @@ type SearchParams = Promise<{ q?: string; category?: string; page?: string; per?
 
 export default async function AdminProductsPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const q = sp.q?.trim() || undefined;
-  const category = sp.category || undefined;
-  const filters = { q, category };
+  const filters = { q: sp.q?.trim() || undefined, category: sp.category || undefined };
+  const { perPage, requestedPage } = await resolveListParams(sp);
 
-  // page size: ?per= → remembered preference → 10
-  const cookieStore = await cookies();
-  const perPage = parsePerPage(sp.per, parsePerPage(cookieStore.get(PER_PAGE_COOKIE)?.value));
-  const requestedPage = parsePage(sp.page);
-
-  const [{ items: products, total }, categories] = await Promise.all([
+  const [{ items: products, total, page }, categories] = await Promise.all([
     adminListProducts({ ...filters, page: requestedPage, perPage }),
     adminListCategories(),
   ]);
+  redirectIfClamped(LIST_PATH, filters, sp, requestedPage, page, perPage);
 
-  // Keep the URL honest: a page that no longer exists (after deletes or a size
-  // change) redirects to the last valid page – any pending toast comes along.
-  const pages = pageCount(total, perPage);
-  if (requestedPage > pages) {
-    const flash = sp.notice ? { notice: sp.notice } : sp.error ? { error: sp.error } : {};
-    redirect(listHref(LIST_PATH, { ...filters, ...flash, per: perPage, page: pages }));
-  }
-  const page = requestedPage;
   const listUrl = listHref(LIST_PATH, { ...filters, per: perPage, page });
-  const isFiltered = Boolean(q || category);
+  const isFiltered = Boolean(filters.q || filters.category);
+  const location = { pathname: LIST_PATH, params: filters, page, perPage };
 
   return (
     <>
@@ -53,23 +40,23 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
         actions={<ButtonLink href="/nemesis/products/new">+ New product</ButtonLink>}
       />
 
-      <div className="mb-4">
+      <ListToolbar {...location}>
         <SearchForm
           action={LIST_PATH}
-          q={q}
+          q={filters.q}
           placeholder="Search name or slug…"
           isFiltered={isFiltered}
           hidden={{ per: perPage }}
           clearHref={listHref(LIST_PATH, { per: perPage })}
         >
-          <select name="category" defaultValue={category ?? ""} className="input-base w-auto" aria-label="Category">
+          <select name="category" defaultValue={filters.category ?? ""} className="input-base w-auto" aria-label="Category">
             <option value="">All categories</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
         </SearchForm>
-      </div>
+      </ListToolbar>
 
       <Table>
         <THead>
@@ -132,7 +119,7 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
         </TBody>
       </Table>
 
-      <Pagination pathname={LIST_PATH} params={filters} page={page} perPage={perPage} total={total} itemLabel={total === 1 ? "product" : "products"} />
+      <Pagination {...location} total={total} itemLabel={total === 1 ? "product" : "products"} />
     </>
   );
 }

@@ -83,8 +83,9 @@ const withFlash = (path: string, key: "notice" | "error", message: string) =>
 const notice = (path: string, message: string) => withFlash(path, "notice", message);
 const failure = (path: string, message: string) => withFlash(path, "error", message);
 
-/** Where a product action sends the admin afterwards: the exact list page (page / size / filter) they came from. */
-const productsReturn = (fd: FormData) => safeListReturn(str(fd, "return_to", 600), "/nemesis/products") ?? "/nemesis/products";
+/** Where a list action sends the admin afterwards: the exact list page (page / size / filter) they came from. */
+const returnTo = (fd: FormData, listPath: string) => safeListReturn(str(fd, "return_to", 600), listPath) ?? listPath;
+const productsReturn = (fd: FormData) => returnTo(fd, "/nemesis/products");
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Products
@@ -328,18 +329,19 @@ export async function updateOrder(_prev: AdminFormState, formData: FormData): Pr
 
 export async function deleteOrder(formData: FormData): Promise<void> {
   const id = str(formData, "id", 40);
-  if (!UUID_RE.test(id)) redirect(failure("/nemesis/orders", "Invalid order id."));
+  const back = returnTo(formData, "/nemesis/orders");
+  if (!UUID_RE.test(id)) redirect(failure(back, "Invalid order id."));
   try {
     const { supabase } = await adminClient();
     const { data, error } = await supabase.from("orders").delete().eq("id", id).select("order_number").maybeSingle();
     if (error) throw error;
-    if (!data) redirect(failure("/nemesis/orders", "Order not found."));
+    if (!data) redirect(failure(back, "Order not found."));
 
     revalidateStore();
-    redirect(notice("/nemesis/orders", `Order #${String(data.order_number).padStart(4, "0")} deleted.`));
+    redirect(notice(back, `Order #${String(data.order_number).padStart(4, "0")} deleted.`));
   } catch (e) {
     if (isRedirectError(e)) throw e;
-    redirect(failure("/nemesis/orders", friendlyError(e)));
+    redirect(failure(back, friendlyError(e)));
   }
 }
 
@@ -380,19 +382,20 @@ export async function updateUser(_prev: AdminFormState, formData: FormData): Pro
 
 export async function deleteUser(formData: FormData): Promise<void> {
   const id = str(formData, "id", 40);
-  if (!UUID_RE.test(id)) redirect(failure("/nemesis/users", "Invalid user id."));
+  const back = returnTo(formData, "/nemesis/users");
+  if (!UUID_RE.test(id)) redirect(failure(back, "Invalid user id."));
   try {
     const { user, supabase } = await adminClient();
-    if (user.id === id) redirect(failure("/nemesis/users", "You cannot delete your own account from the dashboard."));
+    if (user.id === id) redirect(failure(back, "You cannot delete your own account from the dashboard."));
 
     const { error } = await supabase.rpc("admin_delete_user", { p_user_id: id });
     if (error) throw error;
 
     revalidateStore();
-    redirect(notice("/nemesis/users", "User deleted. Their orders were kept for your records."));
+    redirect(notice(back, "User deleted. Their orders were kept for your records."));
   } catch (e) {
     if (isRedirectError(e)) throw e;
-    redirect(failure("/nemesis/users", friendlyError(e)));
+    redirect(failure(back, friendlyError(e)));
   }
 }
 

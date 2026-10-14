@@ -10,11 +10,20 @@ import { UserForm } from "@/components/admin/user-form";
 import { ConfirmForm, DeleteButton } from "@/components/admin/form-bits";
 import { Badge, DescriptionList, PageHeader, Section, StatCard } from "@/components/admin/ui";
 import { UserAvatar } from "@/components/admin/user-avatar";
+import { safeListReturn } from "@/lib/admin/pagination";
 
 export const metadata: Metadata = { title: "User" };
 
-export default async function AdminUserPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function AdminUserPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
+}) {
+  const [{ id }, { from }] = await Promise.all([params, searchParams]);
+  // Back + delete return to the exact list page (page / size / search) the admin came from.
+  const backHref = safeListReturn(from, "/nemesis/users") ?? "/nemesis/users";
   const [profile, { user: me }] = await Promise.all([adminGetUser(id), getAdminStatus()]);
   if (!profile) notFound();
   const isSelf = me?.id === profile.id;
@@ -30,12 +39,13 @@ export default async function AdminUserPage({ params }: { params: Promise<{ id: 
           </span>
         }
         description={`Joined ${formatDate(profile.created_at)}`}
-        backHref="/nemesis/users"
+        backHref={backHref}
         backLabel="Users"
         actions={
           !isSelf && (
             <ConfirmForm action={deleteUser} message={`Delete ${profile.email ?? "this user"}? Their account is removed permanently; orders are kept.`}>
               <input type="hidden" name="id" value={profile.id} />
+              <input type="hidden" name="return_to" value={backHref} />
               <DeleteButton label="Delete user" size="md" />
             </ConfirmForm>
           )

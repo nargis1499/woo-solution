@@ -1,28 +1,38 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { listHref, pageCount, paginationItems } from "@/lib/admin/pagination";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { PerPageSelect } from "./per-page-select";
 
-export type PaginationProps = {
+type ListLocation = {
   /** List route, e.g. `/nemesis/products`. */
   pathname: string;
-  /** Filter params to carry along (q, category, …). */
+  /** Filter params to carry along (q, category, status …). */
   params?: Record<string, string | undefined>;
   page: number;
   perPage: number;
-  total: number;
-  /** Noun for the summary – "products", "orders"… */
-  itemLabel?: string;
 };
 
 /**
- * Pager + "per page" control for admin lists. Page links are plain hrefs (so
- * they work without JS and are shareable); the size select lives in a small
- * client component. Summary + controls stay in sync because everything is
- * derived from the URL that the server resolved.
+ * Row above an admin table: the filter form on the left, the "per page"
+ * selector on the right (wraps underneath on narrow screens).
  */
-export function Pagination({ pathname, params = {}, page, perPage, total, itemLabel = "items" }: PaginationProps) {
+export function ListToolbar({ children, pathname, params = {}, page, perPage }: ListLocation & { children: ReactNode }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3" data-testid="list-toolbar">
+      <div className="min-w-0">{children}</div>
+      <PerPageSelect pathname={pathname} params={params} page={page} perPage={perPage} />
+    </div>
+  );
+}
+
+/**
+ * Summary + pager under an admin table. Page links are plain hrefs (work
+ * without JS, shareable); everything is derived from the URL the server
+ * resolved, so the summary, the highlighted page and the rows always agree.
+ */
+export function Pagination({ pathname, params = {}, page, perPage, total, itemLabel = "items" }: ListLocation & { total: number; itemLabel?: string }) {
   if (total === 0) return null;
   const pages = pageCount(total, perPage);
   const first = (page - 1) * perPage + 1;
@@ -36,29 +46,25 @@ export function Pagination({ pathname, params = {}, page, perPage, total, itemLa
         <span className="font-semibold text-neutral-900">{total}</span> {itemLabel}
       </p>
 
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-        <PerPageSelect pathname={pathname} params={params} page={page} perPage={perPage} />
-
-        {pages > 1 && (
-          <nav aria-label="Pagination" className="flex items-center gap-1">
-            <PageLink href={page > 1 ? href(page - 1) : undefined} label="Previous page">
-              <ChevronLeftIcon className="h-4 w-4" />
-            </PageLink>
-            {paginationItems(page, pages).map((item, i) =>
-              item === "…" ? (
-                <span key={`gap-${i}`} className="w-6 text-center text-sm text-neutral-400" aria-hidden>…</span>
-              ) : (
-                <PageLink key={item} href={href(item)} label={`Page ${item}`} current={item === page}>
-                  {item}
-                </PageLink>
-              ),
-            )}
-            <PageLink href={page < pages ? href(page + 1) : undefined} label="Next page">
-              <ChevronRightIcon className="h-4 w-4" />
-            </PageLink>
-          </nav>
-        )}
-      </div>
+      {pages > 1 && (
+        <nav aria-label="Pagination" className="flex items-center gap-1">
+          <PageLink href={page > 1 ? href(page - 1) : undefined} label="Previous page">
+            <ChevronLeftIcon className="h-4 w-4" />
+          </PageLink>
+          {paginationItems(page, pages).map((item, i) =>
+            item === "…" ? (
+              <span key={`gap-${i}`} className="w-6 text-center text-sm text-neutral-400" aria-hidden>…</span>
+            ) : (
+              <PageLink key={item} href={href(item)} label={`Page ${item}`} current={item === page}>
+                {item}
+              </PageLink>
+            ),
+          )}
+          <PageLink href={page < pages ? href(page + 1) : undefined} label="Next page">
+            <ChevronRightIcon className="h-4 w-4" />
+          </PageLink>
+        </nav>
+      )}
     </div>
   );
 }
