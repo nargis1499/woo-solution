@@ -93,7 +93,7 @@ export async function adminListCategories(): Promise<Category[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("categories")
-    .select("id, name, slug, sort_order, products(count)")
+    .select("id, name, slug, sort_order, show_in_menu, products(count)")
     .order("sort_order", { ascending: true })
     .order("name", { ascending: true });
   if (error) throw new Error(`Failed to load categories: ${error.message}`);
@@ -110,7 +110,7 @@ export async function adminGetCategory(id: string): Promise<Category | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("categories")
-    .select("id, name, slug, sort_order, products(count)")
+    .select("id, name, slug, sort_order, show_in_menu, products(count)")
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(`Failed to load category: ${error.message}`);

@@ -40,6 +40,7 @@ cp .env.example .env.local
    1. [`supabase/migrations/20261014000000_init.sql`](supabase/migrations/20261014000000_init.sql) – schema, RLS, `place_order()`
    2. [`supabase/migrations/20261015000000_google_auth.sql`](supabase/migrations/20261015000000_google_auth.sql) – `profiles.avatar_url` + Google-aware profile trigger (safe to run on an existing project)
    3. [`supabase/migrations/20261016000000_admin.sql`](supabase/migrations/20261016000000_admin.sql) – `profiles.is_admin`, admin RLS policies, `site_settings`, the public `product-images` Storage bucket, `admin_stats()` / `admin_delete_user()` (safe to run on an existing project)
+   4. [`supabase/migrations/20261017000000_category_menu.sql`](supabase/migrations/20261017000000_category_menu.sql) – `categories.show_in_menu` (header-menu visibility toggle; existing categories stay visible)
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -116,10 +117,12 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | --- | --- |
 | Dashboard | Revenue / order / product / customer stats, orders by status, recent orders, low-stock list |
 | Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **image** = upload a file (stored in the `product-images` bucket, the previous file is deleted automatically when you replace/remove it) **or** paste any image URL |
-| Categories | Create, rename, reorder, delete (products become uncategorised) |
+| Categories | Create, rename, reorder, delete (products become uncategorised); **Show in header menu** toggle decides which categories appear in the storefront navigation |
 | Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
 | Settings | Store name (used in the `<title>`, header, footer and hero), tagline (footer + meta description), support e-mail |
+
+Every action reports back through a toast notification (top-right, [sonner](https://sonner.emilkowal.ski/)) – successes in green, failures in red – while validation errors stay next to the fields they belong to.
 
 Images: the bucket is created by the migration (public read, admin-only write, 5 MB limit, JPEG/PNG/WebP/GIF/AVIF). Uploaded images are served through `next/image`; `*.supabase.co` and a few stock-photo hosts are allow-listed in `src/lib/image-hosts.ts` – add your own CDN there. Plain-`http` URLs (e.g. a local Supabase on `127.0.0.1`) are rendered unoptimised.
 
@@ -133,6 +136,7 @@ woo-solution/
 │   ├── migrations/20261014000000_init.sql   # schema, RLS, triggers, place_order() RPC
 │   ├── migrations/20261015000000_google_auth.sql
 │   ├── migrations/20261016000000_admin.sql  # is_admin flag, admin RLS, site_settings, Storage bucket
+│   ├── migrations/20261017000000_category_menu.sql  # categories.show_in_menu
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
@@ -157,7 +161,8 @@ woo-solution/
 │   │   ├── theme-provider.tsx, theme-toggle.tsx, top-loader.tsx
 │   └── lib/
 │       ├── admin/{auth,data,storage}.ts     # requireAdmin(), admin queries, Storage upload/cleanup
-│       ├── site-settings.ts, image-hosts.ts # cached store settings, next/image allow-list
+│       ├── site-settings.ts, menu.ts        # cached store settings / header categories (tag-invalidated)
+│       ├── image-hosts.ts                   # next/image allow-list
 │       ├── supabase/{client,server,proxy}.ts# Supabase clients (browser / server / proxy)
 │       ├── auth.ts                          # getCurrentUser() – verified via getClaims()
 │       ├── data/{products,orders}.ts        # data-access layer

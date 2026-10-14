@@ -6,21 +6,20 @@ import { formatDate, formatPrice } from "@/lib/format";
 import { deleteUser } from "@/app/nemesis/actions";
 import { ConfirmForm, DeleteButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
-import { Badge, EmptyRow, Flash, PageHeader, Table, TBody, Td, Th, THead, Tr } from "@/components/admin/ui";
+import { Badge, EmptyRow, PageHeader, Table, TBody, Td, Th, THead, Tr } from "@/components/admin/ui";
 import { UserAvatar } from "@/components/admin/user-avatar";
 
 export const metadata: Metadata = { title: "Users" };
 
-type SearchParams = Promise<{ q?: string; notice?: string; error?: string }>;
+type SearchParams = Promise<{ q?: string }>;
 
 export default async function AdminUsersPage({ searchParams }: { searchParams: SearchParams }) {
-  const { q, notice, error } = await searchParams;
+  const { q } = await searchParams;
   const [users, { user: me }] = await Promise.all([adminListUsers({ q }), getAdminStatus()]);
 
   return (
     <>
       <PageHeader title="Users" description={`${users.length} ${users.length === 1 ? "account" : "accounts"}${q ? " match your search" : ""}.`} />
-      <Flash notice={notice} error={error} />
 
       <div className="mb-4">
         <SearchForm action="/nemesis/users" q={q} placeholder="Search name, e-mail or phone…" isFiltered={Boolean(q)} />

@@ -3,7 +3,7 @@
 import { useFormStatus } from "react-dom";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { TrashIcon } from "@/components/icons";
+import { EyeOffIcon, MenuIcon, TrashIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 export function SubmitButton({
@@ -109,5 +109,28 @@ export function Checkbox({
         {description && <span className="block text-xs text-neutral-500">{description}</span>}
       </span>
     </label>
+  );
+}
+
+/** Pill button that flips `categories.show_in_menu` (submit button of a tiny form). */
+export function MenuToggleButton({ shown, name }: { shown: boolean; name: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      aria-pressed={shown}
+      aria-label={shown ? `Hide "${name}" from the header menu` : `Show "${name}" in the header menu`}
+      title={shown ? "Shown in the header menu – click to hide" : "Hidden from the header menu – click to show"}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-60",
+        shown
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+          : "border-neutral-300 bg-neutral-50 text-neutral-600 hover:bg-neutral-100",
+      )}
+    >
+      {pending ? <Spinner className="h-3.5 w-3.5" /> : shown ? <MenuIcon className="h-3.5 w-3.5" /> : <EyeOffIcon className="h-3.5 w-3.5" />}
+      {shown ? "Shown" : "Hidden"}
+    </button>
   );
 }

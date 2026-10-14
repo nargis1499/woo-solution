@@ -7,6 +7,8 @@ export type Category = {
   name: string;
   slug: string;
   sort_order: number;
+  /** Listed in the storefront header navigation (admin-controlled). */
+  show_in_menu: boolean;
   /** Only present in admin queries (`products(count)`). */
   product_count?: number;
 };

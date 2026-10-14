@@ -4,16 +4,16 @@ import { useActionState } from "react";
 import { updateOrder, type AdminFormState } from "@/app/nemesis/actions";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import type { Order } from "@/lib/types";
-import { FormError, FormSuccess, Label, Select } from "@/components/ui/field";
+import { Label, Select } from "@/components/ui/field";
+import { useFormToast } from "./flash-toast";
 import { SubmitButton } from "./form-bits";
 
 export function OrderStatusForm({ order }: { order: Order }) {
   const [state, formAction] = useActionState<AdminFormState, FormData>(updateOrder, null);
+  useFormToast(state);
   return (
     <form action={formAction} className="space-y-4">
       <input type="hidden" name="id" value={order.id} />
-      <FormError message={state?.error} />
-      <FormSuccess message={state?.success} />
       <div>
         <Label htmlFor="status">Order status</Label>
         <Select id="status" name="status" defaultValue={order.status} className="capitalize">

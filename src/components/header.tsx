@@ -1,21 +1,19 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { getSiteSettings } from "@/lib/site-settings";
+import { getMenuCategories } from "@/lib/menu";
 import { CartBadge } from "./cart-badge";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu, UserMenuSkeleton } from "./user-menu";
 import { BagIcon } from "./icons";
 
-const NAV = [
-  { href: "/shop", label: "Shop" },
-  { href: "/shop?category=apparel", label: "Apparel" },
-  { href: "/shop?category=accessories", label: "Accessories" },
-  { href: "/shop?category=home", label: "Home" },
-  { href: "/shop?category=electronics", label: "Electronics" },
-];
-
 export async function Header() {
-  const { store_name } = await getSiteSettings();
+  const [{ store_name }, menuCategories] = await Promise.all([getSiteSettings(), getMenuCategories()]);
+  // "Shop" is always there; the rest is whatever admins flagged as "Show in header menu".
+  const nav = [
+    { href: "/shop", label: "Shop" },
+    ...menuCategories.map((c) => ({ href: `/shop?category=${c.slug}`, label: c.name })),
+  ];
 
   return (
     <header className="sticky top-0 z-40 border-b border-neutral-200 bg-surface/90 backdrop-blur">
@@ -28,7 +26,7 @@ export async function Header() {
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <Link
               key={item.href}
               href={item.href}

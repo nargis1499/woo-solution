@@ -123,23 +123,6 @@ export function Badge({
   );
 }
 
-/** One-shot banner driven by `?notice=` / `?error=` after a redirecting action. */
-export function Flash({ notice, error }: { notice?: string; error?: string }) {
-  if (!notice && !error) return null;
-  return (
-    <div
-      role={error ? "alert" : "status"}
-      className={cn(
-        "mb-6 flex items-start gap-3 rounded-lg border px-4 py-3 text-sm animate-page-in",
-        error ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-800",
-      )}
-    >
-      <span aria-hidden className="mt-0.5">{error ? "⚠" : "✓"}</span>
-      <p>{error ?? notice}</p>
-    </div>
-  );
-}
-
 export function Section({ title, children, className, actions }: { title?: ReactNode; children: ReactNode; className?: string; actions?: ReactNode }) {
   return (
     <section className={cn("card p-5 sm:p-6", className)}>

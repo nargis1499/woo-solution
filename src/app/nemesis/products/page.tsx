@@ -6,14 +6,14 @@ import { deleteProduct } from "@/app/nemesis/actions";
 import { ButtonLink } from "@/components/ui/button";
 import { ConfirmForm, DeleteButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
-import { Badge, EmptyRow, Flash, PageHeader, TBody, THead, Table, Td, Th, Thumb, Tr } from "@/components/admin/ui";
+import { Badge, EmptyRow, PageHeader, TBody, THead, Table, Td, Th, Thumb, Tr } from "@/components/admin/ui";
 
 export const metadata: Metadata = { title: "Products" };
 
-type SearchParams = Promise<{ q?: string; category?: string; notice?: string; error?: string }>;
+type SearchParams = Promise<{ q?: string; category?: string }>;
 
 export default async function AdminProductsPage({ searchParams }: { searchParams: SearchParams }) {
-  const { q, category, notice, error } = await searchParams;
+  const { q, category } = await searchParams;
   const [products, categories] = await Promise.all([adminListProducts({ q, category }), adminListCategories()]);
 
   return (
@@ -23,7 +23,6 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
         description={`${products.length} ${products.length === 1 ? "product" : "products"}${q || category ? " match your filter" : ""}.`}
         actions={<ButtonLink href="/nemesis/products/new">+ New product</ButtonLink>}
       />
-      <Flash notice={notice} error={error} />
 
       <div className="mb-4">
         <SearchForm action="/nemesis/products" q={q} placeholder="Search name or slug…" isFiltered={Boolean(q || category)}>

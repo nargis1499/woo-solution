@@ -5,6 +5,7 @@ import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TopLoader } from "@/components/top-loader";
+import { AppToaster } from "@/components/toaster";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -27,6 +28,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <Header />
           <main className="flex-1">{children}</main>
           <Footer />
+          {/* Mounted here (not inside the animated page template) so it stays fixed to the viewport */}
+          <AppToaster />
         </ThemeProvider>
       </body>
     </html>

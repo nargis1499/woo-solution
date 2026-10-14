@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 import { requireAdmin } from "@/lib/admin/auth";
 import { AdminSidebar } from "@/components/admin/sidebar";
+import { FlashToast } from "@/components/admin/flash-toast";
 
 export const metadata: Metadata = {
   title: { default: "Dashboard", template: "%s · Admin" },
@@ -18,6 +19,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     <div className="container-page py-8">
       <Suspense fallback={<AdminShellSkeleton />}>
         <AdminGate>{children}</AdminGate>
+      </Suspense>
+      {/* turns ?notice= / ?error= redirects into toasts; useSearchParams() → needs its own Suspense boundary */}
+      <Suspense fallback={null}>
+        <FlashToast />
       </Suspense>
     </div>
   );

@@ -7,20 +7,19 @@ import { deleteOrder } from "@/app/nemesis/actions";
 import { OrderStatusBadge } from "@/components/order-status-badge";
 import { ConfirmForm, DeleteButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
-import { Badge, EmptyRow, Flash, PageHeader, Table, TBody, Td, Th, THead, Tr } from "@/components/admin/ui";
+import { Badge, EmptyRow, PageHeader, Table, TBody, Td, Th, THead, Tr } from "@/components/admin/ui";
 
 export const metadata: Metadata = { title: "Orders" };
 
-type SearchParams = Promise<{ q?: string; status?: string; notice?: string; error?: string }>;
+type SearchParams = Promise<{ q?: string; status?: string }>;
 
 export default async function AdminOrdersPage({ searchParams }: { searchParams: SearchParams }) {
-  const { q, status, notice, error } = await searchParams;
+  const { q, status } = await searchParams;
   const orders = await adminListOrders({ q, status });
 
   return (
     <>
       <PageHeader title="Orders" description={`${orders.length} ${orders.length === 1 ? "order" : "orders"}${q || status ? " match your filter" : ""}.`} />
-      <Flash notice={notice} error={error} />
 
       <div className="mb-4">
         <SearchForm action="/nemesis/orders" q={q} placeholder="Search #, name or e-mail…" isFiltered={Boolean(q || status)}>

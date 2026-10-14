@@ -3,7 +3,8 @@
 import { useActionState, useEffect, useState } from "react";
 import { saveProduct, type AdminFormState } from "@/app/nemesis/actions";
 import type { Category, Product } from "@/lib/types";
-import { Input, Label, Select, Textarea, FormError } from "@/components/ui/field";
+import { Input, Label, Select, Textarea } from "@/components/ui/field";
+import { useFormToast } from "./flash-toast";
 import { ButtonLink } from "@/components/ui/button";
 import { Checkbox, FieldError, SubmitButton } from "./form-bits";
 import { UploadIcon } from "@/components/icons";
@@ -17,6 +18,7 @@ function slugify(input: string) {
 
 export function ProductForm({ product, categories }: { product?: Product | null; categories: Category[] }) {
   const [state, formAction] = useActionState<AdminFormState, FormData>(saveProduct, null);
+  useFormToast(state);
   const v = state?.values ?? {};
   const err = state?.fieldErrors ?? {};
   const isEdit = Boolean(product);
@@ -41,7 +43,6 @@ export function ProductForm({ product, categories }: { product?: Product | null;
       <div className="space-y-6">
         <section className="card space-y-4 p-5 sm:p-6">
           <h2 className="text-base font-semibold">Details</h2>
-          <FormError message={state?.error} />
 
           <div>
             <Label htmlFor="name" required>Name</Label>

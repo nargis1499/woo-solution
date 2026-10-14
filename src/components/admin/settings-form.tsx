@@ -3,17 +3,17 @@
 import { useActionState } from "react";
 import { updateSiteSettings, type AdminFormState } from "@/app/nemesis/actions";
 import type { SiteSettings } from "@/lib/types";
-import { FormError, FormSuccess, Input, Label } from "@/components/ui/field";
+import { Input, Label } from "@/components/ui/field";
+import { useFormToast } from "./flash-toast";
 import { FieldError, SubmitButton } from "./form-bits";
 
 export function SettingsForm({ settings }: { settings: SiteSettings }) {
   const [state, formAction] = useActionState<AdminFormState, FormData>(updateSiteSettings, null);
+  useFormToast(state);
   const v = state?.values ?? {};
   const err = state?.fieldErrors ?? {};
   return (
     <form action={formAction} className="space-y-5" noValidate>
-      <FormError message={state?.error} />
-      <FormSuccess message={state?.success} />
       <div>
         <Label htmlFor="store_name" required>Site title</Label>
         <Input id="store_name" name="store_name" required maxLength={60} defaultValue={v.store_name ?? settings.store_name} aria-invalid={Boolean(err.store_name)} />

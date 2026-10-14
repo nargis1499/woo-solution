@@ -3,17 +3,17 @@
 import { useActionState } from "react";
 import { updateUser, type AdminFormState } from "@/app/nemesis/actions";
 import type { Profile } from "@/lib/types";
-import { FormError, FormSuccess, Input, Label } from "@/components/ui/field";
+import { Input, Label } from "@/components/ui/field";
+import { useFormToast } from "./flash-toast";
 import { Checkbox, SubmitButton } from "./form-bits";
 
 export function UserForm({ profile, isSelf }: { profile: Profile; isSelf: boolean }) {
   const [state, formAction] = useActionState<AdminFormState, FormData>(updateUser, null);
+  useFormToast(state);
   const v = state?.values ?? {};
   return (
     <form action={formAction} className="space-y-4">
       <input type="hidden" name="id" value={profile.id} />
-      <FormError message={state?.error} />
-      <FormSuccess message={state?.success} />
       <div>
         <Label htmlFor="full_name">Full name</Label>
         <Input id="full_name" name="full_name" maxLength={120} defaultValue={v.full_name ?? profile.full_name ?? ""} />
