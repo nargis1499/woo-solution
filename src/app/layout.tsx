@@ -7,6 +7,11 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TopLoader } from "@/components/top-loader";
 import { AppToaster } from "@/components/toaster";
 import "./globals.css";
+import { Inter } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const inter = Inter({subsets:['latin'],variable:'--font-sans'});
+
 
 export async function generateMetadata(): Promise<Metadata> {
   const { store_name, tagline } = await getSiteSettings();
@@ -19,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     // suppressHydrationWarning: next-themes sets the `class`/`style` on <html> before React hydrates
-    <html lang="en" className="h-full" suppressHydrationWarning>
+    <html lang="en" className={cn("h-full", "font-sans", inter.variable)} suppressHydrationWarning>
       <body className="flex min-h-full flex-col">
         <ThemeProvider>
           <Suspense fallback={null}>
