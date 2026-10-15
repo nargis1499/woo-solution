@@ -106,6 +106,19 @@ npm run dev
 
 Visit <http://localhost:3000>, add something to the cart, create an account and place an order. 🎉
 
+### Updating an existing checkout
+
+```bash
+# 1. stop the dev server first (Ctrl-C) – on Windows a running `next dev` locks files
+#    in node_modules and `npm install` silently leaves packages missing
+git pull
+npm install
+# 2. run any new files in supabase/migrations/ in the Supabase SQL editor (in order)
+npm run dev
+```
+
+> **"Can't resolve '@tailwindcss/typography'" (or any other package) in `globals.css`** means the install did not finish – stop the dev server, run `npm install` again (it must end without `npm ERR!`), and start `npm run dev` afresh. The dev server does not pick up packages installed while it is running.
+
 ### Admin dashboard
 
 The back office lives at **`/nemesis`** (deliberately not linked anywhere public). Access is decided by one flag in the database – `public.profiles.is_admin` – and enforced in three layers:
