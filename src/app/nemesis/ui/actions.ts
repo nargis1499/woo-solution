@@ -1,14 +1,18 @@
 "use server";
 
 import { updateTag } from "next/cache";
-import { redirect } from "next/navigation";
 import { MENU_TAG } from "@/lib/menu";
-import { MENU_ITEMS_MAX, MENU_TITLE_MAX, isMenuLocation, menuLocationLabel, menuPath, normalizeMenuUrl } from "@/lib/menu-config";
+import { MENU_ITEMS_MAX, MENU_TITLE_MAX, isMenuLocation, menuLocationLabel, normalizeMenuUrl } from "@/lib/menu-config";
 import type { MenuItemKind, MenuLocation } from "@/lib/types";
-import { UUID_RE, adminClient, bool, echo, failure, friendlyError, isRedirectError, notice, revalidateStore, str, type AdminFormState } from "@/lib/admin/form";
+import { UUID_RE, adminClient, bool, echo, friendlyError, revalidateStore, str, type AdminFormState } from "@/lib/admin/form";
 
 const KINDS: MenuItemKind[] = ["page", "category", "custom"];
 
+/**
+ * Every write ends here instead of redirecting: the storefront menus are re-tagged and the
+ * current admin page is refreshed inside the action response, so /nemesis/ui updates in place
+ * (no navigation → no loading skeleton, no re-mount, scroll position and focus are kept).
+ */
 function refreshMenus() {
   updateTag(MENU_TAG); // storefront header + footer (static shell)
   revalidateStore(); // router cache, incl. /nemesis/ui
@@ -63,9 +67,8 @@ export async function addMenuItem(_prev: AdminFormState, formData: FormData): Pr
     if (insertError) throw insertError;
 
     refreshMenus();
-    redirect(notice(menuPath(location), `"${row.title}" added to the ${label}.`));
+    return { success: `"${row.title}" added to the ${label}.` };
   } catch (e) {
-    if (isRedirectError(e)) throw e;
     return { error: friendlyError(e), values };
   }
 }
@@ -112,25 +115,25 @@ export async function updateMenuItem(_prev: AdminFormState, formData: FormData):
  * Remove (the page / category itself is untouched)
  * ────────────────────────────────────────────────────────────────────────── */
 
-export async function deleteMenuItem(formData: FormData): Promise<void> {
+export async function deleteMenuItem(formData: FormData): Promise<AdminFormState> {
   const id = str(formData, "id", 40);
-  if (!UUID_RE.test(id)) redirect(failure("/nemesis/ui", "Invalid menu item."));
-  let path = "/nemesis/ui";
+  if (!UUID_RE.test(id)) return { error: "Invalid menu item." };
   try {
     const { supabase } = await adminClient();
     const { data: item, error } = await supabase.from("menu_items").select("id, title, location").eq("id", id).maybeSingle();
     if (error) throw error;
-    if (!item) redirect(failure(path, "That menu item no longer exists."));
-    path = menuPath(item.location as MenuLocation);
+    if (!item) {
+      refreshMenus();
+      return { error: "That menu item no longer exists – the list has been refreshed." };
+    }
 
     const { error: deleteError } = await supabase.from("menu_items").delete().eq("id", id);
     if (deleteError) throw deleteError;
 
     refreshMenus();
-    redirect(notice(path, `"${item.title}" removed from the ${menuLocationLabel(item.location as MenuLocation).toLowerCase()}.`));
+    return { success: `"${item.title}" removed from the ${menuLocationLabel(item.location as MenuLocation).toLowerCase()}.` };
   } catch (e) {
-    if (isRedirectError(e)) throw e;
-    redirect(failure(path, friendlyError(e)));
+    return { error: friendlyError(e) };
   }
 }
 

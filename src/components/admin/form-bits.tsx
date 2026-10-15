@@ -18,6 +18,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
+import type { AdminFormState } from "@/lib/admin/form";
 
 export function SubmitButton({
   children,
@@ -60,7 +62,12 @@ export function DeleteButton({
   label = "Delete",
   size = "sm",
 }: {
-  action: (formData: FormData) => void | Promise<void>;
+  /**
+   * Either redirects (detail page → list, or back to the exact list page) or resolves with a
+   * form state: its message becomes a toast while the current page refreshes in place – no
+   * navigation, so the list keeps its scroll position and the page is not re-mounted.
+   */
+  action: (formData: FormData) => void | AdminFormState | Promise<void | AdminFormState>;
   id: string;
   returnTo?: string;
   title: string;
@@ -68,6 +75,7 @@ export function DeleteButton({
   label?: string;
   size?: "sm" | "default";
 }) {
+  const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function confirm() {
@@ -75,12 +83,17 @@ export function DeleteButton({
       const formData = new FormData();
       formData.set("id", id);
       if (returnTo) formData.set("return_to", returnTo);
-      await action(formData);
+      const result = await action(formData);
+      if (result && typeof result === "object") {
+        if (result.error) toast.error(result.error);
+        else if (result.success) toast.success(result.success);
+      }
+      setOpen(false);
     });
   }
 
   return (
-    <AlertDialogTrigger>
+    <AlertDialogTrigger isOpen={open} onOpenChange={setOpen}>
       <Button variant="destructive" size={size} aria-label={label}>
         <Trash2Icon />
         {label}

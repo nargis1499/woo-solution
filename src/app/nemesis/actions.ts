@@ -233,6 +233,9 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
 
     updateTag(MENU_TAG); // menu items that link to this category follow its slug
     revalidateStore();
+    // The quick-add form on the list page stays where it is (the list refreshes in place);
+    // the edit page goes back to the list.
+    if (!isEdit && bool(formData, "stay")) return { success: `"${name}" created.` };
     redirect(notice("/nemesis/categories", isEdit ? `"${name}" updated.` : `"${name}" created.`));
   } catch (e) {
     if (isRedirectError(e)) throw e;
@@ -268,14 +271,26 @@ export async function reorderCategories(ids: string[]): Promise<{ error?: string
 }
 
 /** Show / hide a category in the storefront header menu (one click from the list). */
-export async function deleteCategory(formData: FormData): Promise<void> {
+/**
+ * From the list (no `return_to`) the row disappears in place and the message is a toast;
+ * from the detail page (`return_to`) it redirects back to the list.
+ */
+export async function deleteCategory(formData: FormData): Promise<AdminFormState> {
+  const back = str(formData, "return_to", 600) ? returnTo(formData, "/nemesis/categories") : null;
   const id = str(formData, "id", 40);
-  if (!UUID_RE.test(id)) redirect(failure("/nemesis/categories", "Invalid category id."));
+  if (!UUID_RE.test(id)) {
+    if (back) redirect(failure(back, "Invalid category id."));
+    return { error: "Invalid category id." };
+  }
   try {
     const { supabase } = await adminClient();
     const { data: category, error } = await supabase.from("categories").select("name").eq("id", id).maybeSingle();
     if (error) throw error;
-    if (!category) redirect(failure("/nemesis/categories", "Category not found."));
+    if (!category) {
+      if (back) redirect(failure(back, "Category not found."));
+      revalidateStore();
+      return { error: "That category no longer exists – the list has been refreshed." };
+    }
 
     // products.category_id is `on delete set null` → products survive, uncategorised
     const { error: delError } = await supabase.from("categories").delete().eq("id", id);
@@ -283,10 +298,13 @@ export async function deleteCategory(formData: FormData): Promise<void> {
 
     updateTag(MENU_TAG);
     revalidateStore();
-    redirect(notice("/nemesis/categories", `"${category.name}" deleted. Its products are now uncategorised.`));
+    const message = `"${category.name}" deleted. Its products are now uncategorised.`;
+    if (back) redirect(notice(back, message));
+    return { success: message };
   } catch (e) {
     if (isRedirectError(e)) throw e;
-    redirect(failure("/nemesis/categories", friendlyError(e)));
+    if (back) redirect(failure(back, friendlyError(e)));
+    return { error: friendlyError(e) };
   }
 }
 

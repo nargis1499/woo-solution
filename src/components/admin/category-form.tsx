@@ -22,9 +22,21 @@ export function CategoryForm({ category, compact }: { category?: Category | null
   const [slug, setSlug] = useState(v.slug ?? category?.slug ?? "");
   const prefix = compact ? "new-" : "";
 
+  // The quick-add form stays on the list page: once an add succeeded, React resets the
+  // uncontrolled inputs and the controlled slug starts over here (state keyed by the result).
+  const [seen, setSeen] = useState<AdminFormState>(state);
+  if (seen !== state) {
+    setSeen(state);
+    if (state?.success) {
+      setSlug("");
+      setSlugTouched(false);
+    }
+  }
+
   return (
     <form action={formAction} className="space-y-4" noValidate>
       {category && <input type="hidden" name="id" value={category.id} />}
+      {compact && !category && <input type="hidden" name="stay" value="true" />}
       <div className={compact ? "grid gap-3 sm:grid-cols-2" : "space-y-4"}>
         <Field data-invalid={Boolean(err.name) || undefined}>
           <FieldLabel htmlFor={`${prefix}name`}>Name</FieldLabel>
