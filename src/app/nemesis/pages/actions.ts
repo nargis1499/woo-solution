@@ -19,6 +19,7 @@ import {
   type AdminFormState,
 } from "@/lib/admin/form";
 import { PAGES_TAG, pageTag } from "@/lib/data/pages";
+import { MENU_TAG } from "@/lib/menu";
 import { isUuid } from "@/lib/media/shared";
 import {
   CANONICAL_URL_MAX,
@@ -54,6 +55,7 @@ const INTENTS: Intent[] = ["draft", "publish", "update", "unpublish"];
 /** Everything that may render a page or its listing – old and new slug included. */
 function revalidatePages(slugs: (string | null | undefined)[]) {
   updateTag(PAGES_TAG);
+  updateTag(MENU_TAG); // header / footer items that link to a page follow its slug and published state
   for (const slug of new Set(slugs.filter((s): s is string => Boolean(s)))) updateTag(pageTag(slug));
   revalidatePath(LIST_PATH);
   revalidateStore(); // storefront router cache + sitemap

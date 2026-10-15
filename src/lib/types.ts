@@ -7,10 +7,30 @@ export type Category = {
   name: string;
   slug: string;
   sort_order: number;
-  /** Listed in the storefront header navigation (admin-controlled). */
-  show_in_menu: boolean;
   /** Only present in admin queries (`products(count)`). */
   product_count?: number;
+};
+
+/* ── Menus (UI → Menu) ───────────────────────────────────────────────────── */
+
+export type MenuLocation = "header" | "footer";
+export type MenuItemKind = "page" | "category" | "custom";
+
+export type MenuItem = {
+  id: string;
+  location: MenuLocation;
+  kind: MenuItemKind;
+  /** Display text – defaults to the page / category name, editable afterwards. */
+  title: string;
+  page_id: string | null;
+  category_id: string | null;
+  /** Custom links only: `/path`, `https://…`, `mailto:` or `tel:`. */
+  url: string | null;
+  open_in_new_tab: boolean;
+  sort_order: number;
+  /** Embedded targets (admin queries). A draft page comes back with `status: "draft"`. */
+  page?: { id: string; title: string; slug: string; status: PageStatus } | null;
+  category?: { id: string; name: string; slug: string } | null;
 };
 
 export type Product = {

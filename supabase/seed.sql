@@ -10,6 +10,14 @@ insert into public.categories (name, slug, sort_order) values
   ('Electronics', 'electronics', 4)
 on conflict (slug) do update set name = excluded.name, sort_order = excluded.sort_order;
 
+-- Demo header menu: the seeded categories after "Shop" (menus are managed under UI → Menu).
+insert into public.menu_items (location, kind, title, category_id, sort_order)
+select 'header', 'category', c.name, c.id,
+       (select coalesce(max(sort_order), -1) from public.menu_items where location = 'header') + c.sort_order
+from public.categories c
+where c.slug in ('apparel', 'accessories', 'home', 'electronics')
+  and not exists (select 1 from public.menu_items m where m.location = 'header' and m.category_id = c.id);
+
 insert into public.products
   (category_id, name, slug, description, price_cents, compare_at_price_cents, image_url, stock, is_featured)
 values

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { adminListCategories } from "@/lib/admin/data";
-import { deleteCategory, reorderCategories, toggleCategoryMenu } from "@/app/nemesis/actions";
+import { deleteCategory, reorderCategories } from "@/app/nemesis/actions";
 import { CategoryForm } from "@/components/admin/category-form";
-import { DeleteButton, MenuToggle } from "@/components/admin/form-bits";
+import { DeleteButton } from "@/components/admin/form-bits";
 import { DataTable, EmptyState, PageHeader, Section } from "@/components/admin/ui";
 import { buttonVariants } from "@/components/ui/button-variants";
 
@@ -14,7 +14,18 @@ export default async function AdminCategoriesPage() {
 
   return (
     <>
-      <PageHeader title="Categories" description="Group products so customers can browse by type. Drag a row to change the order – the storefront menu follows it – and use the switch to show or hide a category in the header." />
+      <PageHeader
+        title="Categories"
+        description={
+          <>
+            Group products so customers can browse by type. Drag a row to change the order of the shop&apos;s category filter. Which categories appear in the storefront navigation is decided under{" "}
+            <Link href="/nemesis/ui" className="font-medium text-foreground underline underline-offset-4">
+              UI → Menu
+            </Link>
+            .
+          </>
+        }
+      />
 
       <Section title="Add a category" className="mb-6">
         <CategoryForm compact />
@@ -29,7 +40,6 @@ export default async function AdminCategoriesPage() {
             { id: "name", label: "Name", className: "pl-4" },
             { id: "slug", label: "Slug", cellClassName: "text-muted-foreground" },
             { id: "products", label: "Products", align: "right", cellClassName: "tabular-nums" },
-            { id: "menu", label: "Header menu" },
             { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
           ]}
           reorder={{ action: reorderCategories, savedMessage: "Category order saved." }}
@@ -46,7 +56,6 @@ export default async function AdminCategoriesPage() {
               <Link key="p" href={`/nemesis/products?category=${c.id}`} className="hover:underline">
                 {c.product_count ?? 0}
               </Link>,
-              <MenuToggle key="m" id={c.id} shown={c.show_in_menu} name={c.name} action={toggleCategoryMenu} />,
               <div key="a" className="flex items-center justify-end gap-2">
                 <Link href={`/nemesis/categories/${c.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
                   Edit

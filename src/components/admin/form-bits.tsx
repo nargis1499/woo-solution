@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useOptimistic, useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 import type { ReactNode } from "react";
 import { Trash2Icon } from "lucide-react";
@@ -25,6 +25,7 @@ export function SubmitButton({
   variant = "default",
   className,
   pending: pendingProp,
+  disabled,
 }: {
   children: ReactNode;
   pendingLabel?: string;
@@ -32,11 +33,13 @@ export function SubmitButton({
   className?: string;
   /** Forms that dispatch their action manually (no `<form action>`) pass `isPending` from useActionState here. */
   pending?: boolean;
+  /** Nothing to submit yet (e.g. an empty picker). */
+  disabled?: boolean;
 }) {
   const status = useFormStatus();
   const pending = pendingProp ?? status.pending;
   return (
-    <Button type="submit" variant={variant} isPending={pending} className={className} aria-busy={pending}>
+    <Button type="submit" variant={variant} isPending={pending} isDisabled={disabled} className={className} aria-busy={pending}>
       {pending && <Spinner />}
       {pending ? pendingLabel : children}
     </Button>
@@ -125,28 +128,6 @@ export function CheckboxField({
         </FieldContent>
       </Field>
     </FieldLabel>
-  );
-}
-
-/** Switch that flips `categories.show_in_menu` through a server action; optimistic until the page refreshes. */
-export function MenuToggle({ id, shown, name, action }: { id: string; shown: boolean; name: string; action: (formData: FormData) => void | Promise<void> }) {
-  const [pending, startTransition] = useTransition();
-  const [optimistic, setOptimistic] = useOptimistic(shown);
-
-  return (
-    <Switch
-      isSelected={optimistic}
-      isDisabled={pending}
-      aria-label={optimistic ? `Hide "${name}" from the header menu` : `Show "${name}" in the header menu`}
-      onChange={(next) => {
-        startTransition(async () => {
-          setOptimistic(next);
-          const formData = new FormData();
-          formData.set("id", id);
-          await action(formData);
-        });
-      }}
-    />
   );
 }
 

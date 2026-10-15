@@ -12,7 +12,7 @@ A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Comp
 | Checkout | Shipping form → atomic `place_order()` Postgres function (prices re-read from DB, stock locked & decremented, order number generated) |
 | Orders | `/orders` history and `/orders/[id]` confirmation page, protected by Row Level Security |
 | Security | RLS on every table, `SECURITY DEFINER` checkout RPC only executable by `authenticated`, JWT verified with `getClaims()` |
-| Admin | `/nemesis` dashboard for users with `profiles.is_admin = true`: products (with image upload to Supabase Storage), categories, orders, users/roles and site settings – see [Admin dashboard](#admin-dashboard) |
+| Admin | `/nemesis` dashboard for users with `profiles.is_admin = true`: products (with image upload to Supabase Storage), categories, orders, users/roles, header / footer menus and site settings – see [Admin dashboard](#admin-dashboard) |
 | UI | shadcn/ui components built on **React Aria** (accessible menus, dialogs, selects, tables, sheets, switches …) for both the storefront and the admin dashboard; see [UI toolkit](#ui-toolkit) |
 | UX | Dark mode (system / light / dark, remembered), route-change progress bar, page transitions, toast notifications, mobile navigation sheet |
 
@@ -41,12 +41,13 @@ cp .env.example .env.local
    1. [`supabase/migrations/20261014000000_init.sql`](supabase/migrations/20261014000000_init.sql) – schema, RLS, `place_order()`
    2. [`supabase/migrations/20261015000000_google_auth.sql`](supabase/migrations/20261015000000_google_auth.sql) – `profiles.avatar_url` + Google-aware profile trigger (safe to run on an existing project)
    3. [`supabase/migrations/20261016000000_admin.sql`](supabase/migrations/20261016000000_admin.sql) – `profiles.is_admin`, admin RLS policies, `site_settings`, `admin_stats()` / `admin_delete_user()` and the (now legacy) `product-images` Storage bucket (safe to run on an existing project)
-   4. [`supabase/migrations/20261017000000_category_menu.sql`](supabase/migrations/20261017000000_category_menu.sql) – `categories.show_in_menu` (header-menu visibility toggle; existing categories stay visible)
+   4. [`supabase/migrations/20261017000000_category_menu.sql`](supabase/migrations/20261017000000_category_menu.sql) – `categories.show_in_menu` (the original header-menu toggle; superseded by migration 10, still required in between)
    5. [`supabase/migrations/20261018000000_settings_tabs.sql`](supabase/migrations/20261018000000_settings_tabs.sql) – settings tabs: contact links, favicon & SEO columns on `site_settings`, the global `manage_stock` switch (`stock_managed()`, honoured by `place_order()` and the order-status trigger) and the (now legacy) `site-media` Storage bucket (safe to run on an existing project)
    6. [`supabase/migrations/20261019000000_media_library.sql`](supabase/migrations/20261019000000_media_library.sql) – **Media Library**: `media`, `media_folders`, `product_media` (galleries), `products.image_media_id`, `media_usage()` / `media_totals()`, RLS and the public `media` Storage bucket (5 MB per file, admin-only writes). Safe to run on an existing project – current product images keep working as plain URLs
    7. [`supabase/migrations/20261020000000_single_media_bucket.sql`](supabase/migrations/20261020000000_single_media_bucket.sql) – **one bucket for everything**: `site_settings.favicon_media_id` / `seo_og_image_media_id` (favicon and share image become Media Library references), `media_usage()` also reports *site favicon* / *share image*, and admins may read / delete rows in `storage.buckets` so the legacy `product-images` and `site-media` buckets can be removed from the dashboard. Safe to run on an existing project
    8. [`supabase/migrations/20261021000000_pages.sql`](supabase/migrations/20261021000000_pages.sql) – **Pages**: `pages` (title, slug, rich-text content, featured image, draft / published, per-page SEO + Open Graph fields, author), `tags`, `page_tags`, `page_media` (images used inside the content), RLS (everyone reads published pages, admins manage everything) and `media_usage()` reporting *page image* / *page share image* / *page content*
    9. [`supabase/migrations/20261022000000_pages_image_urls.sql`](supabase/migrations/20261022000000_pages_image_urls.sql) – `pages.featured_image_url` / `og_image_url` so the featured and share image of a page can also be an external URL (*Use a URL*)
+   10. [`supabase/migrations/20261023000000_menus.sql`](supabase/migrations/20261023000000_menus.sql) – **Menus**: `menu_items` (header / footer links to pages, categories or custom URLs, with their own text, new-tab flag and order) + RLS. Carries the current navigation over ("Shop" + the categories that were shown in the header; the footer's Shop / Cart / My orders) and **drops `categories.show_in_menu`** – menus are managed under **UI → Menu** from now on. Safe to run on an existing project
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -140,10 +141,11 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Dashboard | Revenue / order / product / customer stats, orders by status, recent orders, low-stock list |
 | Pages | Static content pages (About, Contact, Privacy policy, FAQ …) with a rich-text editor, featured image, tags, draft / published workflow, preview and per-page SEO – see [Pages](#pages) below. Each published page is live at `/<slug>` |
 | Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **main image** + **gallery** picked from the Media Library (upload a new file or select an existing one – see [Media](#media)), or paste any image URL |
-| Categories | Create, rename, delete (products become uncategorised); **drag the handle** (mouse, touch long-press, or ↑/↓ on a focused handle) to reorder – the storefront menu, shop filter and sitemap follow the saved order; **Show in header menu** toggle decides which categories appear in the storefront navigation |
+| Categories | Create, rename, delete (products become uncategorised); **drag the handle** (mouse, touch long-press, or ↑/↓ on a focused handle) to reorder – the shop's category filter and the sitemap follow the saved order. Which categories appear in the storefront navigation is decided under **UI → Menu** |
 | Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
 | Media | The Media Library – see [Media](#media) below: uploads, grid / list browsing, search, filters, folders, trash, bulk actions, image optimisation / WebP conversion / editing, alt text, usage tracking and the reusable **media picker** |
+| UI | **Menu** tab – see [Menus](#menus) below: build the storefront **header** and **footer** navigation from pages, categories and custom links, drag to reorder, edit link text, open in a new tab |
 | Settings | Three tabs – see [Settings](#settings) below: **General** (site title, tagline, support e-mail, WhatsApp, Telegram, favicon), **SEO** (search-engine visibility, site URL, title / meta description, share image, verification codes, X handle) and **WooCommerce** (global stock management switch) |
 
 The **Pages, Products, Orders and Users** lists are paginated: `?page=` + a **per-page** selector (10 / 20 / 50 / 100, top right of the table, `?per=`, remembered per admin in a cookie). Changing the size keeps the first visible row on screen, a new filter starts on page 1, a page that no longer exists redirects to the last one, and view / edit / delete bring you back to the exact page, size and filter you came from.
@@ -151,6 +153,16 @@ The **Pages, Products, Orders and Users** lists are paginated: `?page=` + a **pe
 **Bulk delete** – the same lists have a checkbox column. Tick rows (the header checkbox selects the whole page, Shift+click selects a range, Space toggles the focused row) and a floating **N selected → Delete** bar appears; confirming removes them in one go and reports the result as a toast. Rows are links as well: click anywhere on a row to open it while nothing is selected – once something is ticked, clicking a row toggles it instead. Your own account can be opened but never selected, and `deleteUsers` additionally skips the caller's id on the server.
 
 Every action reports back through a toast notification (bottom-right corner of the dashboard, [sonner](https://sonner.emilkowal.ski/)) – successes in green, failures in red – while validation errors stay next to the fields they belong to.
+
+#### Menus
+
+`/nemesis/ui` → **Menu** manages the storefront navigation – **UI** sits directly above **Settings** in the sidebar and opens on its first tab, *Menu*.
+
+- **Location** – switch between the **Header menu** (top of every page, also the mobile hamburger sheet) and the **Footer menu** (`?location=footer`). Each location is its own list.
+- **Add to menu** – pick a **page** (drafts are listed too, but stay hidden in the storefront until published), a **category**, or enter a **custom link** (link text + URL; a path on this site such as `/about`, a full `https://` address, `mailto:` or `tel:`; `javascript:` and friends are rejected) with an optional *open in a new tab*. Pages and categories already in the menu are left out of the pickers. New items join the end of the list.
+- **Order** – drag the handle (mouse, touch long-press, or ↑ / ↓ on a focused handle) exactly like the categories table; the order is saved on drop ("Menu order saved.").
+- **Edit / Remove** – change the link text (independent of the page / category name), the URL of a custom link and the new-tab flag; removing an entry never deletes the page or category behind it.
+- Everything is live immediately: header and footer are part of the static shell, cached with a tag that every menu, page and category write invalidates. Deleting a page or category also removes its menu entries (foreign keys), renaming a page changes its link target automatically.
 
 #### Settings
 
@@ -208,7 +220,8 @@ woo-solution/
 │   ├── migrations/20261014000000_init.sql   # schema, RLS, triggers, place_order() RPC
 │   ├── migrations/20261015000000_google_auth.sql
 │   ├── migrations/20261016000000_admin.sql  # is_admin flag, admin RLS, site_settings
-│   ├── migrations/20261017000000_category_menu.sql  # categories.show_in_menu
+│   ├── migrations/20261017000000_category_menu.sql  # categories.show_in_menu (dropped again by …_menus.sql)
+│   ├── migrations/20261023000000_menus.sql  # menu_items: header / footer navigation (UI → Menu)
 │   ├── migrations/20261018000000_settings_tabs.sql  # contact/SEO/stock settings, stock_managed()
 │   ├── migrations/20261019000000_media_library.sql  # media library tables, galleries, media bucket
 │   ├── migrations/20261020000000_single_media_bucket.sql  # favicon/share image as media refs, legacy-bucket cleanup
@@ -244,13 +257,14 @@ woo-solution/
 │   │   │   └── pages/                       # page form, Tiptap rich-text editor, tag input, SEO panel, status select
 │   │   ├── page-article.tsx                 # storefront template for CMS pages (also used by the admin preview)
 │   │   ├── data-grid.tsx, page-breadcrumbs.tsx  # client wrappers around the React Aria Table (selection, bulk bar, dnd-kit row reordering) / Breadcrumbs
-│   │   └── header.tsx, mobile-nav.tsx, user-menu.tsx, cart-*.tsx, product-*.tsx, checkout-form.tsx …
+│   │   └── header.tsx, footer.tsx, nav-link.tsx, mobile-nav.tsx, user-menu.tsx, cart-*.tsx, product-*.tsx, checkout-form.tsx …
 │   ├── hooks/use-mobile.ts
 │   └── lib/
 │       ├── admin/{auth,data,form,list-params,pagination,constants}.ts
 │       ├── pages/{shared,sanitize}.ts       # slug rules, SEO helpers, HTML sanitiser for page content
 │       ├── media/{shared,server}.ts         # media URLs / renditions, upload validation
-│       ├── site-settings.ts, menu.ts        # cached store settings / header categories (tag-invalidated)
+│       ├── site-settings.ts, menu.ts        # cached store settings / header + footer menus (tag-invalidated)
+│       ├── menu-config.ts                   # menu locations, URL rules, href resolution (shared by storefront, admin and actions)
 │       ├── seo.ts                           # metadata, robots/sitemap entries, JSON-LD built from the SEO tab
 │       ├── image-hosts.ts                   # next/image allow-list
 │       ├── supabase/{server,proxy}.ts       # Supabase clients (server components / actions, proxy)
@@ -316,6 +330,7 @@ The project uses Next.js 16's **Cache Components** (`cacheComponents: true`). Ev
 | Store name / tagline / contact links / favicon | `/nemesis/settings` → **General** (stored in `site_settings`; `NEXT_PUBLIC_STORE_NAME` is only the fallback) |
 | Search engine visibility, meta description, share image, verification codes, sitemap | `/nemesis/settings` → **SEO** (`/robots.txt` and `/sitemap.xml` are generated from it) |
 | Stock management on/off | `/nemesis/settings` → **WooCommerce** (global; `public.stock_managed()` in SQL) |
+| Header / footer navigation links | `/nemesis/ui` → **Menu** (`menu_items`; the storefront never hard-codes a link) |
 | Products / categories | `/nemesis/products` and `/nemesis/categories` (or the Supabase Table Editor). *Draft* products are hidden from the shop, *Featured* ones show on the home page |
 | Product images & files | `/nemesis/media` (Media Library, Storage bucket `media`) – pick them on the product form, or paste any public URL; allow-listed hosts for remote images live in `src/lib/image-hosts.ts` |
 | AI alt text | Set `OPENAI_API_KEY` (and optionally `OPENAI_ALT_TEXT_MODEL`) in `.env.local` – a *Suggest with AI* button appears next to the alt text in the media detail dialog |

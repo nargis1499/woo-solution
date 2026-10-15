@@ -7,7 +7,7 @@ import { LinkButton } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { useFormToast } from "./flash-toast";
-import { CheckboxField, SubmitButton } from "./form-bits";
+import { SubmitButton } from "./form-bits";
 
 function slugify(input: string) {
   return input.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -46,21 +46,13 @@ export function CategoryForm({ category, compact }: { category?: Category | null
           <FieldError>{err.slug}</FieldError>
         </Field>
       </div>
-      <div className={compact ? "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" : "space-y-4"}>
-        <CheckboxField
-          id={`${prefix}show_in_menu`}
-          name="show_in_menu"
-          label="Show in header menu"
-          defaultChecked={state?.values ? v.show_in_menu === "on" : (category?.show_in_menu ?? true)}
-        />
-        <div className="flex gap-2">
-          <SubmitButton pendingLabel={category ? "Saving…" : "Adding…"}>{category ? "Save changes" : "Add category"}</SubmitButton>
-          {!compact && (
-            <LinkButton href="/nemesis/categories" variant="outline">
-              Cancel
-            </LinkButton>
-          )}
-        </div>
+      <div className={compact ? "flex justify-end gap-2" : "flex gap-2"}>
+        <SubmitButton pendingLabel={category ? "Saving…" : "Adding…"}>{category ? "Save changes" : "Add category"}</SubmitButton>
+        {!compact && (
+          <LinkButton href="/nemesis/categories" variant="outline">
+            Cancel
+          </LinkButton>
+        )}
       </div>
     </form>
   );

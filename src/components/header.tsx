@@ -2,20 +2,17 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ShoppingBag } from "lucide-react";
 import { getSiteSettings } from "@/lib/site-settings";
-import { getMenuCategories } from "@/lib/menu";
+import { getMenu } from "@/lib/menu";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { CartBadge } from "./cart-badge";
 import { MobileNav } from "./mobile-nav";
+import { NavLink } from "./nav-link";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu, UserMenuSkeleton } from "./user-menu";
 
 export async function Header() {
-  const [{ store_name }, menuCategories] = await Promise.all([getSiteSettings(), getMenuCategories()]);
-  // "Shop" is always there; the rest is whatever admins flagged as "Show in header menu".
-  const nav = [
-    { href: "/shop", label: "Shop" },
-    ...menuCategories.map((c) => ({ href: `/shop?category=${c.slug}`, label: c.name })),
-  ];
+  // The links are whatever admins put together under UI → Menu → Header menu.
+  const [{ store_name }, nav] = await Promise.all([getSiteSettings(), getMenu("header")]);
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
@@ -29,13 +26,13 @@ export async function Header() {
           <span className="truncate">{store_name}</span>
         </Link>
 
-        <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
-          {nav.map((item) => (
-            <Link key={item.href} href={item.href} className={buttonVariants({ variant: "ghost", size: "sm" })}>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        {nav.length > 0 && (
+          <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
+            {nav.map((item) => (
+              <NavLink key={item.id} item={item} className={buttonVariants({ variant: "ghost", size: "sm" })} />
+            ))}
+          </nav>
+        )}
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {/* Reads the auth cookie → streams in behind Suspense */}

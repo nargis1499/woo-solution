@@ -13,7 +13,7 @@ export async function getCategories(): Promise<Category[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("categories")
-    .select("id, name, slug, sort_order, show_in_menu")
+    .select("id, name, slug, sort_order")
     .order("sort_order", { ascending: true })
     .order("name", { ascending: true });
 

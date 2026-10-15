@@ -7,7 +7,7 @@ import { pageCount } from "@/lib/admin/pagination";
 import { normaliseSiteSettings } from "@/lib/site-settings";
 import { PAGE_COLUMNS, PAGE_DETAIL_COLUMNS, withTags } from "@/lib/data/pages";
 import type { PageSort } from "@/lib/pages/shared";
-import type { AdminStats, Category, MediaRef, Order, OrderStatus, Page, PageStatus, Product, Profile, SettingsMedia, SiteSettingsRow, Tag } from "@/lib/types";
+import type { AdminStats, Category, MediaRef, MenuItem, MenuLocation, Order, OrderStatus, Page, PageStatus, Product, Profile, SettingsMedia, SiteSettingsRow, Tag } from "@/lib/types";
 
 /*
  * Admin read models. Every helper calls `requireAdmin()` first (cheap – the
@@ -202,7 +202,7 @@ export async function adminListCategories(): Promise<Category[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("categories")
-    .select("id, name, slug, sort_order, show_in_menu, products(count)")
+    .select("id, name, slug, sort_order, products(count)")
     .order("sort_order", { ascending: true })
     .order("name", { ascending: true });
   if (error) throw new Error(`Failed to load categories: ${error.message}`);
@@ -219,7 +219,7 @@ export async function adminGetCategory(id: string): Promise<Category | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("categories")
-    .select("id, name, slug, sort_order, show_in_menu, products(count)")
+    .select("id, name, slug, sort_order, products(count)")
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(`Failed to load category: ${error.message}`);
@@ -393,3 +393,37 @@ export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migra
   };
 }
 
+
+/* ── Menus (UI → Menu) ───────────────────────────────────────────────────── */
+
+export const MENU_ITEM_COLUMNS = "id, location, kind, title, page_id, category_id, url, open_in_new_tab, sort_order, page:pages(id, title, slug, status), category:categories(id, name, slug)";
+
+/** `menu_items` is missing until migration 20261023000000_menus.sql has run. */
+export function isMissingMenuSchema(e: unknown): boolean {
+  const message = e instanceof Error ? e.message : String(e ?? "");
+  return /menu_items/i.test(message) && /does not exist|schema cache|Could not find/i.test(message);
+}
+
+export async function adminListMenuItems(location: MenuLocation): Promise<MenuItem[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("menu_items")
+    .select(MENU_ITEM_COLUMNS)
+    .eq("location", location)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`Failed to load menu: ${error.message}`);
+  return (data ?? []) as unknown as MenuItem[];
+}
+
+export type PageOption = { id: string; title: string; slug: string; status: PageStatus };
+
+/** Every page (drafts included – they are listed but only shown in the storefront once published). */
+export async function adminListPageOptions(): Promise<PageOption[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("pages").select("id, title, slug, status").order("title", { ascending: true }).limit(500);
+  if (error) throw new Error(`Failed to load pages: ${error.message}`);
+  return (data ?? []) as PageOption[];
+}

@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { MenuIcon, ShoppingBag } from "lucide-react";
 import { Link } from "react-aria-components";
+import type { MenuLink } from "@/lib/menu";
 import { Button } from "@/components/ui/button";
 import { SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { cn } from "@/lib/utils";
 
 /** Hamburger menu for small screens: the main navigation inside a slide-over sheet. */
-export function MobileNav({ items, storeName }: { items: { href: string; label: string }[]; storeName: string }) {
+export function MobileNav({ items, storeName }: { items: MenuLink[]; storeName: string }) {
   const [open, setOpen] = useState(false);
   return (
     <SheetTrigger isOpen={open} onOpenChange={setOpen}>
@@ -25,18 +26,22 @@ export function MobileNav({ items, storeName }: { items: { href: string; label: 
             {storeName}
           </SheetTitle>
         </SheetHeader>
-        <nav className="flex flex-col gap-1 px-2" aria-label="Main">
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onPress={() => setOpen(false)}
-              className={cn(buttonVariants({ variant: "ghost", size: "lg" }), "justify-start text-base")}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        {items.length > 0 && (
+          <nav className="flex flex-col gap-1 px-2" aria-label="Main">
+            {items.map((item) => (
+              <Link
+                key={item.id}
+                href={item.href}
+                target={item.newTab ? "_blank" : undefined}
+                rel={item.newTab || item.external ? "noreferrer" : undefined}
+                onPress={() => setOpen(false)}
+                className={cn(buttonVariants({ variant: "ghost", size: "lg" }), "justify-start text-base")}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        )}
       </SheetContent>
     </SheetTrigger>
   );

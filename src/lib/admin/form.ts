@@ -60,6 +60,8 @@ export function friendlyError(e: unknown): string {
     return "The Media Library tables are missing – run supabase/migrations/20261019000000_media_library.sql in the Supabase SQL Editor, then try again.";
   if (/relation "?(public\.)?(pages|tags|page_tags|page_media)"? does not exist|(pages|page_tags|page_media|tags).*schema cache/i.test(message))
     return "The Pages tables are missing – run supabase/migrations/20261021000000_pages.sql in the Supabase SQL Editor, then try again.";
+  if (/menu_items/i.test(message) && /does not exist|schema cache|Could not find/i.test(message))
+    return "The menu table is missing – run supabase/migrations/20261023000000_menus.sql in the Supabase SQL Editor, then try again.";
   return message || "Something went wrong. Please try again.";
 }
 

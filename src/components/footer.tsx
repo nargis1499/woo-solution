@@ -1,8 +1,9 @@
-import Link from "next/link";
 import { cacheLife } from "next/cache";
 import { MailIcon, MessageCircleIcon, SendIcon } from "lucide-react";
+import { getMenu } from "@/lib/menu";
 import { getSiteSettings, telegramHref, whatsappHref } from "@/lib/site-settings";
 import { Separator } from "@/components/ui/separator";
+import { NavLink } from "./nav-link";
 
 /** Current year, cached per day so the static shell can be prerendered (Cache Components forbid bare `new Date()`). */
 async function copyrightYear() {
@@ -12,7 +13,8 @@ async function copyrightYear() {
 }
 
 export async function Footer() {
-  const [{ store_name, tagline, support_email, whatsapp, telegram }, year] = await Promise.all([getSiteSettings(), copyrightYear()]);
+  // Footer links come from UI → Menu → Footer menu.
+  const [{ store_name, tagline, support_email, whatsapp, telegram }, nav, year] = await Promise.all([getSiteSettings(), getMenu("footer"), copyrightYear()]);
   const contacts = [
     support_email && { label: support_email, href: `mailto:${support_email}`, icon: MailIcon, title: "E-mail" },
     whatsappHref(whatsapp) && { label: "WhatsApp", href: whatsappHref(whatsapp)!, icon: MessageCircleIcon, title: `WhatsApp +${whatsapp!.replace(/\D/g, "")}` },
@@ -46,11 +48,13 @@ export async function Footer() {
             </ul>
           )}
         </div>
-        <nav className="flex gap-6" aria-label="Footer">
-          <Link href="/shop" className="hover:text-foreground">Shop</Link>
-          <Link href="/cart" className="hover:text-foreground">Cart</Link>
-          <Link href="/orders" className="hover:text-foreground">My orders</Link>
-        </nav>
+        {nav.length > 0 && (
+          <nav className="flex flex-wrap gap-x-6 gap-y-2 sm:max-w-sm sm:justify-end" aria-label="Footer">
+            {nav.map((item) => (
+              <NavLink key={item.id} item={item} className="hover:text-foreground" />
+            ))}
+          </nav>
+        )}
       </div>
       <Separator />
       <div className="container-page py-4 text-xs text-muted-foreground">

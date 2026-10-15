@@ -211,7 +211,6 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
 
   const name = str(formData, "name", 100);
   const slug = slugify(str(formData, "slug", 100) || name);
-  const showInMenu = bool(formData, "show_in_menu");
 
   const fieldErrors: Record<string, string> = {};
   if (!name) fieldErrors.name = "Name is required.";
@@ -220,7 +219,7 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
 
   try {
     const { supabase } = await adminClient();
-    const row = { name, slug, show_in_menu: showInMenu };
+    const row = { name, slug };
     let result;
     if (isEdit) {
       result = await supabase.from("categories").update(row).eq("id", id).select("id").single();
@@ -232,7 +231,7 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
     }
     if (result.error) throw result.error;
 
-    updateTag(MENU_TAG); // header navigation
+    updateTag(MENU_TAG); // menu items that link to this category follow its slug
     revalidateStore();
     redirect(notice("/nemesis/categories", isEdit ? `"${name}" updated.` : `"${name}" created.`));
   } catch (e) {
@@ -261,8 +260,7 @@ export async function reorderCategories(ids: string[]): Promise<{ error?: string
     const failed = results.find((r) => r.error);
     if (failed?.error) throw failed.error;
 
-    updateTag(MENU_TAG); // header navigation
-    revalidateStore(); // also refreshes /nemesis/categories (revalidatePath("/", "layout"))
+    revalidateStore(); // shop filter + sitemap; also refreshes /nemesis/categories (revalidatePath("/", "layout"))
     return {};
   } catch (e) {
     return { error: friendlyError(e) };
@@ -270,28 +268,6 @@ export async function reorderCategories(ids: string[]): Promise<{ error?: string
 }
 
 /** Show / hide a category in the storefront header menu (one click from the list). */
-export async function toggleCategoryMenu(formData: FormData): Promise<void> {
-  const id = str(formData, "id", 40);
-  if (!UUID_RE.test(id)) redirect(failure("/nemesis/categories", "Invalid category id."));
-  try {
-    const { supabase } = await adminClient();
-    const { data: category, error } = await supabase.from("categories").select("name, show_in_menu").eq("id", id).maybeSingle();
-    if (error) throw error;
-    if (!category) redirect(failure("/nemesis/categories", "Category not found."));
-
-    const show = !category.show_in_menu;
-    const { error: updError } = await supabase.from("categories").update({ show_in_menu: show }).eq("id", id);
-    if (updError) throw updError;
-
-    updateTag(MENU_TAG);
-    revalidateStore();
-    redirect(notice("/nemesis/categories", show ? `"${category.name}" is now shown in the header menu.` : `"${category.name}" is hidden from the header menu.`));
-  } catch (e) {
-    if (isRedirectError(e)) throw e;
-    redirect(failure("/nemesis/categories", friendlyError(e)));
-  }
-}
-
 export async function deleteCategory(formData: FormData): Promise<void> {
   const id = str(formData, "id", 40);
   if (!UUID_RE.test(id)) redirect(failure("/nemesis/categories", "Invalid category id."));
