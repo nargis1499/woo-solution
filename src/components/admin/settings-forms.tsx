@@ -3,7 +3,7 @@
 import { startTransition, useActionState, useState, type ReactNode } from "react";
 import { updateGeneralSettings, updateSeoSettings, updateShopSettings, type AdminFormState } from "@/app/nemesis/actions";
 import type { MediaRef, SiteSettings } from "@/lib/types";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,13 +17,19 @@ import { MediaRefField } from "./media/media-ref-field";
 
 type Action = (prev: AdminFormState, formData: FormData) => Promise<AdminFormState>;
 
-function SettingsCard({
+/** One settings form = one card with its own Server Action and Save button (also used by UI → Home page). */
+export function SettingsCard({
   title,
+  description,
   action,
+  footer,
   children,
 }: {
   title: string;
+  description?: string;
   action: Action;
+  /** Extra footer content next to the Save button, e.g. a preview link. */
+  footer?: ReactNode;
   children: (ctx: { v: Record<string, string>; err: Record<string, string> }) => ReactNode;
 }) {
   const [state, dispatch, isPending] = useActionState<AdminFormState, FormData>(action, null);
@@ -44,14 +50,16 @@ function SettingsCard({
       <Card>
         <CardHeader>
           <CardTitle>{title}</CardTitle>
+          {description && <CardDescription>{description}</CardDescription>}
         </CardHeader>
         <CardContent>
           <FieldGroup className="gap-5">{children({ v: state?.values ?? {}, err: state?.fieldErrors ?? {} })}</FieldGroup>
         </CardContent>
-        <CardFooter className="border-t">
+        <CardFooter className="justify-between gap-3 border-t">
           <SubmitButton pendingLabel="Saving…" pending={isPending}>
             Save changes
           </SubmitButton>
+          {footer}
         </CardFooter>
       </Card>
     </form>

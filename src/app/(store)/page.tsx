@@ -7,6 +7,7 @@ import { FREE_SHIPPING_THRESHOLD_CENTS } from "@/lib/config";
 import { getSiteSettings } from "@/lib/site-settings";
 import { canonicalFor } from "@/lib/seo";
 import { formatPrice } from "@/lib/format";
+import { HomeProductFilter } from "@/components/home-product-filter";
 import { ProductGrid, ProductGridSkeleton } from "@/components/product-grid";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -18,8 +19,14 @@ export async function generateMetadata(): Promise<Metadata> {
   return { alternates: await canonicalFor("/") };
 }
 
+/**
+ * Hero + the sections switched on under UI → Home page. `getSiteSettings()` is cached and
+ * tagged, so the choice of sections is part of the static shell and flips the moment an
+ * admin saves; the sections themselves stream in (they read the catalogue).
+ */
 export default async function HomePage() {
-  const { store_name } = await getSiteSettings();
+  const settings = await getSiteSettings();
+  const { store_name } = settings;
 
   return (
     <div className="container-page space-y-14 py-10">
@@ -45,27 +52,50 @@ export default async function HomePage() {
       </section>
 
       {/* Categories – reads from Supabase → streams in */}
-      <section>
-        <h2 className="mb-5 text-2xl font-bold tracking-tight">Shop by category</h2>
-        <Suspense fallback={<CategoryTilesSkeleton />}>
-          <CategoryTiles />
-        </Suspense>
-      </section>
+      {settings.home_show_categories && (
+        <section aria-labelledby="home-categories" data-testid="home-categories">
+          <h2 id="home-categories" className="mb-5 text-2xl font-bold tracking-tight">
+            Shop by category
+          </h2>
+          <Suspense fallback={<CategoryTilesSkeleton />}>
+            <CategoryTiles />
+          </Suspense>
+        </section>
+      )}
 
       {/* Featured products */}
-      <section>
-        <div className="mb-5 flex items-end justify-between">
-          <h2 className="text-2xl font-bold tracking-tight">Featured products</h2>
-          <Link href="/shop" className={buttonVariants({ variant: "link" })}>
-            View all <ArrowRightIcon />
-          </Link>
-        </div>
-        <Suspense fallback={<ProductGridSkeleton count={4} />}>
-          <FeaturedProducts />
-        </Suspense>
-      </section>
+      {settings.home_show_featured && (
+        <section aria-labelledby="home-featured" data-testid="home-featured">
+          <div className="mb-5 flex items-end justify-between">
+            <h2 id="home-featured" className="text-2xl font-bold tracking-tight">
+              Featured products
+            </h2>
+            <Link href="/shop" className={buttonVariants({ variant: "link" })}>
+              View all <ArrowRightIcon />
+            </Link>
+          </div>
+          <Suspense fallback={<ProductGridSkeleton count={4} />}>
+            <FeaturedProducts />
+          </Suspense>
+        </section>
+      )}
+
+      {/* Filtered products – the shop's category filter, heading set by the admin */}
+      {settings.home_show_filter && (
+        <section aria-label={settings.home_filter_title ?? "Products"} data-testid="home-filter">
+          {settings.home_filter_title && <h2 className="mb-5 text-2xl font-bold tracking-tight">{settings.home_filter_title}</h2>}
+          <Suspense fallback={<ProductGridSkeleton count={8} />}>
+            <FilteredProducts />
+          </Suspense>
+        </section>
+      )}
     </div>
   );
+}
+
+async function FilteredProducts() {
+  const [categories, products, { manage_stock }] = await Promise.all([getCategories(), getProducts(), getSiteSettings()]);
+  return <HomeProductFilter categories={categories} products={products} manageStock={manage_stock} />;
 }
 
 async function CategoryTiles() {

@@ -24,6 +24,10 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   seo_bing_verification: null,
   seo_twitter: null,
   manage_stock: true,
+  home_show_categories: true,
+  home_show_featured: true,
+  home_show_filter: false,
+  home_filter_title: null,
 };
 
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -32,7 +36,8 @@ const flag = (v: unknown, fallback: boolean): boolean => (typeof v === "boolean"
 /**
  * Turns a raw `site_settings` row into a fully-populated object. Columns that
  * do not exist yet (migration not run) simply fall back to the defaults, so an
- * older database keeps working until `20261018000000_settings_tabs.sql` is applied.
+ * older database keeps working until `20261018000000_settings_tabs.sql` /
+ * `20261024000000_home_sections.sql` are applied.
  */
 export function normaliseSiteSettings(row: Record<string, unknown> | null | undefined): SiteSettings {
   if (!row) return DEFAULT_SITE_SETTINGS;
@@ -54,6 +59,10 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     seo_bing_verification: text(row.seo_bing_verification),
     seo_twitter: text(row.seo_twitter),
     manage_stock: flag(row.manage_stock, true),
+    home_show_categories: flag(row.home_show_categories, true),
+    home_show_featured: flag(row.home_show_featured, true),
+    home_show_filter: flag(row.home_show_filter, false),
+    home_filter_title: text(row.home_filter_title),
   };
 }
 

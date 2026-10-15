@@ -18,6 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { AdminFormState } from "@/lib/admin/form";
 
@@ -145,12 +146,11 @@ export function CheckboxField({
 }
 
 /**
- * Labelled switch. The value travels in a hidden input driven by React state
- * (not the switch's own checkbox), so what is shown is always what gets
- * submitted. When the server value changes underneath (saved elsewhere, page
- * refreshed) the switch follows it.
+ * Switch state for a form: a hidden input driven by React state (not the switch's own
+ * checkbox), so what is shown is always what gets submitted. When the server value changes
+ * underneath (saved elsewhere, page refreshed) the switch follows it.
  */
-export function SwitchField({ id, name, label, defaultSelected }: { id: string; name: string; label: ReactNode; defaultSelected: boolean }) {
+function useSwitchValue(defaultSelected: boolean) {
   const [selected, setSelected] = useState(defaultSelected);
   const [seenDefault, setSeenDefault] = useState(defaultSelected);
   if (seenDefault !== defaultSelected) {
@@ -158,11 +158,56 @@ export function SwitchField({ id, name, label, defaultSelected }: { id: string; 
     setSeenDefault(defaultSelected);
     setSelected(defaultSelected);
   }
+  return [selected, setSelected] as const;
+}
+
+/** Labelled switch (switch first, label text after it). */
+export function SwitchField({ id, name, label, defaultSelected }: { id: string; name: string; label: ReactNode; defaultSelected: boolean }) {
+  const [selected, setSelected] = useSwitchValue(defaultSelected);
   return (
     <FieldLabel htmlFor={id} className="items-center gap-3 py-1 text-sm font-medium has-data-selected:bg-transparent">
       <input type="hidden" name={name} value={selected ? "on" : "off"} />
       <Switch id={id} isSelected={selected} onChange={setSelected} />
       {label}
     </FieldLabel>
+  );
+}
+
+/**
+ * Settings-style row: title + one-line description on the left, the switch on the right.
+ * `children` (e.g. an extra input) renders underneath, inside the same bordered row.
+ */
+export function SwitchRow({
+  id,
+  name,
+  label,
+  description,
+  defaultSelected,
+  children,
+}: {
+  id: string;
+  name: string;
+  label: string;
+  description?: string;
+  defaultSelected: boolean;
+  children?: ReactNode;
+}) {
+  const [selected, setSelected] = useSwitchValue(defaultSelected);
+  return (
+    // The label card keeps its hover / selected / focus styling; the border moves to the
+    // wrapper so an extra field underneath sits inside the same box.
+    <div className="rounded-md border" data-selected={selected || undefined} data-slot="switch-row">
+      <FieldLabel htmlFor={id} className={cn("has-[>[data-slot=field]]:border-0", children && "has-[>[data-slot=field]]:rounded-b-none")}>
+        <Field orientation="horizontal" className="items-center">
+          <FieldContent>
+            <FieldTitle>{label}</FieldTitle>
+            {description && <FieldDescription>{description}</FieldDescription>}
+          </FieldContent>
+          <input type="hidden" name={name} value={selected ? "on" : "off"} />
+          <Switch id={id} isSelected={selected} onChange={setSelected} />
+        </Field>
+      </FieldLabel>
+      {children && <div className="border-t p-3">{children}</div>}
+    </div>
   );
 }

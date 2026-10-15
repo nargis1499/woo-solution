@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
+import { HOME_FILTER_TITLE_MAX } from "@/lib/home-sections";
 import { MENU_TAG } from "@/lib/menu";
 import type { OrderStatus, PaymentStatus } from "@/lib/types";
 import {
@@ -504,8 +505,9 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
   const { data, error } = await supabase.from("site_settings").update(patch).eq("id", 1).select("id").maybeSingle();
   if (error) {
     if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
-      const media = /media_id/i.test(error.message ?? "");
-      return `The database is missing the new settings columns – run supabase/migrations/${media ? "20261020000000_single_media_bucket.sql" : "20261018000000_settings_tabs.sql"} in the Supabase SQL Editor.`;
+      const message = error.message ?? "";
+      const migration = /home_/i.test(message) ? "20261024000000_home_sections.sql" : /media_id/i.test(message) ? "20261020000000_single_media_bucket.sql" : "20261018000000_settings_tabs.sql";
+      return `The database is missing the new settings columns – run supabase/migrations/${migration} in the Supabase SQL Editor.`;
     }
     throw error;
   }
@@ -643,6 +645,31 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
     const problem = await saveSiteSettings({ manage_stock: manageStock });
     if (problem) return { error: problem, values };
     return { success: manageStock ? "Stock management enabled." : "Stock management disabled – every product is now unlimited.", values };
+  } catch (e) {
+    return { error: friendlyError(e), values };
+  }
+}
+
+/**
+ * UI → Home page: which sections the storefront home renders + the heading of the
+ * filtered-products section. Lives on the single `site_settings` row, so the home page
+ * (static shell, tagged) picks the change up immediately.
+ */
+export async function updateHomeSections(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
+  const values = echo(formData);
+  const title = str(formData, "home_filter_title", HOME_FILTER_TITLE_MAX + 1);
+  const fieldErrors: Record<string, string> = {};
+  if (title.length > HOME_FILTER_TITLE_MAX) fieldErrors.home_filter_title = `Keep the title under ${HOME_FILTER_TITLE_MAX} characters.`;
+  if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
+  try {
+    const problem = await saveSiteSettings({
+      home_show_categories: bool(formData, "home_show_categories"),
+      home_show_featured: bool(formData, "home_show_featured"),
+      home_show_filter: bool(formData, "home_show_filter"),
+      home_filter_title: title || null,
+    });
+    if (problem) return { error: problem, values };
+    return { success: "Home page sections saved.", values };
   } catch (e) {
     return { error: friendlyError(e), values };
   }

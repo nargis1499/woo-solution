@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 /**
  * Tab strip of /nemesis/ui. Mirrors the Settings tabs: the URL (`?tab=…`) is the source of truth,
- * so a tab is shareable and survives a reload. Panels are rendered on the server and passed in.
+ * so a tab is shareable and survives a reload (`?tab=home`). Panels are rendered on the server and passed in.
  */
 export function UiTabs({ panels }: { panels: Record<UiTabId, ReactNode> }) {
   const searchParams = useSearchParams();
@@ -40,8 +40,9 @@ export function UiTabs({ panels }: { panels: Record<UiTabId, ReactNode> }) {
           </TabsTrigger>
         ))}
       </TabsList>
+      {/* shouldForceMount keeps every panel mounted, so unsaved edits survive switching tabs */}
       {UI_TABS.map((t) => (
-        <TabsContent key={t.id} id={t.id}>
+        <TabsContent key={t.id} id={t.id} shouldForceMount className="data-inert:hidden">
           {panels[t.id]}
         </TabsContent>
       ))}

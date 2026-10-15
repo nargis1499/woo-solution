@@ -253,6 +253,12 @@ export type SiteSettings = {
   seo_twitter: string | null;
   // WooCommerce
   manage_stock: boolean;
+  // Home page (UI → Home page): which sections the storefront home renders
+  home_show_categories: boolean;
+  home_show_featured: boolean;
+  home_show_filter: boolean;
+  /** Heading above the filtered-products section; null = no heading */
+  home_filter_title: string | null;
 };
 
 export type SiteSettingsRow = SiteSettings & { updated_at: string | null };

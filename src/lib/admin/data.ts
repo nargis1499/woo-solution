@@ -363,9 +363,10 @@ export async function adminGetUser(id: string): Promise<ProfileWithOrders | null
 /**
  * Settings row for the dashboard. `migrated` is false when the database has not
  * run `20261018000000_settings_tabs.sql` yet (the newer columns are missing) so
- * the page can show a hint instead of failing on save.
+ * the page can show a hint instead of failing on save; `homeMigrated` does the
+ * same for the UI → Home page columns (`20261024000000_home_sections.sql`).
  */
-export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migrated: boolean; media: SettingsMedia }) | null> {
+export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migrated: boolean; homeMigrated: boolean; media: SettingsMedia }) | null> {
   await requireAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
@@ -389,6 +390,7 @@ export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migra
     ...settings,
     updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
     migrated: "manage_stock" in row,
+    homeMigrated: "home_show_filter" in row, // 20261024000000_home_sections.sql
     media,
   };
 }

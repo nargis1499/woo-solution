@@ -6,7 +6,7 @@ A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Comp
 
 | Area | What's included |
 | --- | --- |
-| Catalog | Home page with categories & featured products, `/shop` with category filter + search, product detail pages with related products |
+| Catalog | Home page with categories, featured products and an optional filtered product list (sections switchable under **UI → Home page**), `/shop` with category filter + search, product detail pages with related products |
 | Cart | Guest-friendly cart persisted in `localStorage` (Zustand), quantity controls, stock limits, shipping preview |
 | Auth | E-mail + password **and "Continue with Google"** (Supabase Auth, PKCE flow), sign out, protected routes, open-redirect-safe `?next=` handling |
 | Checkout | Shipping form → atomic `place_order()` Postgres function (prices re-read from DB, stock locked & decremented, order number generated) |
@@ -48,6 +48,7 @@ cp .env.example .env.local
    8. [`supabase/migrations/20261021000000_pages.sql`](supabase/migrations/20261021000000_pages.sql) – **Pages**: `pages` (title, slug, rich-text content, featured image, draft / published, per-page SEO + Open Graph fields, author), `tags`, `page_tags`, `page_media` (images used inside the content), RLS (everyone reads published pages, admins manage everything) and `media_usage()` reporting *page image* / *page share image* / *page content*
    9. [`supabase/migrations/20261022000000_pages_image_urls.sql`](supabase/migrations/20261022000000_pages_image_urls.sql) – `pages.featured_image_url` / `og_image_url` so the featured and share image of a page can also be an external URL (*Use a URL*)
    10. [`supabase/migrations/20261023000000_menus.sql`](supabase/migrations/20261023000000_menus.sql) – **Menus**: `menu_items` (header / footer links to pages, categories or custom URLs, with their own text, new-tab flag and order) + RLS. Carries the current navigation over ("Shop" + the categories that were shown in the header; the footer's Shop / Cart / My orders) and **drops `categories.show_in_menu`** – menus are managed under **UI → Menu** from now on. Safe to run on an existing project
+   11. [`supabase/migrations/20261024000000_home_sections.sql`](supabase/migrations/20261024000000_home_sections.sql) – **Home page sections**: `site_settings.home_show_categories` / `home_show_featured` / `home_show_filter` / `home_filter_title` – the switches behind **UI → Home page**. Defaults keep the home page exactly as it was (categories + featured on, filtered products off)
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -145,7 +146,7 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
 | Media | The Media Library – see [Media](#media) below: uploads, grid / list browsing, search, filters, folders, trash, bulk actions, image optimisation / WebP conversion / editing, alt text, usage tracking and the reusable **media picker** |
-| UI | **Menu** tab – see [Menus](#menus) below: build the storefront **header** and **footer** navigation from pages, categories and custom links, drag to reorder, edit link text, open in a new tab |
+| UI | **Menu** tab – see [Menus](#menus) below: build the storefront **header** and **footer** navigation from pages, categories and custom links, drag to reorder, edit link text, open in a new tab. **Home page** tab – see [Home page](#home-page) below: switch the home-page sections on and off, including a filtered product list with its own title |
 | Settings | Three tabs – see [Settings](#settings) below: **General** (site title, tagline, support e-mail, WhatsApp, Telegram, favicon), **SEO** (search-engine visibility, site URL, title / meta description, share image, verification codes, X handle) and **WooCommerce** (global stock management switch) |
 
 The **Pages, Products, Orders and Users** lists are paginated: `?page=` + a **per-page** selector (10 / 20 / 50 / 100, top right of the table, `?per=`, remembered per admin in a cookie). Changing the size keeps the first visible row on screen, a new filter starts on page 1, a page that no longer exists redirects to the last one, and view / edit / delete bring you back to the exact page, size and filter you came from.
@@ -163,6 +164,16 @@ Every action reports back through a toast notification (bottom-right corner of t
 - **Order** – drag the handle (mouse, touch long-press, or ↑ / ↓ on a focused handle) exactly like the categories table; the order is saved on drop ("Menu order saved.").
 - **Edit / Remove** – change the link text (independent of the page / category name), the URL of a custom link and the new-tab flag; removing an entry never deletes the page or category behind it.
 - Everything is live immediately: header and footer are part of the static shell, cached with a tag that every menu, page and category write invalidates. Deleting a page or category also removes its menu entries (foreign keys), renaming a page changes its link target automatically.
+
+#### Home page
+
+`/nemesis/ui?tab=home` → **Home page** decides which sections the storefront home page shows below the hero, in the order they appear on the page. One switch each, one **Save changes**, live immediately:
+
+- **Shop by category** – the category tiles (on by default).
+- **Featured products** – the eight products flagged *Featured* with the *View all* link to the shop (on by default).
+- **Filtered products** – the shop's category filter on the home page (off by default): a row of pills (*All* + every category in the admin's category order), a product count and the product grid. Switching a pill filters the grid instantly in the browser – no page change, no URL change. **Section title** is the heading above the pills (optional, up to 80 characters, e.g. *Browse our products*); leave it empty for no heading.
+
+The settings live in `site_settings` (migration 11); the storefront reads them through the same tag-cached `getSiteSettings()` as the rest of the site, so a save invalidates the home page straight away. Switching every section off leaves only the hero.
 
 #### Settings
 
@@ -221,12 +232,13 @@ woo-solution/
 │   ├── migrations/20261015000000_google_auth.sql
 │   ├── migrations/20261016000000_admin.sql  # is_admin flag, admin RLS, site_settings
 │   ├── migrations/20261017000000_category_menu.sql  # categories.show_in_menu (dropped again by …_menus.sql)
-│   ├── migrations/20261023000000_menus.sql  # menu_items: header / footer navigation (UI → Menu)
 │   ├── migrations/20261018000000_settings_tabs.sql  # contact/SEO/stock settings, stock_managed()
 │   ├── migrations/20261019000000_media_library.sql  # media library tables, galleries, media bucket
 │   ├── migrations/20261020000000_single_media_bucket.sql  # favicon/share image as media refs, legacy-bucket cleanup
 │   ├── migrations/20261021000000_pages.sql  # pages, tags, page_tags, page_media
 │   ├── migrations/20261022000000_pages_image_urls.sql  # external featured / share image URLs
+│   ├── migrations/20261023000000_menus.sql  # menu_items: header / footer navigation (UI → Menu)
+│   ├── migrations/20261024000000_home_sections.sql  # home-page section switches + filter title (UI → Home page)
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
@@ -254,9 +266,12 @@ woo-solution/
 │   │   ├── ui/                              # shadcn/ui (React Aria base) – generated, edit freely
 │   │   ├── admin/                           # dashboard: app-sidebar, admin-header, forms, list toolbar …
 │   │   │   ├── media/                       # Media Library UI + the reusable picker / media-ref-field
-│   │   │   └── pages/                       # page form, Tiptap rich-text editor, tag input, SEO panel, status select
+│   │   │   ├── pages/                       # page form, Tiptap rich-text editor, tag input, SEO panel, status select
+│   │   │   ├── menu/                        # UI → Menu: location switch, add panel, item table, edit dialog
+│   │   │   └── home/                        # UI → Home page: section switches + filter title form
 │   │   ├── page-article.tsx                 # storefront template for CMS pages (also used by the admin preview)
 │   │   ├── data-grid.tsx, page-breadcrumbs.tsx  # client wrappers around the React Aria Table (selection, bulk bar, dnd-kit row reordering) / Breadcrumbs
+│   │   ├── home-product-filter.tsx          # home page: client-side category pills + product grid (UI → Home page)
 │   │   └── header.tsx, footer.tsx, nav-link.tsx, mobile-nav.tsx, user-menu.tsx, cart-*.tsx, product-*.tsx, checkout-form.tsx …
 │   ├── hooks/use-mobile.ts
 │   └── lib/
@@ -264,6 +279,7 @@ woo-solution/
 │       ├── pages/{shared,sanitize}.ts       # slug rules, SEO helpers, HTML sanitiser for page content
 │       ├── media/{shared,server}.ts         # media URLs / renditions, upload validation
 │       ├── site-settings.ts, menu.ts        # cached store settings / header + footer menus (tag-invalidated)
+│       ├── home-sections.ts                 # home-page section ids, labels and the filter-title limit (shared by admin + storefront)
 │       ├── menu-config.ts                   # menu locations, URL rules, href resolution (shared by storefront, admin and actions)
 │       ├── seo.ts                           # metadata, robots/sitemap entries, JSON-LD built from the SEO tab
 │       ├── image-hosts.ts                   # next/image allow-list
@@ -331,6 +347,7 @@ The project uses Next.js 16's **Cache Components** (`cacheComponents: true`). Ev
 | Search engine visibility, meta description, share image, verification codes, sitemap | `/nemesis/settings` → **SEO** (`/robots.txt` and `/sitemap.xml` are generated from it) |
 | Stock management on/off | `/nemesis/settings` → **WooCommerce** (global; `public.stock_managed()` in SQL) |
 | Header / footer navigation links | `/nemesis/ui` → **Menu** (`menu_items`; the storefront never hard-codes a link) |
+| Home page sections (category tiles, featured products, filtered product list + its title) | `/nemesis/ui?tab=home` → **Home page** (`site_settings.home_*`) |
 | Products / categories | `/nemesis/products` and `/nemesis/categories` (or the Supabase Table Editor). *Draft* products are hidden from the shop, *Featured* ones show on the home page |
 | Product images & files | `/nemesis/media` (Media Library, Storage bucket `media`) – pick them on the product form, or paste any public URL; allow-listed hosts for remote images live in `src/lib/image-hosts.ts` |
 | AI alt text | Set `OPENAI_API_KEY` (and optionally `OPENAI_ALT_TEXT_MODEL`) in `.env.local` – a *Suggest with AI* button appears next to the alt text in the media detail dialog |
