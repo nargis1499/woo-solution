@@ -5,174 +5,83 @@
 /* Class-based dark mode: next-themes toggles `class="dark"` on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
-  /* Brand palette (a nod to WooCommerce purple) */
-  --color-brand-50: #f6f2fb;
-  --color-brand-100: #ece4f6;
-  --color-brand-200: #d9c9ec;
-  --color-brand-300: #bfa6de;
-  --color-brand-400: #a27fcc;
-  --color-brand-500: #8c61bd;
-  --color-brand-600: #7f54b3;
-  --color-brand-700: #67429a;
-  --color-brand-800: #54377c;
-  --color-brand-900: #452f64;
-
-  /* Elevated surfaces (cards, header, inputs). White in light mode, charcoal in dark mode. */
-  --color-surface: #ffffff;
-
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, "Noto Sans", sans-serif;
-
-  --animate-page-in: page-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
-  @keyframes page-in {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: none; }
-  }
-}
-
-html {
-  color-scheme: light;
-}
-
 /*
- * Dark theme = re-map the neutral scale + the semantic tints that the UI uses.
- * Tailwind v4 utilities reference these CSS variables (`bg-neutral-100` →
- * `var(--color-neutral-100)`), so one block flips the whole app without
- * sprinkling `dark:` classes everywhere. Brand colours stay the same.
+ * Design tokens (shadcn/ui, React Aria base, "Vega" style).
+ * The brand colour is WooCommerce purple, mapped onto `--primary`; everything
+ * else is the neutral palette so components stay readable in both themes.
  */
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.536 0.147 302.6);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.967 0.013 306);
+  --accent-foreground: oklch(0.357 0.091 301.1);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.66 0.117 304.3);
+  --chart-1: oklch(0.536 0.147 302.6);
+  --chart-2: oklch(0.66 0.117 304.3);
+  --chart-3: oklch(0.766 0.083 304.9);
+  --chart-4: oklch(0.556 0 0);
+  --chart-5: oklch(0.371 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.536 0.147 302.6);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.967 0.013 306);
+  --sidebar-accent-foreground: oklch(0.357 0.091 301.1);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.66 0.117 304.3);
+}
+
 .dark {
-  color-scheme: dark;
-
-  --color-surface: #171717;
-
-  --color-neutral-50: #0b0b0c;   /* page background */
-  --color-neutral-100: #222224;  /* subtle fills, hovers */
-  --color-neutral-200: #2c2c2f;  /* borders, dividers */
-  --color-neutral-300: #3d3d41;  /* input borders */
-  --color-neutral-400: #7a7a80;
-  --color-neutral-500: #a1a1a8;  /* muted text */
-  --color-neutral-600: #c2c2c8;
-  --color-neutral-700: #d6d6db;
-  --color-neutral-800: #e7e7ea;
-  --color-neutral-900: #f4f4f5;  /* primary text */
-  --color-neutral-950: #fafafa;
-
-  --color-brand-50: #2a2140;     /* tinted hovers / selected states */
-
-  --color-red-50: #3a1212;
-  --color-red-200: #7a2525;
-  --color-red-600: #f87171;
-  --color-red-700: #fca5a5;
-
-  --color-emerald-50: #0c2a1f;
-  --color-emerald-100: #0f3d2c;
-  --color-emerald-200: #1b5a42;
-  --color-emerald-700: #6ee7b7;
-  --color-emerald-800: #a7f3d0;
-  --color-emerald-900: #d1fae5;
-
-  --color-amber-50: #3a2608;
-  --color-amber-100: #4f350c;
-  --color-amber-600: #fbbf24;
-  --color-amber-800: #fde68a;
-  --color-amber-900: #fef3c7;
-
-  --color-blue-100: #1e2f5a;
-  --color-blue-800: #bfdbfe;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.72 0.117 304.3);
+  --primary-foreground: oklch(0.2 0.05 301);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --accent: oklch(0.3 0.04 302);
+  --accent-foreground: oklch(0.93 0.026 305.8);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --ring: oklch(0.66 0.117 304.3);
+  --chart-1: oklch(0.72 0.117 304.3);
+  --chart-2: oklch(0.577 0.142 303.9);
+  --chart-3: oklch(0.465 0.139 300.5);
+  --chart-4: oklch(0.708 0 0);
+  --chart-5: oklch(0.87 0 0);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.72 0.117 304.3);
+  --sidebar-primary-foreground: oklch(0.2 0.05 301);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }
 
-body {
-  @apply bg-neutral-50 text-neutral-900 antialiased;
-}
-
-@layer base {
-  /* Tailwind v4 resets buttons to `cursor: default` – bring the pointer back for anything clickable. */
-  button:not(:disabled),
-  [role="button"]:not(:disabled),
-  input[type="submit"]:not(:disabled),
-  input[type="button"]:not(:disabled),
-  input[type="checkbox"]:not(:disabled),
-  input[type="radio"]:not(:disabled),
-  input[type="file"]:not(:disabled),
-  select:not(:disabled),
-  summary,
-  label[for],
-  a[href] {
-    cursor: pointer;
-  }
-  button:disabled,
-  input:disabled,
-  select:disabled {
-    cursor: not-allowed;
-  }
-
-  ::selection {
-    @apply bg-brand-200 text-brand-900;
-  }
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-  button:not(:disabled), [role="button"]:not(:disabled) {
-    cursor: pointer;
-  }
-  html {
-    @apply font-sans;
-  }
-}
-
-/* Small reusable primitives */
-@utility container-page {
-  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
-}
-
-@utility card {
-  @apply rounded-xl border border-neutral-200 bg-surface shadow-sm;
-}
-
-@utility input-base {
-  @apply block w-full rounded-lg border border-neutral-300 bg-surface px-3 py-2 text-sm text-neutral-900
-    placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200
-    disabled:cursor-not-allowed disabled:bg-neutral-100;
-}
-
 @theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-heading: var(--font-sans);
-  --font-sans: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -211,39 +120,33 @@ body {
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Soft fade/slide-in used by app/template.tsx on every navigation. */
+  --animate-page-in: page-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  @keyframes page-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
 }
 
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Page width + gutters shared by the storefront pages. */
+@utility container-page {
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
 }

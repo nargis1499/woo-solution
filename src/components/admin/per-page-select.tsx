@@ -2,7 +2,10 @@
 
 import { useOptimistic, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import type { Key } from "react-aria-components";
 import { PER_PAGE_COOKIE, PER_PAGE_OPTIONS, listHref, pageForNewSize } from "@/lib/admin/pagination";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 /**
  * "Per page" dropdown. Changing it navigates to the page that still contains
@@ -25,9 +28,9 @@ export function PerPageSelect({
   // Shows the new value immediately; settles on the server-resolved value once the new page renders.
   const [shownPerPage, setShownPerPage] = useOptimistic(perPage);
 
-  function onChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    const next = Number(event.target.value);
-    if (next === perPage) return;
+  function onSelectionChange(key: Key | null) {
+    const next = Number(key);
+    if (!next || next === perPage) return;
     document.cookie = `${PER_PAGE_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
     startTransition(() => {
       setShownPerPage(next);
@@ -36,20 +39,22 @@ export function PerPageSelect({
   }
 
   return (
-    <label className="flex items-center gap-2 text-sm text-neutral-600">
-      <span>Per page</span>
-      <select
-        name="per"
-        value={shownPerPage}
-        onChange={onChange}
-        disabled={pending}
-        aria-busy={pending}
-        className="input-base h-9 w-auto py-0 pr-8"
-      >
-        {PER_PAGE_OPTIONS.map((n) => (
-          <option key={n} value={n}>{n}</option>
-        ))}
-      </select>
-    </label>
+    <div className="flex items-center gap-2">
+      <Label htmlFor="per" className="text-muted-foreground">
+        Per page
+      </Label>
+      <Select name="per" aria-label="Per page" selectedKey={String(shownPerPage)} onSelectionChange={onSelectionChange} isDisabled={pending}>
+        <SelectTrigger id="per" className="w-20" aria-busy={pending}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {PER_PAGE_OPTIONS.map((n) => (
+            <SelectItem key={n} id={String(n)}>
+              {n}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }

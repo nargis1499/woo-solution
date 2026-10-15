@@ -3,8 +3,9 @@ import Link from "next/link";
 import { adminListCategories } from "@/lib/admin/data";
 import { deleteCategory, toggleCategoryMenu } from "@/app/nemesis/actions";
 import { CategoryForm } from "@/components/admin/category-form";
-import { ConfirmForm, DeleteButton, MenuToggleButton } from "@/components/admin/form-bits";
-import { EmptyRow, PageHeader, Section, Table, TBody, Td, Th, THead, Tr } from "@/components/admin/ui";
+import { DeleteButton, MenuToggle } from "@/components/admin/form-bits";
+import { DataTable, EmptyState, PageHeader, Section } from "@/components/admin/ui";
+import { buttonVariants } from "@/components/ui/button-variants";
 
 export const metadata: Metadata = { title: "Categories" };
 
@@ -13,59 +14,54 @@ export default async function AdminCategoriesPage() {
 
   return (
     <>
-      <PageHeader title="Categories" description="Group products so customers can browse by type. Sort order controls the position; the menu toggle decides whether a category is listed in the header." />
+      <PageHeader title="Categories" description="Group products so customers can browse by type. Sort order controls the position; the menu switch decides whether a category is listed in the header." />
 
       <Section title="Add a category" className="mb-6">
         <CategoryForm compact />
       </Section>
 
-      <Table>
-        <THead>
-          <tr>
-            <Th>Name</Th>
-            <Th>Slug</Th>
-            <Th className="text-right">Products</Th>
-            <Th className="text-right">Order</Th>
-            <Th>Header menu</Th>
-            <Th className="text-right"><span className="sr-only">Actions</span></Th>
-          </tr>
-        </THead>
-        <TBody>
-          {categories.length === 0 && <EmptyRow colSpan={6}>No categories yet – add one above.</EmptyRow>}
-          {categories.map((c) => (
-            <Tr key={c.id}>
-              <Td>
-                <Link href={`/nemesis/categories/${c.id}`} className="font-medium hover:underline">{c.name}</Link>
-              </Td>
-              <Td className="text-neutral-600">
-                <Link href={`/shop?category=${c.slug}`} target="_blank" className="hover:underline">/shop?category={c.slug}</Link>
-              </Td>
-              <Td className="text-right tabular-nums">
-                <Link href={`/nemesis/products?category=${c.id}`} className="hover:underline">{c.product_count ?? 0}</Link>
-              </Td>
-              <Td className="text-right tabular-nums text-neutral-600">{c.sort_order}</Td>
-              <Td>
-                <form action={toggleCategoryMenu}>
-                  <input type="hidden" name="id" value={c.id} />
-                  <MenuToggleButton shown={c.show_in_menu} name={c.name} />
-                </form>
-              </Td>
-              <Td className="text-right">
-                <div className="flex items-center justify-end gap-2">
-                  <Link href={`/nemesis/categories/${c.id}`} className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-medium hover:bg-neutral-100">Edit</Link>
-                  <ConfirmForm
-                    action={deleteCategory}
-                    message={`Delete "${c.name}"? ${c.product_count ? `${c.product_count} product(s) will become uncategorised.` : ""}`}
-                  >
-                    <input type="hidden" name="id" value={c.id} />
-                    <DeleteButton />
-                  </ConfirmForm>
-                </div>
-              </Td>
-            </Tr>
-          ))}
-        </TBody>
-      </Table>
+      {categories.length === 0 ? (
+        <EmptyState title="No categories yet">Add one above.</EmptyState>
+      ) : (
+        <DataTable
+          label="Categories"
+          columns={[
+            { id: "name", label: "Name", className: "pl-4" },
+            { id: "slug", label: "Slug", cellClassName: "text-muted-foreground" },
+            { id: "products", label: "Products", align: "right", cellClassName: "tabular-nums" },
+            { id: "order", label: "Order", align: "right", cellClassName: "text-muted-foreground tabular-nums" },
+            { id: "menu", label: "Header menu" },
+            { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
+          ]}
+          rows={categories.map((c) => ({
+            id: c.id,
+            cells: [
+              <Link key="n" href={`/nemesis/categories/${c.id}`} className="font-medium hover:underline">
+                {c.name}
+              </Link>,
+              <Link key="s" href={`/shop?category=${c.slug}`} target="_blank" className="hover:underline">
+                /shop?category={c.slug}
+              </Link>,
+              <Link key="p" href={`/nemesis/products?category=${c.id}`} className="hover:underline">
+                {c.product_count ?? 0}
+              </Link>,
+              c.sort_order,
+              <MenuToggle key="m" id={c.id} shown={c.show_in_menu} name={c.name} action={toggleCategoryMenu} />,
+              <div key="a" className="flex items-center justify-end gap-2">
+                <Link href={`/nemesis/categories/${c.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  Edit
+                </Link>
+                <DeleteButton
+                  action={deleteCategory}
+                  id={c.id}
+                  title={`Delete "${c.name}"?`}
+                  description={c.product_count ? `${c.product_count} product(s) will become uncategorised.` : "This cannot be undone."}
+                />
+              </div>,
+            ],
+          }))}
+        />
+      )}
     </>
   );
 }

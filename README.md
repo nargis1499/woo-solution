@@ -1,6 +1,6 @@
 # Woo Solution
 
-A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Components) and **Supabase** (Postgres + Auth).
+A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Components), **Supabase** (Postgres + Auth) and **shadcn/ui on the React Aria base** (`react-aria-components`, Tailwind v4).
 
 **MVP scope** – customers can browse a product catalog, sign up / sign in, add items to a cart, check out with cash on delivery, and view their order history.
 
@@ -13,7 +13,8 @@ A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Comp
 | Orders | `/orders` history and `/orders/[id]` confirmation page, protected by Row Level Security |
 | Security | RLS on every table, `SECURITY DEFINER` checkout RPC only executable by `authenticated`, JWT verified with `getClaims()` |
 | Admin | `/nemesis` dashboard for users with `profiles.is_admin = true`: products (with image upload to Supabase Storage), categories, orders, users/roles and site settings – see [Admin dashboard](#admin-dashboard) |
-| UX | Dark mode (system / light / dark, remembered), route-change progress bar, page transitions, pointer cursors on every control |
+| UI | shadcn/ui components built on **React Aria** (accessible menus, dialogs, selects, tables, sheets, switches …) for both the storefront and the admin dashboard; see [UI toolkit](#ui-toolkit) |
+| UX | Dark mode (system / light / dark, remembered), route-change progress bar, page transitions, toast notifications, mobile navigation sheet |
 
 ---
 
@@ -143,34 +144,39 @@ woo-solution/
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
 │   ├── app/
-│   │   ├── layout.tsx                       # header / footer shell
-│   │   ├── page.tsx                         # home: hero, categories, featured products
-│   │   ├── shop/page.tsx                    # catalog (?category=slug&q=search)
-│   │   ├── products/[slug]/                 # product detail + purchase panel
-│   │   ├── cart/page.tsx                    # cart (client-side)
-│   │   ├── checkout/{page.tsx,actions.ts}   # checkout form + placeOrder server action
-│   │   ├── orders/                          # order history + order detail / confirmation
-│   │   ├── login/, signup/                  # auth pages
-│   │   ├── auth/actions.ts                  # signIn / signUp / signOut server actions
-│   │   ├── auth/callback/route.ts           # e-mail confirmation (PKCE code exchange)
-│   │   ├── nemesis/                         # admin: layout (requireAdmin), actions.ts, dashboard,
-│   │   │                                    #   products/, categories/, orders/, users/, settings/
+│   │   ├── layout.tsx                       # root: fonts, theme + React Aria router providers, toaster
+│   │   ├── (store)/                         # storefront route group (header / footer shell in layout.tsx)
+│   │   │   ├── page.tsx                     # home: hero, categories, featured products
+│   │   │   ├── shop/page.tsx                # catalog (?category=slug&q=search)
+│   │   │   ├── products/[slug]/             # product detail + purchase panel
+│   │   │   ├── cart/page.tsx                # cart (client-side)
+│   │   │   ├── checkout/{page.tsx,actions.ts}  # checkout form + placeOrder server action
+│   │   │   ├── orders/                      # order history + order detail / confirmation
+│   │   │   ├── login/, signup/              # auth pages
+│   │   │   └── error.tsx, not-found.tsx
+│   │   ├── auth/actions.ts                  # signIn / signUp / signOut / signInWithGoogle server actions
+│   │   ├── auth/callback/route.ts           # e-mail confirmation + OAuth (PKCE code exchange)
+│   │   ├── nemesis/                         # admin: layout (sidebar shell + requireAdmin), actions.ts,
+│   │   │                                    #   dashboard, products/, categories/, orders/, users/, settings/
 │   │   ├── template.tsx                     # page-enter animation
-│   │   ├── error.tsx, not-found.tsx
-│   │   └── globals.css                      # Tailwind v4 theme (brand palette)
-│   ├── components/                          # UI: header, product card, cart view, checkout form …
-│   │   ├── admin/                           # dashboard UI: sidebar, forms, tables
-│   │   ├── theme-provider.tsx, theme-toggle.tsx, top-loader.tsx
+│   │   └── globals.css                      # Tailwind v4 + shadcn theme tokens (light / dark)
+│   ├── components/
+│   │   ├── ui/                              # shadcn/ui (React Aria base) – generated, edit freely
+│   │   ├── admin/                           # dashboard: app-sidebar, admin-header, forms, list toolbar …
+│   │   ├── data-grid.tsx, page-breadcrumbs.tsx  # client wrappers around the React Aria Table / Breadcrumbs
+│   │   └── header.tsx, mobile-nav.tsx, user-menu.tsx, cart-*.tsx, product-*.tsx, checkout-form.tsx …
+│   ├── hooks/use-mobile.ts
 │   └── lib/
-│       ├── admin/{auth,data,storage}.ts     # requireAdmin(), admin queries, Storage upload/cleanup
+│       ├── admin/{auth,data,storage,list-params,pagination,constants}.ts
 │       ├── site-settings.ts, menu.ts        # cached store settings / header categories (tag-invalidated)
 │       ├── image-hosts.ts                   # next/image allow-list
-│       ├── supabase/{client,server,proxy}.ts# Supabase clients (browser / server / proxy)
+│       ├── supabase/{server,proxy}.ts       # Supabase clients (server components / actions, proxy)
 │       ├── auth.ts                          # getCurrentUser() – verified via getClaims()
 │       ├── data/{products,orders}.ts        # data-access layer
 │       ├── cart-store.ts                    # Zustand cart (persisted)
 │       ├── config.ts                        # store name, currency, shipping rules
 │       ├── format.ts, types.ts, utils.ts
+├── components.json                          # shadcn/ui config (base: aria, style: vega)
 └── .github/workflows/ci.yml                 # lint + type-check + build on every push
 
 Google sign-in lives in `src/app/auth/actions.ts` (`signInWithGoogle`), `src/components/google-button.tsx` and `src/app/auth/callback/route.ts`.
@@ -188,6 +194,26 @@ auth.users ──1:N──▶ orders ──1:N──▶ order_items (price & nam
 - `place_order(p_items jsonb, p_shipping jsonb)` runs the whole checkout in one transaction:
   validates auth + input → inserts the order → locks each product row (`FOR UPDATE`) → checks & decrements stock → snapshots items → computes shipping (`calculate_shipping`) → returns the order id. Any failure rolls everything back and surfaces a friendly message (e.g. *"Only 2 left in stock for "Everyday Hoodie"."*).
 - Row Level Security: products/categories are readable by everyone (active products only); orders and order items are readable **only by their owner**; nobody can insert/update orders directly from the client.
+
+### UI toolkit
+
+The UI is built from [shadcn/ui](https://ui.shadcn.com) components generated with the **React Aria** base
+(`npx shadcn@latest init --base aria`). The primitives live in `src/components/ui/` and are plain project
+files – change them like any other code. To add more components run, e.g.
+
+```bash
+npx shadcn@latest add tabs
+```
+
+Conventions worth knowing:
+
+- Everything interactive (buttons, links styled as buttons, menus, dialogs, selects, switches, tables) is a
+  React Aria component, so keyboard navigation, focus management and ARIA semantics come for free.
+  Prefer `onPress` over `onClick` and `isDisabled` / `isPending` over the DOM attributes.
+- React Aria collections (`Table`, `Breadcrumbs`) must be rendered by client components from plain data –
+  `src/components/data-grid.tsx` and `page-breadcrumbs.tsx` do that for server pages.
+- Theme tokens (colours, radius) are CSS variables in `src/app/globals.css`; dark mode flips the `.dark` class
+  via `next-themes`. Toasts use `sonner` (`<Toaster />` is mounted once in the root layout).
 
 ### Rendering model
 

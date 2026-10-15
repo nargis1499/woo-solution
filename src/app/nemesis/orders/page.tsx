@@ -1,16 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ShoppingCartIcon } from "lucide-react";
 import { adminListOrders } from "@/lib/admin/data";
 import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatDate, formatOrderNumber, formatPrice } from "@/lib/format";
 import { deleteOrder } from "@/app/nemesis/actions";
-import { OrderStatusBadge } from "@/components/order-status-badge";
-import { ConfirmForm, DeleteButton } from "@/components/admin/form-bits";
+import { OrderStatusBadge, PaymentStatusBadge } from "@/components/order-status-badge";
+import { buttonVariants } from "@/components/ui/button-variants";
+import { FilterSelect } from "@/components/admin/filter-select";
+import { DeleteButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
 import { ListToolbar, Pagination } from "@/components/admin/pagination";
-import { Badge, EmptyRow, PageHeader, Table, TBody, Td, Th, THead, Tr } from "@/components/admin/ui";
+import { DataTable, EmptyState, PageHeader } from "@/components/admin/ui";
 
 export const metadata: Metadata = { title: "Orders" };
 
@@ -22,7 +25,6 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const filters = { q: sp.q?.trim() || undefined, status: sp.status || undefined };
   const { perPage, requestedPage } = await resolveListParams(sp);
-
   const { items: orders, total, page } = await adminListOrders({ ...filters, page: requestedPage, perPage });
   redirectIfClamped(LIST_PATH, filters, sp, requestedPage, page, perPage);
 
@@ -36,72 +38,61 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
       <PageHeader title="Orders" description={`${total} ${total === 1 ? "order" : "orders"}${isFiltered ? " match your filter" : ""}.`} />
 
       <ListToolbar {...location}>
-        <SearchForm
-          action={LIST_PATH}
-          q={filters.q}
-          placeholder="Search #, name or e-mail…"
-          isFiltered={isFiltered}
-          hidden={{ per: perPage }}
-          clearHref={listHref(LIST_PATH, { per: perPage })}
-        >
-          <select name="status" defaultValue={filters.status ?? ""} className="input-base w-auto capitalize" aria-label="Status">
-            <option value="">All statuses</option>
-            {ORDER_STATUSES.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+        <SearchForm action={LIST_PATH} q={filters.q} placeholder="Search #, name or e-mail…" isFiltered={isFiltered} hidden={{ per: perPage }} clearHref={listHref(LIST_PATH, { per: perPage })}>
+          <FilterSelect name="status" label="Status" defaultValue={filters.status ?? ""} options={[{ value: "", label: "All statuses" }, ...ORDER_STATUSES.map((s) => ({ value: s, label: s }))]} />
         </SearchForm>
       </ListToolbar>
 
-      <Table>
-        <THead>
-          <tr>
-            <Th>Order</Th>
-            <Th>Customer</Th>
-            <Th>Status</Th>
-            <Th>Payment</Th>
-            <Th className="text-right">Total</Th>
-            <Th className="text-right"><span className="sr-only">Actions</span></Th>
-          </tr>
-        </THead>
-        <TBody>
-          {orders.length === 0 && <EmptyRow colSpan={6}>{isFiltered ? "No orders match your filter." : "No orders yet."}</EmptyRow>}
-          {orders.map((o) => {
+      {orders.length === 0 ? (
+        <EmptyState title={isFiltered ? "No orders match your filter." : "No orders yet."} icon={<ShoppingCartIcon />} />
+      ) : (
+        <DataTable
+          label="Orders"
+          columns={[
+            { id: "order", label: "Order", className: "pl-4" },
+            { id: "customer", label: "Customer" },
+            { id: "status", label: "Status" },
+            { id: "payment", label: "Payment" },
+            { id: "total", label: "Total", align: "right", cellClassName: "tabular-nums" },
+            { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
+          ]}
+          rows={orders.map((o) => {
             const items = (o.order_items ?? []).reduce((n, i) => n + i.quantity, 0);
-            return (
-              <Tr key={o.id}>
-                <Td>
-                  <Link href={detailHref(o.id)} className="font-medium text-brand-700 dark:text-brand-300 hover:underline">{formatOrderNumber(o.order_number)}</Link>
-                  <p className="text-xs text-neutral-500">{formatDate(o.created_at)}</p>
-                </Td>
-                <Td>
+            return {
+              id: o.id,
+              cells: [
+                <div key="o">
+                  <Link href={detailHref(o.id)} className="font-medium text-primary hover:underline">
+                    {formatOrderNumber(o.order_number)}
+                  </Link>
+                  <p className="text-xs text-muted-foreground">{formatDate(o.created_at)}</p>
+                </div>,
+                <div key="c" className="min-w-0">
                   <p className="truncate">{o.shipping_name}</p>
-                  <p className="truncate text-xs text-neutral-500">{o.customer_email ?? "—"}</p>
-                </Td>
-                <Td><OrderStatusBadge status={o.status} /></Td>
-                <Td>
-                  <Badge tone={o.payment_status === "paid" ? "emerald" : o.payment_status === "refunded" ? "neutral" : "amber"}>{o.payment_status}</Badge>
-                  <p className="mt-1 text-xs uppercase text-neutral-500">{o.payment_method}</p>
-                </Td>
-                <Td className="text-right tabular-nums">
+                  <p className="truncate text-xs text-muted-foreground">{o.customer_email ?? "—"}</p>
+                </div>,
+                <OrderStatusBadge key="s" status={o.status} />,
+                <div key="p">
+                  <PaymentStatusBadge status={o.payment_status} />
+                  <p className="mt-1 text-xs text-muted-foreground uppercase">{o.payment_method}</p>
+                </div>,
+                <div key="t">
                   <span className="font-medium">{formatPrice(o.total_cents, o.currency)}</span>
-                  <p className="text-xs text-neutral-500">{items} {items === 1 ? "item" : "items"}</p>
-                </Td>
-                <Td className="text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    <Link href={detailHref(o.id)} className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-medium hover:bg-neutral-100">View</Link>
-                    <ConfirmForm action={deleteOrder} message={`Delete order ${formatOrderNumber(o.order_number)}? This cannot be undone.`}>
-                      <input type="hidden" name="id" value={o.id} />
-                      <input type="hidden" name="return_to" value={listUrl} />
-                      <DeleteButton />
-                    </ConfirmForm>
-                  </div>
-                </Td>
-              </Tr>
-            );
+                  <p className="text-xs text-muted-foreground">
+                    {items} {items === 1 ? "item" : "items"}
+                  </p>
+                </div>,
+                <div key="a" className="flex items-center justify-end gap-2">
+                  <Link href={detailHref(o.id)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                    View
+                  </Link>
+                  <DeleteButton action={deleteOrder} id={o.id} returnTo={listUrl} title={`Delete order ${formatOrderNumber(o.order_number)}?`} description="The order and its line items are removed permanently. This cannot be undone." />
+                </div>,
+              ],
+            };
           })}
-        </TBody>
-      </Table>
+        />
+      )}
 
       <Pagination {...location} total={total} itemLabel={total === 1 ? "order" : "orders"} />
     </>

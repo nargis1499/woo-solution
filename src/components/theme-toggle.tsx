@@ -1,27 +1,27 @@
 "use client";
 
+import { MoonIcon, SunIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
-import { MoonIcon, SunIcon } from "./icons";
+import { Button } from "@/components/ui/button";
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   // The theme is only known on the client → render a neutral placeholder on the server to avoid a hydration mismatch.
   const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
-
   const isDark = mounted && resolvedTheme === "dark";
 
   return (
-    <button
-      type="button"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="relative grid h-9 w-9 place-items-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+    <Button
+      variant="ghost"
+      size="icon"
+      onPress={() => setTheme(isDark ? "light" : "dark")}
       aria-label={mounted ? (isDark ? "Switch to light mode" : "Switch to dark mode") : "Toggle theme"}
-      title={mounted ? (isDark ? "Light mode" : "Dark mode") : undefined}
+      className="relative"
     >
-      <SunIcon className={`absolute h-5 w-5 transition-all duration-300 ${isDark ? "rotate-90 scale-0 opacity-0" : "rotate-0 scale-100 opacity-100"}`} />
-      <MoonIcon className={`absolute h-5 w-5 transition-all duration-300 ${isDark ? "rotate-0 scale-100 opacity-100" : "-rotate-90 scale-0 opacity-0"}`} />
-    </button>
+      <SunIcon className={`absolute size-5 transition-all duration-300 ${isDark ? "rotate-90 scale-0 opacity-0" : "rotate-0 scale-100 opacity-100"}`} />
+      <MoonIcon className={`absolute size-5 transition-all duration-300 ${isDark ? "rotate-0 scale-100 opacity-100" : "-rotate-90 scale-0 opacity-0"}`} />
+    </Button>
   );
 }
 

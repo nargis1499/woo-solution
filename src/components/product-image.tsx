@@ -1,7 +1,7 @@
 import Image from "next/image";
+import { ImageIcon } from "lucide-react";
 import { canOptimizeImage } from "@/lib/image-hosts";
 import { cn } from "@/lib/utils";
-import { BagIcon } from "./icons";
 
 export function ProductImage({
   src,
@@ -17,7 +17,7 @@ export function ProductImage({
   className?: string;
 }) {
   return (
-    <div className={cn("relative aspect-square w-full overflow-hidden bg-neutral-100", className)}>
+    <div className={cn("relative aspect-square w-full overflow-hidden bg-muted", className)}>
       {src ? (
         <Image
           src={src}
@@ -31,8 +31,8 @@ export function ProductImage({
           unoptimized={!canOptimizeImage(src)}
         />
       ) : (
-        <div className="grid h-full w-full place-items-center text-neutral-300">
-          <BagIcon className="h-12 w-12" />
+        <div className="grid h-full w-full place-items-center text-muted-foreground/40">
+          <ImageIcon className="size-10" strokeWidth={1.5} />
         </div>
       )}
     </div>

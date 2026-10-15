@@ -1,8 +1,14 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils";
 import { listHref, pageCount, paginationItems } from "@/lib/admin/pagination";
-import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
+import {
+  Pagination as PaginationRoot,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { PerPageSelect } from "./per-page-select";
 
 type ListLocation = {
@@ -41,53 +47,38 @@ export function Pagination({ pathname, params = {}, page, perPage, total, itemLa
 
   return (
     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" data-testid="pagination">
-      <p className="text-sm text-neutral-600" aria-live="polite">
-        Showing <span className="font-semibold text-neutral-900">{first}–{last}</span> of{" "}
-        <span className="font-semibold text-neutral-900">{total}</span> {itemLabel}
+      <p className="text-sm text-muted-foreground" aria-live="polite">
+        Showing{" "}
+        <span className="font-semibold text-foreground">
+          {first}–{last}
+        </span>{" "}
+        of <span className="font-semibold text-foreground">{total}</span> {itemLabel}
       </p>
-
       {pages > 1 && (
-        <nav aria-label="Pagination" className="flex items-center gap-1">
-          <PageLink href={page > 1 ? href(page - 1) : undefined} label="Previous page">
-            <ChevronLeftIcon className="h-4 w-4" />
-          </PageLink>
-          {paginationItems(page, pages).map((item, i) =>
-            item === "…" ? (
-              <span key={`gap-${i}`} className="w-6 text-center text-sm text-neutral-400" aria-hidden>…</span>
-            ) : (
-              <PageLink key={item} href={href(item)} label={`Page ${item}`} current={item === page}>
-                {item}
-              </PageLink>
-            ),
-          )}
-          <PageLink href={page < pages ? href(page + 1) : undefined} label="Next page">
-            <ChevronRightIcon className="h-4 w-4" />
-          </PageLink>
-        </nav>
+        <PaginationRoot className="mx-0 w-auto justify-end" aria-label="Pagination">
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious href={page > 1 ? href(page - 1) : undefined} isDisabled={page <= 1} aria-label="Previous page" />
+            </PaginationItem>
+            {paginationItems(page, pages).map((item, i) =>
+              item === "…" ? (
+                <PaginationItem key={`gap-${i}`}>
+                  <PaginationEllipsis />
+                </PaginationItem>
+              ) : (
+                <PaginationItem key={item}>
+                  <PaginationLink href={href(item)} isActive={item === page} aria-label={`Page ${item}`}>
+                    {item}
+                  </PaginationLink>
+                </PaginationItem>
+              ),
+            )}
+            <PaginationItem>
+              <PaginationNext href={page < pages ? href(page + 1) : undefined} isDisabled={page >= pages} aria-label="Next page" />
+            </PaginationItem>
+          </PaginationContent>
+        </PaginationRoot>
       )}
     </div>
-  );
-}
-
-function PageLink({ href, label, current, children }: { href?: string; label: string; current?: boolean; children: React.ReactNode }) {
-  const base = "inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-2 text-sm font-medium tabular-nums transition-colors";
-  if (current) {
-    return (
-      <span aria-current="page" aria-label={label} className={cn(base, "bg-brand-600 text-white shadow-sm")}>
-        {children}
-      </span>
-    );
-  }
-  if (!href) {
-    return (
-      <span aria-disabled="true" aria-label={label} className={cn(base, "cursor-not-allowed text-neutral-300")}>
-        {children}
-      </span>
-    );
-  }
-  return (
-    <Link href={href} aria-label={label} className={cn(base, "border border-neutral-300 bg-surface text-neutral-700 hover:bg-neutral-100")}>
-      {children}
-    </Link>
   );
 }

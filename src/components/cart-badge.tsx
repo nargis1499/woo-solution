@@ -1,8 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { ShoppingCartIcon } from "lucide-react";
+import { Link } from "react-aria-components";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { selectCartCount, useCartStore, useHydrated } from "@/lib/cart-store";
-import { CartIcon } from "./icons";
+import { cn } from "@/lib/utils";
 
 export function CartBadge() {
   const hydrated = useHydrated();
@@ -12,14 +15,14 @@ export function CartBadge() {
   return (
     <Link
       href="/cart"
-      className="relative inline-flex h-10 w-10 items-center justify-center rounded-md text-neutral-700 hover:bg-neutral-100"
+      className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "relative")}
       aria-label={`Cart, ${shown} item${shown === 1 ? "" : "s"}`}
     >
-      <CartIcon className="h-5 w-5" />
+      <ShoppingCartIcon className="size-5" />
       {shown > 0 && (
-        <span className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-brand-600 px-1 text-[11px] font-bold text-white">
+        <Badge className="absolute -top-1 -right-1 h-5 min-w-5 justify-center rounded-full px-1 text-[11px] tabular-nums">
           {shown > 99 ? "99+" : shown}
-        </span>
+        </Badge>
       )}
     </Link>
   );

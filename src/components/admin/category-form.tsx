@@ -3,10 +3,11 @@
 import { useActionState, useState } from "react";
 import { saveCategory, type AdminFormState } from "@/app/nemesis/actions";
 import type { Category } from "@/lib/types";
-import { Input, Label } from "@/components/ui/field";
+import { LinkButton } from "@/components/ui/button";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { useFormToast } from "./flash-toast";
-import { ButtonLink } from "@/components/ui/button";
-import { Checkbox, FieldError, SubmitButton } from "./form-bits";
+import { CheckboxField, SubmitButton } from "./form-bits";
 
 function slugify(input: string) {
   return input.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -19,45 +20,40 @@ export function CategoryForm({ category, compact }: { category?: Category | null
   const err = state?.fieldErrors ?? {};
   const [slugTouched, setSlugTouched] = useState(Boolean(category?.slug));
   const [slug, setSlug] = useState(v.slug ?? category?.slug ?? "");
+  const prefix = compact ? "new-" : "";
 
   return (
     <form action={formAction} className="space-y-4" noValidate>
       {category && <input type="hidden" name="id" value={category.id} />}
       <div className={compact ? "grid gap-3 sm:grid-cols-[1fr_1fr_120px]" : "space-y-4"}>
-        <div>
-          <Label htmlFor={`${compact ? "new-" : ""}name`} required>Name</Label>
+        <Field data-invalid={Boolean(err.name) || undefined}>
+          <FieldLabel htmlFor={`${prefix}name`}>Name</FieldLabel>
           <Input
-            id={`${compact ? "new-" : ""}name`}
+            id={`${prefix}name`}
             name="name"
             required
             maxLength={100}
             placeholder="e.g. Apparel"
             defaultValue={v.name ?? category?.name ?? ""}
             onChange={(e) => { if (!slugTouched) setSlug(slugify(e.target.value)); }}
-            aria-invalid={Boolean(err.name)}
+            aria-invalid={Boolean(err.name) || undefined}
           />
-          <FieldError message={err.name} />
-        </div>
-        <div>
-          <Label htmlFor={`${compact ? "new-" : ""}slug`} required>Slug</Label>
-          <Input
-            id={`${compact ? "new-" : ""}slug`}
-            name="slug"
-            value={slug}
-            onChange={(e) => { setSlugTouched(true); setSlug(e.target.value); }}
-            placeholder="apparel"
-            aria-invalid={Boolean(err.slug)}
-          />
-          <FieldError message={err.slug} />
-        </div>
-        <div>
-          <Label htmlFor={`${compact ? "new-" : ""}sort_order`}>Sort order</Label>
-          <Input id={`${compact ? "new-" : ""}sort_order`} name="sort_order" type="number" step={1} defaultValue={v.sort_order ?? category?.sort_order ?? 0} aria-invalid={Boolean(err.sort_order)} />
-          <FieldError message={err.sort_order} />
-        </div>
+          <FieldError>{err.name}</FieldError>
+        </Field>
+        <Field data-invalid={Boolean(err.slug) || undefined}>
+          <FieldLabel htmlFor={`${prefix}slug`}>Slug</FieldLabel>
+          <Input id={`${prefix}slug`} name="slug" value={slug} onChange={(e) => { setSlugTouched(true); setSlug(e.target.value); }} placeholder="apparel" aria-invalid={Boolean(err.slug) || undefined} />
+          <FieldError>{err.slug}</FieldError>
+        </Field>
+        <Field data-invalid={Boolean(err.sort_order) || undefined}>
+          <FieldLabel htmlFor={`${prefix}sort_order`}>Sort order</FieldLabel>
+          <Input id={`${prefix}sort_order`} name="sort_order" type="number" step={1} defaultValue={v.sort_order ?? category?.sort_order ?? 0} aria-invalid={Boolean(err.sort_order) || undefined} />
+          <FieldError>{err.sort_order}</FieldError>
+        </Field>
       </div>
       <div className={compact ? "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" : "space-y-4"}>
-        <Checkbox
+        <CheckboxField
+          id={`${prefix}show_in_menu`}
           name="show_in_menu"
           label="Show in header menu"
           // description="List this category in the storefront's main navigation."
@@ -65,7 +61,11 @@ export function CategoryForm({ category, compact }: { category?: Category | null
         />
         <div className="flex gap-2">
           <SubmitButton pendingLabel={category ? "Saving…" : "Adding…"}>{category ? "Save changes" : "Add category"}</SubmitButton>
-          {!compact && <ButtonLink href="/nemesis/categories" variant="outline">Cancel</ButtonLink>}
+          {!compact && (
+            <LinkButton href="/nemesis/categories" variant="outline">
+              Cancel
+            </LinkButton>
+          )}
         </div>
       </div>
     </form>

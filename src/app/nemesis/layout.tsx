@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Suspense, type ReactNode } from "react";
 import { requireAdmin } from "@/lib/admin/auth";
-import { AdminSidebar } from "@/components/admin/sidebar";
+import { getSiteSettings } from "@/lib/site-settings";
+import { AdminHeader } from "@/components/admin/admin-header";
+import { AdminSidebar } from "@/components/admin/app-sidebar";
 import { FlashToast } from "@/components/admin/flash-toast";
+import { AdminPageSkeleton } from "@/components/admin/ui";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const metadata: Metadata = {
   title: { default: "Dashboard", template: "%s · Admin" },
@@ -13,10 +19,13 @@ export const metadata: Metadata = {
  * Every /nemesis page renders behind <AdminGate>: signed-out visitors are sent
  * to the login page, signed-in non-admins get the regular 404. Server Actions
  * and data helpers re-check on their own, and RLS enforces it in the database.
+ *
+ * The dashboard has its own app shell (collapsible sidebar + top bar) instead
+ * of the storefront header/footer.
  */
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="container-page py-8">
+    <>
       <Suspense fallback={<AdminShellSkeleton />}>
         <AdminGate>{children}</AdminGate>
       </Suspense>
@@ -24,27 +33,37 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <Suspense fallback={null}>
         <FlashToast />
       </Suspense>
-    </div>
+    </>
   );
 }
 
 async function AdminGate({ children }: { children: ReactNode }) {
-  const user = await requireAdmin();
+  const [user, cookieStore, { store_name }] = await Promise.all([requireAdmin(), cookies(), getSiteSettings()]);
+  // The sidebar component persists its open/collapsed state in this cookie.
+  const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-8">
-      <AdminSidebar user={user} />
-      <div className="min-w-0">{children}</div>
-    </div>
+    <SidebarProvider defaultOpen={defaultOpen}>
+      <AdminSidebar user={user} storeName={store_name} />
+      <SidebarInset>
+        <AdminHeader />
+        <div className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">{children}</div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 
 function AdminShellSkeleton() {
   return (
-    <div className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-8" aria-busy>
-      <div className="card h-14 animate-pulse lg:h-80" />
-      <div className="space-y-4">
-        <div className="h-8 w-48 animate-pulse rounded-md bg-neutral-200" />
-        <div className="card h-72 animate-pulse" />
+    <div className="flex min-h-svh w-full" aria-busy>
+      <div className="hidden w-64 shrink-0 space-y-3 border-r p-4 md:block">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-6 w-3/4" />
+        <Skeleton className="h-6 w-2/3" />
+        <Skeleton className="h-6 w-3/4" />
+      </div>
+      <div className="flex-1 p-4 md:p-6">
+        <AdminPageSkeleton />
       </div>
     </div>
   );

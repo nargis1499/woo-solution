@@ -2,7 +2,8 @@
 
 import { useFormStatus } from "react-dom";
 import { signInWithGoogle } from "@/app/auth/actions";
-import { buttonClasses } from "./ui/button";
+import { Button } from "@/components/ui/button";
+import { FieldSeparator } from "@/components/ui/field";
 
 export function GoogleSignInButton({ next, label = "Continue with Google" }: { next: string; label?: string }) {
   return (
@@ -16,10 +17,10 @@ export function GoogleSignInButton({ next, label = "Continue with Google" }: { n
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} className={buttonClasses("outline", "lg", "w-full")}>
-      <GoogleLogo className="h-5 w-5" />
+    <Button type="submit" variant="outline" size="lg" className="w-full" isPending={pending}>
+      <GoogleLogo className="size-4" />
       {pending ? "Redirecting to Google…" : label}
-    </button>
+    </Button>
   );
 }
 
@@ -35,11 +36,5 @@ function GoogleLogo({ className }: { className?: string }) {
 }
 
 export function OrDivider() {
-  return (
-    <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-neutral-400">
-      <span className="h-px flex-1 bg-neutral-200" />
-      or
-      <span className="h-px flex-1 bg-neutral-200" />
-    </div>
-  );
+  return <FieldSeparator>or continue with e-mail</FieldSeparator>;
 }

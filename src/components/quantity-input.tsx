@@ -1,6 +1,10 @@
 "use client";
 
+import { MinusIcon, PlusIcon } from "lucide-react";
+import { Group, Input } from "react-aria-components";
 import { MAX_QTY_PER_LINE } from "@/lib/config";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function QuantityInput({
   value,
@@ -16,24 +20,27 @@ export function QuantityInput({
   label?: string;
 }) {
   const limit = Math.max(1, Math.min(max, MAX_QTY_PER_LINE));
-  const btn =
-    size === "sm"
-      ? "h-8 w-8 text-base"
-      : "h-10 w-10 text-lg";
-  const field = size === "sm" ? "h-8 w-10 text-sm" : "h-10 w-14 text-base";
+  const small = size === "sm";
 
   return (
-    <div className="inline-flex items-center overflow-hidden rounded-lg border border-neutral-300 bg-surface">
-      <button
-        type="button"
-        className={`${btn} text-neutral-600 hover:bg-neutral-100 disabled:opacity-40`}
-        onClick={() => onChange(value - 1)}
-        disabled={value <= 1}
+    <Group
+      aria-label={label}
+      className={cn(
+        "inline-flex items-center overflow-hidden rounded-md border bg-background shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30",
+        small ? "h-8" : "h-10",
+      )}
+    >
+      <Button
+        variant="ghost"
+        size={small ? "icon-sm" : "icon"}
+        className="rounded-none"
+        onPress={() => onChange(value - 1)}
+        isDisabled={value <= 1}
         aria-label="Decrease quantity"
       >
-        −
-      </button>
-      <input
+        <MinusIcon />
+      </Button>
+      <Input
         type="number"
         inputMode="numeric"
         min={1}
@@ -43,18 +50,22 @@ export function QuantityInput({
           const n = parseInt(e.target.value, 10);
           if (!Number.isNaN(n)) onChange(Math.min(Math.max(n, 1), limit));
         }}
-        className={`${field} border-x border-neutral-300 text-center [appearance:textfield] focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+        className={cn(
+          "h-full border-x bg-transparent text-center tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+          small ? "w-10 text-sm" : "w-14 text-base",
+        )}
         aria-label={label}
       />
-      <button
-        type="button"
-        className={`${btn} text-neutral-600 hover:bg-neutral-100 disabled:opacity-40`}
-        onClick={() => onChange(value + 1)}
-        disabled={value >= limit}
+      <Button
+        variant="ghost"
+        size={small ? "icon-sm" : "icon"}
+        className="rounded-none"
+        onPress={() => onChange(value + 1)}
+        isDisabled={value >= limit}
         aria-label="Increase quantity"
       >
-        +
-      </button>
-    </div>
+        <PlusIcon />
+      </Button>
+    </Group>
   );
 }

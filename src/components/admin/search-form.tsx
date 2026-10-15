@@ -1,6 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { SearchIcon } from "@/components/icons";
+import { SearchIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 
 /** Plain GET form – works without JS and keeps the URL shareable. */
 export function SearchForm({
@@ -27,23 +30,18 @@ export function SearchForm({
         Object.entries(hidden).map(([name, value]) =>
           value === undefined || value === "" ? null : <input key={name} type="hidden" name={name} value={String(value)} />,
         )}
-      <div className="relative">
-        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-        <input
-          type="search"
-          name="q"
-          defaultValue={q ?? ""}
-          placeholder={placeholder}
-          aria-label={placeholder}
-          className="input-base w-56 pl-9 sm:w-72"
-        />
-      </div>
+      <InputGroup className="w-56 sm:w-72">
+        <InputGroupInput type="search" name="q" defaultValue={q ?? ""} placeholder={placeholder} aria-label={placeholder} />
+        <InputGroupAddon>
+          <SearchIcon />
+        </InputGroupAddon>
+      </InputGroup>
       {children}
-      <button type="submit" className="h-10 rounded-lg border border-neutral-300 bg-surface px-4 text-sm font-medium hover:bg-neutral-100">
+      <Button type="submit" variant="outline">
         Filter
-      </button>
+      </Button>
       {isFiltered && (
-        <Link href={clearHref} className="text-sm text-neutral-500 hover:text-neutral-900">
+        <Link href={clearHref} className={buttonVariants({ variant: "ghost" })}>
           Clear
         </Link>
       )}

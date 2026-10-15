@@ -1,15 +1,12 @@
-import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-export function UserAvatar({ name, email, src, size = "md" }: { name?: string | null; email?: string | null; src?: string | null; size?: "md" | "lg" }) {
+export function UserAvatar({ name, email, src, size = "default" }: { name?: string | null; email?: string | null; src?: string | null; size?: "default" | "lg" }) {
   const initial = (name || email || "?").trim().slice(0, 1).toUpperCase();
-  const cls = cn("shrink-0 rounded-full object-cover", size === "lg" ? "h-10 w-10" : "h-9 w-9");
-  if (src) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt="" width={size === "lg" ? 40 : 36} height={size === "lg" ? 40 : 36} className={cn(cls, "bg-neutral-200")} referrerPolicy="no-referrer" />;
-  }
   return (
-    <span className={cn(cls, "grid place-items-center bg-brand-100 text-sm font-semibold text-brand-800")} aria-hidden>
-      {initial}
-    </span>
+    <Avatar size={size}>
+      {/* Plain <img>: avatars are tiny and Google's CDN rate-limits image proxies */}
+      {src && <AvatarImage src={src} alt="" referrerPolicy="no-referrer" />}
+      <AvatarFallback className="bg-primary/10 text-primary">{initial}</AvatarFallback>
+    </Avatar>
   );
 }

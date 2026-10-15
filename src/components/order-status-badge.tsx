@@ -1,17 +1,30 @@
-import type { OrderStatus } from "@/lib/types";
+import type { OrderStatus, PaymentStatus } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-const styles: Record<OrderStatus, string> = {
-  pending: "bg-amber-100 text-amber-800",
-  processing: "bg-blue-100 text-blue-800",
-  completed: "bg-emerald-100 text-emerald-800",
-  cancelled: "bg-neutral-200 text-neutral-700",
+/** Colour per status; works in both themes. */
+export const STATUS_TONES: Record<OrderStatus, string> = {
+  pending: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300",
+  processing: "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-300",
+  completed: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
+  cancelled: "",
 };
 
-export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+export function OrderStatusBadge({ status, className }: { status: OrderStatus; className?: string }) {
   return (
-    <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize", styles[status] ?? styles.pending)}>
+    <Badge variant={status === "cancelled" ? "secondary" : "outline"} className={cn("capitalize", STATUS_TONES[status] ?? STATUS_TONES.pending, className)}>
       {status}
-    </span>
+    </Badge>
+  );
+}
+
+export function PaymentStatusBadge({ status }: { status: PaymentStatus }) {
+  return (
+    <Badge
+      variant={status === "refunded" ? "secondary" : "outline"}
+      className={cn("capitalize", status === "paid" ? STATUS_TONES.completed : status === "unpaid" ? STATUS_TONES.pending : "")}
+    >
+      {status}
+    </Badge>
   );
 }

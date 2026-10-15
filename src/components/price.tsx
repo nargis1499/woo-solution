@@ -15,10 +15,8 @@ export function Price({
   const onSale = compareAtCents != null && compareAtCents > cents;
   return (
     <span className={cn("inline-flex items-baseline gap-2", className)}>
-      <span className={cn("font-semibold", onSale && "text-brand-700 dark:text-brand-300")}>{formatPrice(cents, currency)}</span>
-      {onSale && (
-        <span className="text-sm text-neutral-400 line-through">{formatPrice(compareAtCents, currency)}</span>
-      )}
+      <span className={cn("font-semibold tabular-nums", onSale && "text-primary")}>{formatPrice(cents, currency)}</span>
+      {onSale && <span className="text-sm text-muted-foreground line-through">{formatPrice(compareAtCents, currency)}</span>}
     </span>
   );
 }

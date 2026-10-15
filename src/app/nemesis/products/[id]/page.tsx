@@ -4,19 +4,13 @@ import { adminGetProduct, adminListCategories } from "@/lib/admin/data";
 import { formatDate } from "@/lib/format";
 import { deleteProduct } from "@/app/nemesis/actions";
 import { ProductForm } from "@/components/admin/product-form";
-import { ConfirmForm, DeleteButton } from "@/components/admin/form-bits";
+import { DeleteButton } from "@/components/admin/form-bits";
 import { PageHeader } from "@/components/admin/ui";
 import { safeListReturn } from "@/lib/admin/pagination";
 
 export const metadata: Metadata = { title: "Edit product" };
 
-export default async function EditProductPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ from?: string }>;
-}) {
+export default async function EditProductPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ from?: string }> }) {
   const [{ id }, { from }] = await Promise.all([params, searchParams]);
   // Back / Cancel / after-save all return to the exact list page the admin came from.
   const backHref = safeListReturn(from, "/nemesis/products") ?? "/nemesis/products";
@@ -31,11 +25,7 @@ export default async function EditProductPage({
         backHref={backHref}
         backLabel="Products"
         actions={
-          <ConfirmForm action={deleteProduct} message={`Delete "${product.name}"? This cannot be undone.`}>
-            <input type="hidden" name="id" value={product.id} />
-            <input type="hidden" name="return_to" value={backHref} />
-            <DeleteButton label="Delete product" size="md" />
-          </ConfirmForm>
+          <DeleteButton action={deleteProduct} id={product.id} returnTo={backHref} label="Delete product" size="default" title={`Delete "${product.name}"?`} description="The product is removed permanently. This cannot be undone." />
         }
       />
       <ProductForm product={product} categories={categories} returnTo={backHref} />

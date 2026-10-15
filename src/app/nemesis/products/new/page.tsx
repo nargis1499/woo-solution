@@ -9,7 +9,7 @@ export default async function NewProductPage() {
   const categories = await adminListCategories();
   return (
     <>
-      <PageHeader title="New product" backHref="/nemesis/products" backLabel="Products" />
+      <PageHeader title="New product" description="Add a product to the catalog." backHref="/nemesis/products" backLabel="Products" />
       <ProductForm categories={categories} />
     </>
   );

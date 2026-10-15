@@ -76,7 +76,7 @@ export function TopLoader() {
   return (
     <div data-top-loader className="pointer-events-none fixed inset-x-0 top-0 z-[100] h-0.5" aria-hidden>
       <div
-        className="h-full bg-brand-500 shadow-[0_0_8px_var(--color-brand-500)] transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none"
+        className="h-full bg-primary shadow-[0_0_8px_var(--color-primary)] transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none"
         style={{ width: `${progress}%`, opacity: visible ? 1 : 0 }}
       />
     </div>

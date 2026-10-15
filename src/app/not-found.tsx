@@ -1,12 +1,11 @@
-import { ButtonLink } from "@/components/ui/button";
+import { NotFoundContent } from "@/components/not-found-content";
+import { StoreShell } from "@/components/store-shell";
 
+/** Unknown URLs render outside every route group → bring the storefront chrome along. */
 export default function NotFound() {
   return (
-    <div className="container-page grid place-items-center py-24 text-center">
-      <p className="text-sm font-semibold uppercase tracking-widest text-brand-700 dark:text-brand-300">404</p>
-      <h1 className="mt-2 text-3xl font-bold tracking-tight">Page not found</h1>
-      <p className="mt-2 text-neutral-500">The page you&apos;re looking for doesn&apos;t exist or has been moved.</p>
-      <ButtonLink href="/shop" className="mt-6">Back to shop</ButtonLink>
-    </div>
+    <StoreShell>
+      <NotFoundContent />
+    </StoreShell>
   );
 }
