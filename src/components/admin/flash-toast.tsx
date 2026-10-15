@@ -49,8 +49,13 @@ export function FlashToast() {
  * inputs; only the overall success / error message moves to the toast.
  */
 export function useFormToast(state: AdminFormState) {
+  // Next.js keeps visited pages mounted but hidden (<Activity>) and re-runs their effects when you
+  // navigate back – with the same `state` still in place. Remember which result was already reported
+  // so a toast is shown exactly once, right after the action it belongs to.
+  const reported = useRef<AdminFormState>(null);
   useEffect(() => {
-    if (!state) return;
+    if (!state || reported.current === state) return;
+    reported.current = state;
     if (state.error) toast.error(state.error);
     else if (state.success) toast.success(state.success);
   }, [state]);

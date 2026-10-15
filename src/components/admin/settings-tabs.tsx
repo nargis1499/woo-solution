@@ -1,20 +1,31 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Key } from "react-aria-components";
-import { SETTINGS_TABS, type SettingsTabId } from "@/lib/admin/settings-tabs";
+import { isSettingsTab, SETTINGS_TABS, type SettingsTabId } from "@/lib/admin/settings-tabs";
 import type { SiteSettings } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GeneralSettingsForm, SeoSettingsForm, ShopSettingsForm } from "./settings-forms";
 
-export function SettingsTabs({ settings, initialTab = "general" }: { settings: SiteSettings; initialTab?: SettingsTabId }) {
-  const [tab, setTab] = useState<Key>(initialTab);
+export function SettingsTabs({ settings }: { settings: SiteSettings }) {
+  // The URL is the source of truth (?tab=seo …): it is shareable, survives a reload, and when Next.js
+  // restores this page after navigating away the tabs follow the link that was clicked.
+  const param = useSearchParams().get("tab") ?? undefined;
+  const urlTab: SettingsTabId = isSettingsTab(param) ? param : "general";
+  const [tab, setTab] = useState<Key>(urlTab);
+  const [seenUrlTab, setSeenUrlTab] = useState<SettingsTabId>(urlTab);
+  if (seenUrlTab !== urlTab) {
+    setSeenUrlTab(urlTab);
+    setTab(urlTab);
+  }
 
   function select(key: Key) {
     setTab(key);
-    // Keep the tab in the URL (shareable / survives reload) without a server round-trip.
+    // Keep the tab in the URL without a server round-trip. Next.js syncs useSearchParams with this call
+    // only when it is not handed its own history state back (that path is reserved for its internals).
     const url = key === "general" ? "/nemesis/settings" : `/nemesis/settings?tab=${String(key)}`;
-    window.history.replaceState(window.history.state, "", url);
+    window.history.replaceState(null, "", url);
   }
 
   return (

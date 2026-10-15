@@ -3,15 +3,12 @@ import { adminGetSiteSettings } from "@/lib/admin/data";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/admin/ui";
 import { SettingsTabs } from "@/components/admin/settings-tabs";
-import { isSettingsTab } from "@/lib/admin/settings-tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export const metadata: Metadata = { title: "Settings" };
 
-type SearchParams = Promise<{ tab?: string }>;
-
-export default async function AdminSettingsPage({ searchParams }: { searchParams: SearchParams }) {
-  const [settings, { tab }] = await Promise.all([adminGetSiteSettings(), searchParams]);
+export default async function AdminSettingsPage() {
+  const settings = await adminGetSiteSettings();
 
   return (
     <>
@@ -29,7 +26,7 @@ export default async function AdminSettingsPage({ searchParams }: { searchParams
               </AlertDescription>
             </Alert>
           )}
-          <SettingsTabs settings={settings} initialTab={isSettingsTab(tab) ? tab : "general"} />
+          <SettingsTabs settings={settings} />
         </div>
       ) : (
         <Alert variant="destructive">
