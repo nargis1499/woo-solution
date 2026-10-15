@@ -13,6 +13,7 @@ import {
   ShoppingCartIcon,
   TagsIcon,
   UsersIcon,
+  ImagesIcon,
 } from "lucide-react";
 import { signOut } from "@/app/auth/actions";
 import type { CurrentUser } from "@/lib/types";
@@ -39,6 +40,7 @@ export const ADMIN_NAV = [
   { href: "/nemesis/categories", label: "Categories", icon: TagsIcon },
   { href: "/nemesis/orders", label: "Orders", icon: ShoppingCartIcon },
   { href: "/nemesis/users", label: "Users", icon: UsersIcon },
+  { href: "/nemesis/media", label: "Media", icon: ImagesIcon },
   { href: "/nemesis/settings", label: "Settings", icon: SettingsIcon },
 ];
 

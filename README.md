@@ -43,6 +43,7 @@ cp .env.example .env.local
    3. [`supabase/migrations/20261016000000_admin.sql`](supabase/migrations/20261016000000_admin.sql) – `profiles.is_admin`, admin RLS policies, `site_settings`, the public `product-images` Storage bucket, `admin_stats()` / `admin_delete_user()` (safe to run on an existing project)
    4. [`supabase/migrations/20261017000000_category_menu.sql`](supabase/migrations/20261017000000_category_menu.sql) – `categories.show_in_menu` (header-menu visibility toggle; existing categories stay visible)
    5. [`supabase/migrations/20261018000000_settings_tabs.sql`](supabase/migrations/20261018000000_settings_tabs.sql) – settings tabs: contact links, favicon & SEO columns on `site_settings`, the global `manage_stock` switch (`stock_managed()`, honoured by `place_order()` and the order-status trigger) and the public `site-media` Storage bucket for branding files (safe to run on an existing project)
+   6. [`supabase/migrations/20261019000000_media_library.sql`](supabase/migrations/20261019000000_media_library.sql) – **Media Library**: `media`, `media_folders`, `product_media` (galleries), `products.image_media_id`, `media_usage()` / `media_totals()`, RLS and the public `media` Storage bucket (5 MB per file, admin-only writes). Safe to run on an existing project – current product images keep working as plain URLs
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -62,6 +63,9 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...   # legacy "anon" key al
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_STORE_NAME=Woo Solution
 NEXT_PUBLIC_CURRENCY=USD
+# optional – enables the "Suggest with AI" alt-text button in the Media Library (server-side only)
+# OPENAI_API_KEY=sk-...
+# OPENAI_ALT_TEXT_MODEL=gpt-4o-mini
 ```
 
 ### Auth settings (Supabase dashboard → Authentication)
@@ -118,10 +122,11 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Section | What you can do |
 | --- | --- |
 | Dashboard | Revenue / order / product / customer stats, orders by status, recent orders, low-stock list |
-| Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **image** = upload a file (stored in the `product-images` bucket, the previous file is deleted automatically when you replace/remove it) **or** paste any image URL |
+| Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **main image** + **gallery** picked from the Media Library (upload a new file or select an existing one – see [Media](#media)), or paste any image URL |
 | Categories | Create, rename, reorder, delete (products become uncategorised); **Show in header menu** toggle decides which categories appear in the storefront navigation |
 | Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
+| Media | The Media Library – see [Media](#media) below: uploads, grid / list browsing, search, filters, folders, trash, bulk actions, image optimisation / WebP conversion / editing, alt text, usage tracking and the reusable **media picker** |
 | Settings | Three tabs – see [Settings](#settings) below: **General** (site title, tagline, support e-mail, WhatsApp, Telegram, favicon), **SEO** (search-engine visibility, site URL, title / meta description, share image, verification codes, X handle) and **WooCommerce** (global stock management switch) |
 
 The **Products, Orders and Users** lists are paginated: `?page=` + a **per-page** selector (10 / 20 / 50 / 100, top right of the table, `?per=`, remembered per admin in a cookie). Changing the size keeps the first visible row on screen, a new filter starts on page 1, a page that no longer exists redirects to the last one, and view / edit / delete bring you back to the exact page, size and filter you came from.
@@ -142,7 +147,24 @@ Every action reports back through a toast notification (bottom-right corner of t
 
 Without a site URL the app falls back to `NEXT_PUBLIC_SITE_URL` for absolute URLs (sitemap, canonicals, JSON-LD).
 
-Images: the bucket is created by the migration (public read, admin-only write, 5 MB limit, JPEG/PNG/WebP/GIF/AVIF). Uploaded images are served through `next/image`; `*.supabase.co` and a few stock-photo hosts are allow-listed in `src/lib/image-hosts.ts` – add your own CDN there. Plain-`http` URLs (e.g. a local Supabase on `127.0.0.1`) are rendered unoptimised.
+Branding images (favicon, share image) are served through `next/image`; `*.supabase.co` and a few stock-photo hosts are allow-listed in `src/lib/image-hosts.ts` – add your own CDN there. Plain-`http` URLs (e.g. a local Supabase on `127.0.0.1`) are rendered unoptimised.
+
+#### Media
+
+`/nemesis/media` (sidebar → **Media**, just above Settings) is a WordPress-style media library backed by the public `media` Storage bucket and the `public.media` table.
+
+| Area | What it does |
+| --- | --- |
+| Upload | Drag & drop or browse, several files at once, **any file type up to 5 MB** (active content such as `.html`, `.js`, `.exe`, `.php` … is refused for safety – the list lives in `src/lib/media/shared.ts`). Per-file and overall progress bars, clear size / type errors, duplicate detection (same bytes already in the library → *Skip* or *Upload anyway*). Files go browser → Storage directly, then the server verifies the stored bytes, records dimensions and generates **thumbnail / medium / large** WebP renditions (never upscaled) |
+| Browse | Grid ⇄ list toggle, name / type / size / dimensions / upload date, storage totals (library + trash), **Show per page** 12 / 24 / 48 / 96 (`?per=`, remembered in a cookie), pagination, loading and empty states. Everything lives in the URL (`?q&kind&folder&from&to&size&sort&page&view&trash`) so views are shareable |
+| Find | Search by name; filter by type (Image / Video / Document / Other), **date range** (calendar), **file size** (under 100 KB / 100 KB – 1 MB / over 1 MB) and folder; sort by date, name, size or type |
+| Per file | Click a tile → detail dialog with a large preview (or a file-type icon), type, size, dimensions, upload date, full URL, **alt text** (+ *Suggest with AI* when `OPENAI_API_KEY` is set), folder, usage, and the actions **Copy URL · Download · Rename · Replace file · Edit image · Optimize · Move to trash**. Renaming only changes the display name and *Replace file* keeps the same path – the URL never changes |
+| Bulk | Select All / Clear Selection; download as a zip; move to a folder; optimise / convert; move to trash. From the **Trash** view: restore, delete permanently (also removes the renditions from Storage) or **Empty trash** – permanent deletion is only possible from the trash |
+| Images | **Optimize** (re-encode without visible quality loss, adjustable quality slider), convert PNG / JPEG → **WebP** (or AVIF), single or bulk with a progress bar and a before/after size summary. **Edit**: crop (free or fixed ratios), rotate, flip – *Apply* overwrites the file in place, *Save as a copy* creates `<name>-edited.<ext>` |
+| Organise | Flat **folders** (create / rename / delete – files are kept, just unfiled), usage tracking (*Used in 1 product* on the tile, product links in the detail dialog), soft delete with a trash |
+| Picker | The **media picker** (`src/components/admin/media/media-picker.tsx`) is the same library as a dialog: on the product form *Add image* / *Add images* offer **Media Library** (browse, search, filter, grid / list, single or multiple selection) or **Upload new**. Products store the **media reference** (`products.image_media_id`, `product_media` for the gallery) – not just a URL – so renaming, replacing, trashing or converting a file is reflected everywhere it is used. The storefront product page shows the main image plus a switchable gallery with the alt text |
+
+Technical notes: uploads are validated twice (browser + server, including the real stored size and type), Storage policies allow writes to the `media` bucket for admins only, renditions and conversions use [sharp](https://sharp.pixelplumbing.com/), zips are built with [fflate](https://github.com/101arrowz/fflate), and every long-running action (uploads, bulk optimise, zip downloads) reports progress and finishes with a toast.
 
 ---
 
@@ -156,6 +178,7 @@ woo-solution/
 │   ├── migrations/20261016000000_admin.sql  # is_admin flag, admin RLS, site_settings, Storage bucket
 │   ├── migrations/20261017000000_category_menu.sql  # categories.show_in_menu
 │   ├── migrations/20261018000000_settings_tabs.sql  # contact/SEO/stock settings, stock_managed(), site-media bucket
+│   ├── migrations/20261019000000_media_library.sql  # media library tables, galleries, media bucket
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
@@ -206,6 +229,7 @@ Google sign-in lives in `src/app/auth/actions.ts` (`signInWithGoogle`), `src/com
 auth.users ──1:1──▶ profiles (auto-created by trigger)
 categories ──1:N──▶ products
 auth.users ──1:N──▶ orders ──1:N──▶ order_items (price & name snapshotted at purchase)
+media_folders ──1:N──▶ media ◀──N:M──▶ products (product_media = gallery, products.image_media_id = main image)
 ```
 
 - Prices are stored as **integer cents** (`price_cents`) – no floating-point rounding.
@@ -250,7 +274,8 @@ The project uses Next.js 16's **Cache Components** (`cacheComponents: true`). Ev
 | Search engine visibility, meta description, share image, verification codes, sitemap | `/nemesis/settings` → **SEO** (`/robots.txt` and `/sitemap.xml` are generated from it) |
 | Stock management on/off | `/nemesis/settings` → **WooCommerce** (global; `public.stock_managed()` in SQL) |
 | Products / categories | `/nemesis/products` and `/nemesis/categories` (or the Supabase Table Editor). *Draft* products are hidden from the shop, *Featured* ones show on the home page |
-| Product images | Upload from the product form (Supabase Storage bucket `product-images`) or paste any public URL – allow-listed hosts live in `src/lib/image-hosts.ts` |
+| Product images & files | `/nemesis/media` (Media Library, Storage bucket `media`) – pick them on the product form, or paste any public URL; allow-listed hosts for remote images live in `src/lib/image-hosts.ts` |
+| AI alt text | Set `OPENAI_API_KEY` (and optionally `OPENAI_ALT_TEXT_MODEL`) in `.env.local` – a *Suggest with AI* button appears next to the alt text in the media detail dialog |
 | Orders | `/nemesis/orders` – change `status` (`pending` → `processing` → `completed` / `cancelled`) and `payment_status` |
 | Admins | `/nemesis/users` → *Administrator* checkbox, or `update public.profiles set is_admin = true where email = '…'` |
 | Admin URL | Rename the `src/app/nemesis` folder, then search-and-replace `/nemesis` in `src/` (links, `ADMIN_PATH` in `src/lib/admin/auth.ts`, `PROTECTED_PREFIXES` in `src/lib/supabase/proxy.ts`) |
@@ -280,7 +305,8 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 - [x] **Admin dashboard** – products, categories, orders, users, settings (`/nemesis`)
 - [x] **Settings tabs** – General / SEO / WooCommerce (contact links, favicon, robots + sitemap, global stock switch)
 - [x] **Product images in Supabase Storage** with an upload UI
-- [ ] Admin extras – bulk actions, CSV export, audit log, per-section roles
+- [x] **Media Library** – uploads, folders, trash, optimisation / WebP, image editor, alt text, usage tracking, reusable picker
+- [ ] Admin extras – CSV export, audit log, per-section roles
 - [ ] **Server-side cart** (`cart_items` table) synced across devices, merged on login
 - [ ] **Coupons & discounts**, tax rules, multiple shipping methods
 - [ ] **Transactional e-mails** (order confirmation) via Resend / Supabase Edge Functions

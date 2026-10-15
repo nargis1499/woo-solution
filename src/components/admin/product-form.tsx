@@ -1,7 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
-import { ImageIcon, LinkIcon, UploadIcon, XIcon } from "lucide-react";
+import { useActionState, useState } from "react";
 import { saveProduct, type AdminFormState } from "@/app/nemesis/actions";
 import type { Category, Product } from "@/lib/types";
 import { LinkButton } from "@/components/ui/button";
@@ -11,11 +10,9 @@ import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useFormToast } from "./flash-toast";
 import { CheckboxField, SubmitButton } from "./form-bits";
-
-type ImageMode = "keep" | "upload" | "url" | "remove";
+import { ProductMediaFields } from "./media/product-media-fields";
 
 function slugify(input: string) {
   return input.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -44,28 +41,12 @@ export function ProductForm({
   const [slugTouched, setSlugTouched] = useState(Boolean(product?.slug));
   const [slug, setSlug] = useState(v.slug ?? product?.slug ?? "");
 
-  const [imageMode, setImageMode] = useState<ImageMode>((v.image_mode as ImageMode) || (product?.image_url ? "keep" : "remove"));
-  const [filePreview, setFilePreview] = useState<string | null>(null);
-  const [urlValue, setUrlValue] = useState(v.image_url ?? "");
-  useEffect(() => () => { if (filePreview) URL.revokeObjectURL(filePreview); }, [filePreview]);
-
-  const currentImage = product?.image_url ?? null;
-  const previewSrc = imageMode === "upload" ? filePreview : imageMode === "url" ? urlValue || null : imageMode === "keep" ? currentImage : null;
-
-  const imageOptions = (
-    [
-      currentImage ? { value: "keep", label: "Keep", icon: ImageIcon } : null,
-      { value: "upload", label: "Upload", icon: UploadIcon },
-      { value: "url", label: "URL", icon: LinkIcon },
-      { value: "remove", label: currentImage ? "Remove" : "None", icon: XIcon },
-    ] as ({ value: ImageMode; label: string; icon: typeof ImageIcon } | null)[]
-  ).filter((o): o is { value: ImageMode; label: string; icon: typeof ImageIcon } => o !== null);
+  const gallery = (product?.gallery ?? []).flatMap((g) => (g.media ? [g.media] : []));
 
   return (
     <form action={formAction} className="grid gap-6 lg:grid-cols-[1fr_340px]" noValidate>
       {product && <input type="hidden" name="id" value={product.id} />}
       <input type="hidden" name="return_to" value={returnTo} />
-      <input type="hidden" name="image_mode" value={imageMode} />
 
       <div className="space-y-6">
         <Card>
@@ -174,73 +155,9 @@ export function ProductForm({
         </Card>
       </div>
 
-      {/* ── Image ─────────────────────────────────────────────────────────── */}
+      {/* ── Image + gallery (Media Library) ───────────────────────────────── */}
       <aside className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Image</CardTitle>
-          </CardHeader>
-          <CardContent className="gap-4">
-            <div className="relative aspect-square w-full overflow-hidden rounded-lg border border-dashed bg-muted">
-              {previewSrc ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={previewSrc} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <div className="grid h-full place-items-center text-center text-xs text-muted-foreground">
-                  <span>
-                    <ImageIcon className="mx-auto mb-2 size-6" />
-                    No image
-                  </span>
-                </div>
-              )}
-            </div>
-            <ToggleGroup
-              aria-label="Image source"
-              variant="outline"
-              spacing={0}
-              selectionMode="single"
-              disallowEmptySelection
-              selectedKeys={[imageMode]}
-              onSelectionChange={(keys) => {
-                const next = [...keys][0];
-                if (next != null) setImageMode(String(next) as ImageMode);
-              }}
-              className="w-full"
-            >
-              {imageOptions.map((o) => (
-                <ToggleGroupItem key={o.value} id={o.value} className="flex-1" aria-label={o.label}>
-                  <o.icon /> {o.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-            {imageMode === "upload" && (
-              <Field data-invalid={Boolean(err.image_file) || undefined}>
-                <FieldLabel htmlFor="image_file">Choose file</FieldLabel>
-                <Input
-                  id="image_file"
-                  name="image_file"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                  className="file:mr-3 file:rounded-sm file:bg-primary file:px-2 file:text-primary-foreground"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    setFilePreview(f ? URL.createObjectURL(f) : null);
-                  }}
-                  aria-invalid={Boolean(err.image_file) || undefined}
-                />
-                <FieldError>{err.image_file}</FieldError>
-                <FieldDescription>JPEG, PNG, WebP, GIF or AVIF · max 5 MB. {currentImage && "The previous upload is deleted automatically."}</FieldDescription>
-              </Field>
-            )}
-            {imageMode === "url" && (
-              <Field data-invalid={Boolean(err.image_url) || undefined}>
-                <FieldLabel htmlFor="image_url">Image URL</FieldLabel>
-                <Input id="image_url" name="image_url" type="url" placeholder="https://…" value={urlValue} onChange={(e) => setUrlValue(e.target.value)} aria-invalid={Boolean(err.image_url) || undefined} />
-                <FieldError>{err.image_url}</FieldError>
-              </Field>
-            )}
-          </CardContent>
-        </Card>
+        <ProductMediaFields currentUrl={product?.image_url ?? null} currentMedia={product?.image_media ?? null} gallery={gallery} errors={err} />
 
         <div className="flex items-center gap-2">
           <SubmitButton className="flex-1" pendingLabel={isEdit ? "Saving…" : "Creating…"}>

@@ -1,4 +1,5 @@
 import "server-only";
+import { MEDIA_REF_COLUMNS, isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES } from "@/lib/admin/constants";
@@ -14,6 +15,9 @@ import type { AdminStats, Category, Order, OrderStatus, Product, Profile, SiteSe
 
 const PRODUCT_COLUMNS =
   "id, category_id, name, slug, description, price_cents, compare_at_price_cents, image_url, stock, is_active, is_featured, created_at, updated_at, category:categories(id, name, slug)";
+
+/** Media-library embeds (main image + ordered gallery). Only used where the form needs them. */
+const PRODUCT_MEDIA_COLUMNS = `${PRODUCT_COLUMNS}, image_media_id, image_media:media!products_image_media_id_fkey(${MEDIA_REF_COLUMNS}), gallery:product_media(media_id, position, media(${MEDIA_REF_COLUMNS}))`;
 
 const ORDER_COLUMNS =
   "id, order_number, user_id, status, payment_method, payment_status, currency, subtotal_cents, shipping_cents, total_cents, customer_email, shipping_name, shipping_phone, shipping_address_line1, shipping_address_line2, shipping_city, shipping_postal_code, shipping_country, notes, created_at";
@@ -112,9 +116,11 @@ export async function adminGetProduct(id: string): Promise<Product | null> {
   await requireAdmin();
   if (!isUuid(id)) return null;
   const supabase = await createClient();
-  const { data, error } = await supabase.from("products").select(PRODUCT_COLUMNS).eq("id", id).maybeSingle();
+  let { data, error } = await supabase.from("products").select(PRODUCT_MEDIA_COLUMNS).eq("id", id).maybeSingle();
+  // Before the media migration ran the embeds don't resolve – fall back to the plain row.
+  if (error && isMissingMediaSchema(error.message)) ({ data, error } = await supabase.from("products").select(PRODUCT_COLUMNS).eq("id", id).maybeSingle());
   if (error) throw new Error(`Failed to load product: ${error.message}`);
-  return (data as unknown as Product) ?? null;
+  return data ? withSortedGallery(data as unknown as Product) : null;
 }
 
 // ─── Categories ─────────────────────────────────────────────────────────────

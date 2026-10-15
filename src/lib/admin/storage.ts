@@ -3,7 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Buckets
- *  - product-images: catalogue photos (products form)
+ *  - product-images: legacy catalogue photos (uploaded before the Media Library;
+ *                    still cleaned up when a product drops / replaces one)
+ *  - media:          the Media Library (see src/lib/media) – new product images live here
  *  - site-media:     branding & "other" media – favicon, social share image …
  *                    (never mixed with product photos)
  * Limits/mime lists mirror the bucket definitions in supabase/migrations.
@@ -12,16 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const PRODUCT_IMAGE_BUCKET = "product-images";
 export const SITE_MEDIA_BUCKET = "site-media";
 
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // product-images file_size_limit
 export const MAX_SITE_MEDIA_BYTES = 2 * 1024 * 1024; // site-media file_size_limit
-
-export const ALLOWED_IMAGE_TYPES: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif",
-  "image/avif": "avif",
-};
 
 /** Favicons: everything browsers accept for <link rel="icon">. */
 export const ALLOWED_FAVICON_TYPES: Record<string, string> = {
@@ -57,12 +50,6 @@ export function storagePathFromUrl(url: string | null | undefined, bucket: strin
   } catch {
     return null;
   }
-}
-
-export function validateImageFile(file: File): string | null {
-  if (!ALLOWED_IMAGE_TYPES[file.type]) return "Please upload a JPEG, PNG, WebP, GIF or AVIF image.";
-  if (file.size > MAX_IMAGE_BYTES) return "Images must be 5 MB or smaller.";
-  return null;
 }
 
 /**
@@ -107,17 +94,6 @@ async function uploadTo(
 }
 
 const uniqueSuffix = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-
-/** Uploads a product image and returns its public URL + object path. */
-export async function uploadProductImage(
-  supabase: SupabaseClient,
-  file: File,
-  slug: string,
-): Promise<{ url: string; path: string }> {
-  const ext = ALLOWED_IMAGE_TYPES[file.type] ?? "bin";
-  const safeSlug = slug.replace(/[^a-z0-9-]/g, "").slice(0, 60) || "product";
-  return uploadTo(supabase, PRODUCT_IMAGE_BUCKET, `products/${safeSlug}-${uniqueSuffix()}.${ext}`, file, file.type, "Image");
-}
 
 /**
  * Uploads a branding file (favicon, share image, …) to the `site-media` bucket

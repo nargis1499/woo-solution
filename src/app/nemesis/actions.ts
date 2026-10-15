@@ -9,12 +9,11 @@ import {
   removeProductImages,
   removeSiteMediaIfOwned,
   storagePathFromUrl,
-  uploadProductImage,
   uploadSiteMedia,
   validateFaviconFile,
-  validateImageFile,
   validateShareImageFile,
 } from "@/lib/admin/storage";
+import { MAX_PRODUCT_GALLERY, mediaUrl } from "@/lib/media/shared";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { SITEMAP_TAG } from "@/lib/seo";
 import { MENU_TAG } from "@/lib/menu";
@@ -75,6 +74,8 @@ function friendlyError(e: unknown): string {
   if (code === "23505" || /duplicate key/.test(message)) return "That slug is already in use. Please pick another one.";
   if (code === "23514" || /stock_check|violates check constraint/.test(message)) return "Not enough stock to re-open this order.";
   if (code === "42501" || /row-level security|permission denied/i.test(message)) return "You are not allowed to do that.";
+  if (code === "42P01" || code === "PGRST205" || code === "PGRST204" || /relation "?(public\.)?(media|product_media)"? does not exist|image_media_id|product_media.*schema cache|media.*schema cache/i.test(message))
+    return "The Media Library tables are missing – run supabase/migrations/20261019000000_media_library.sql in the Supabase SQL Editor, then try again.";
   return message || "Something went wrong. Please try again.";
 }
 
@@ -134,7 +135,8 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   const isFeatured = bool(formData, "is_featured");
   const imageMode = str(formData, "image_mode", 10) || "keep";
   const imageUrlInput = str(formData, "image_url", 2000);
-  const imageFile = formData.get("image_file");
+  const imageMediaId = str(formData, "image_media_id", 40);
+  const galleryIds = [...new Set(str(formData, "gallery_ids", 2000).split(",").map((v) => v.trim()).filter(Boolean))];
 
   if (!name) fieldErrors.name = "Name is required.";
   if (!SLUG_RE.test(slug)) fieldErrors.slug = "Use lowercase letters, numbers and dashes only.";
@@ -142,16 +144,11 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   if (Number.isNaN(compareAtCents)) fieldErrors.compare_at_price = "Enter a valid price or leave empty.";
   if (!Number.isInteger(stock) || stock < 0) fieldErrors.stock = "Stock must be a whole number ≥ 0.";
   if (categoryId && !UUID_RE.test(categoryId)) fieldErrors.category_id = "Invalid category.";
-  if (imageMode === "url") {
-    if (!/^https?:\/\/\S+$/i.test(imageUrlInput)) fieldErrors.image_url = "Enter a full image URL starting with http:// or https://.";
-  }
-  if (imageMode === "upload") {
-    if (!(imageFile instanceof File) || imageFile.size === 0) fieldErrors.image_file = "Choose an image to upload.";
-    else {
-      const problem = validateImageFile(imageFile);
-      if (problem) fieldErrors.image_file = problem;
-    }
-  }
+  if (!["keep", "media", "url", "remove"].includes(imageMode)) fieldErrors.image_media_id = "Invalid image selection.";
+  if (imageMode === "url" && !/^https?:\/\/\S+$/i.test(imageUrlInput)) fieldErrors.image_url = "Enter a full image URL starting with http:// or https://.";
+  if (imageMode === "media" && !UUID_RE.test(imageMediaId)) fieldErrors.image_media_id = "Pick an image from the Media Library.";
+  if (galleryIds.some((g) => !UUID_RE.test(g))) fieldErrors.gallery_ids = "Invalid gallery selection.";
+  if (galleryIds.length > MAX_PRODUCT_GALLERY) fieldErrors.gallery_ids = `A gallery can hold at most ${MAX_PRODUCT_GALLERY} images.`;
   if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
 
   try {
@@ -166,17 +163,39 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       previousImageUrl = current.image_url;
     }
 
-    // ── figure out the new image ───────────────────────────────────────────
+    // ── resolve media-library references (must exist, be images, not trashed) ──
+    const wanted = [...new Set([...(imageMode === "media" ? [imageMediaId] : []), ...galleryIds])];
+    const found = new Map<string, { id: string; path: string }>();
+    if (wanted.length) {
+      const { data, error } = await supabase.from("media").select("id, path, kind, deleted_at").in("id", wanted);
+      if (error) throw error;
+      for (const m of (data ?? []) as { id: string; path: string; kind: string; deleted_at: string | null }[]) {
+        if (m.kind === "image" && !m.deleted_at) found.set(m.id, m);
+      }
+      if (imageMode === "media" && !found.has(imageMediaId)) {
+        return { error: "Please fix the highlighted fields.", fieldErrors: { image_media_id: "That image is no longer in the Media Library – pick another one." }, values };
+      }
+      const missing = galleryIds.filter((g) => !found.has(g));
+      if (missing.length) {
+        return { error: "Please fix the highlighted fields.", fieldErrors: { gallery_ids: `${missing.length} gallery ${missing.length === 1 ? "image is" : "images are"} no longer in the Media Library – remove ${missing.length === 1 ? "it" : "them"} and try again.` }, values };
+      }
+    }
+
+    // ── figure out the new main image ───────────────────────────────────────
     let imageUrl: string | null = previousImageUrl;
-    let uploadedPath: string | null = null;
-    if (imageMode === "upload" && imageFile instanceof File) {
-      const uploaded = await uploadProductImage(supabase, imageFile, slug);
-      imageUrl = uploaded.url;
-      uploadedPath = uploaded.path;
+    const image: { image_url?: string | null; image_media_id?: string | null } = {};
+    if (imageMode === "media") {
+      imageUrl = mediaUrl(found.get(imageMediaId)!.path);
+      image.image_url = imageUrl;
+      image.image_media_id = imageMediaId;
     } else if (imageMode === "url") {
       imageUrl = imageUrlInput;
+      image.image_url = imageUrl;
+      image.image_media_id = null;
     } else if (imageMode === "remove") {
       imageUrl = null;
+      image.image_url = null;
+      image.image_media_id = null;
     }
 
     const row = {
@@ -189,20 +208,25 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       stock,
       is_active: isActive,
       is_featured: isFeatured,
-      image_url: imageUrl,
+      ...image,
     };
 
     const result = isEdit
       ? await supabase.from("products").update(row).eq("id", id).select("id").single()
       : await supabase.from("products").insert(row).select("id").single();
+    if (result.error) throw result.error;
+    const productId = result.data.id as string;
 
-    if (result.error) {
-      // don't leave an orphaned upload behind
-      if (uploadedPath) await supabase.storage.from("product-images").remove([uploadedPath]);
-      throw result.error;
+    // ── gallery: replace the ordered set in one go ──────────────────────────
+    const { error: clearError } = await supabase.from("product_media").delete().eq("product_id", productId);
+    if (clearError) throw clearError;
+    if (galleryIds.length) {
+      const { error: insertError } = await supabase.from("product_media").insert(galleryIds.map((media_id, position) => ({ product_id: productId, media_id, position })));
+      if (insertError) throw insertError;
     }
 
-    // The old file is only removed once the row points at the new image.
+    // Legacy uploads (product-images bucket) are removed once the row points elsewhere;
+    // Media Library files are never deleted from here – they stay reusable.
     if (previousImageUrl && previousImageUrl !== imageUrl) {
       await removeProductImageIfOwned(supabase, previousImageUrl);
     }

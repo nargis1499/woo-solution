@@ -22,13 +22,67 @@ export type Product = {
   price_cents: number;
   compare_at_price_cents: number | null;
   image_url: string | null;
+  /** Media-library file behind `image_url` (null for external URLs / legacy uploads). */
+  image_media_id?: string | null;
   stock: number;
   is_active: boolean;
   is_featured: boolean;
   created_at: string;
   updated_at?: string;
   category?: Pick<Category, "id" | "name" | "slug"> | null;
+  /** Media-library file behind `image_url` (null for external URLs / legacy uploads). */
+  image_media?: MediaRef | null;
+  /** Extra images from the media library (storefront gallery), in display order. */
+  gallery?: ProductGalleryItem[];
 };
+
+/** The slice of a media row that products embed (enough to render a thumbnail / alt text). */
+export type MediaRef = Pick<MediaItem, "id" | "name" | "path" | "alt" | "width" | "height" | "variants" | "mime_type" | "kind" | "size" | "updated_at" | "deleted_at">;
+
+export type ProductGalleryItem = {
+  media_id: string;
+  position: number;
+  media: MediaRef | null;
+};
+
+/* ─── Media library ───────────────────────────────────────────────────────── */
+
+export type MediaKind = "image" | "video" | "document" | "other";
+export type MediaVariantName = "thumbnail" | "medium" | "large";
+export type MediaVariant = { path: string; width: number; height: number; size: number };
+
+export type MediaFolder = {
+  id: string;
+  name: string;
+  created_at: string;
+  /** Only present in admin queries. */
+  file_count?: number;
+};
+
+export type MediaItem = {
+  id: string;
+  folder_id: string | null;
+  /** Display / download name – renaming never changes the URL. */
+  name: string;
+  /** Object key inside the "media" bucket. */
+  path: string;
+  mime_type: string;
+  kind: MediaKind;
+  size: number;
+  width: number | null;
+  height: number | null;
+  alt: string | null;
+  hash: string | null;
+  variants: Partial<Record<MediaVariantName, MediaVariant>>;
+  variants_size: number;
+  uploaded_by: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** One place a file is used (product image or gallery). */
+export type MediaUsage = { media_id: string; product_id: string; product_name: string; product_slug: string; role: "image" | "gallery" };
 
 export type OrderStatus = "pending" | "processing" | "completed" | "cancelled";
 

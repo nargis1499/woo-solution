@@ -1,9 +1,13 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { MEDIA_REF_COLUMNS, isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
 import type { Category, Product } from "@/lib/types";
 
 const PRODUCT_COLUMNS =
   "id, category_id, name, slug, description, price_cents, compare_at_price_cents, image_url, stock, is_active, is_featured, created_at, category:categories(id, name, slug)";
+
+/** Product page: main image alt text + the ordered gallery from the media library. */
+const PRODUCT_DETAIL_COLUMNS = `${PRODUCT_COLUMNS}, image_media_id, image_media:media!products_image_media_id_fkey(${MEDIA_REF_COLUMNS}), gallery:product_media(media_id, position, media(${MEDIA_REF_COLUMNS}))`;
 
 export async function getCategories(): Promise<Category[]> {
   const supabase = await createClient();
@@ -49,13 +53,10 @@ export async function getProducts(options: {
 
 export async function getProductBySlug(slug: string): Promise<Product | null> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("products")
-    .select(PRODUCT_COLUMNS)
-    .eq("slug", slug)
-    .eq("is_active", true)
-    .maybeSingle();
-
+  const load = (columns: string) => supabase.from("products").select(columns).eq("slug", slug).eq("is_active", true).maybeSingle();
+  let { data, error } = await load(PRODUCT_DETAIL_COLUMNS);
+  // Before the media migration ran the embeds don't resolve – fall back to the plain row.
+  if (error && isMissingMediaSchema(error.message)) ({ data, error } = await load(PRODUCT_COLUMNS));
   if (error) throw new Error(`Failed to load product: ${error.message}`);
-  return (data as unknown as Product) ?? null;
+  return data ? withSortedGallery(data as unknown as Product) : null;
 }

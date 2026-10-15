@@ -9,7 +9,8 @@ import { getSiteSettings } from "@/lib/site-settings";
 import { FREE_SHIPPING_THRESHOLD_CENTS } from "@/lib/config";
 import { formatPrice } from "@/lib/format";
 import { Price } from "@/components/price";
-import { ProductImage } from "@/components/product-image";
+import { ProductGallery } from "@/components/product-gallery";
+import { slidesFor } from "@/lib/media/shared";
 import { ProductGrid } from "@/components/product-grid";
 import { Badge } from "@/components/ui/badge";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
@@ -64,7 +65,7 @@ async function ProductDetails({ params }: { params: Params }) {
       />
 
       <div className="grid gap-10 lg:grid-cols-2">
-        <ProductImage src={product.image_url} alt={product.name} sizes="(min-width: 1024px) 50vw, 100vw" priority className="rounded-2xl ring-1 ring-foreground/10" />
+        <ProductGallery slides={slidesFor(product)} />
         <div className="space-y-6">
           <div>
             {product.category && (
