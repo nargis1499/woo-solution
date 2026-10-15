@@ -6,7 +6,6 @@ import { CheckIcon, ShoppingCartIcon, ZapIcon } from "lucide-react";
 import { useCartStore } from "@/lib/cart-store";
 import type { Product } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { useStoreSettings } from "./store-settings";
 
 type Props = {
   product: Pick<Product, "id" | "slug" | "name" | "price_cents" | "image_url" | "stock">;
@@ -15,13 +14,18 @@ type Props = {
   className?: string;
   /** "add" keeps the user on the page, "buy" jumps straight to checkout */
   mode?: "add" | "buy";
+  /**
+   * Settings → WooCommerce → stock management. Passed down from the page's
+   * dynamic data (never from a layout/context) so a toggle in the dashboard is
+   * picked up on the very next navigation – no full reload needed.
+   */
+  manageStock?: boolean;
 };
 
-export function AddToCartButton({ product, quantity = 1, size = "default", className, mode = "add" }: Props) {
+export function AddToCartButton({ product, quantity = 1, size = "default", className, mode = "add", manageStock = true }: Props) {
   const addItem = useCartStore((s) => s.addItem);
   const [added, setAdded] = useState(false);
   const router = useRouter();
-  const { manageStock } = useStoreSettings();
   const outOfStock = manageStock && product.stock <= 0;
 
   function handlePress() {

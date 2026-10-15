@@ -24,13 +24,17 @@ export function SubmitButton({
   pendingLabel = "Saving…",
   variant = "default",
   className,
+  pending: pendingProp,
 }: {
   children: ReactNode;
   pendingLabel?: string;
   variant?: "default" | "secondary" | "destructive" | "outline";
   className?: string;
+  /** Forms that dispatch their action manually (no `<form action>`) pass `isPending` from useActionState here. */
+  pending?: boolean;
 }) {
-  const { pending } = useFormStatus();
+  const status = useFormStatus();
+  const pending = pendingProp ?? status.pending;
   return (
     <Button type="submit" variant={variant} isPending={pending} className={className} aria-busy={pending}>
       {pending && <Spinner />}

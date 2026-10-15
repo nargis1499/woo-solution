@@ -13,7 +13,7 @@ import { CartTotals } from "./cart-totals";
 import { ProductImage } from "./product-image";
 import { QuantityInput } from "./quantity-input";
 
-export function CartView() {
+export function CartView({ manageStock = true }: { manageStock?: boolean }) {
   const hydrated = useHydrated();
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore(selectCartSubtotal);
@@ -62,7 +62,7 @@ export function CartView() {
                   <p className="font-semibold tabular-nums">{formatPrice(item.priceCents * item.quantity)}</p>
                 </div>
                 <div className="mt-auto flex items-center justify-between gap-4">
-                  <QuantityInput size="sm" value={item.quantity} max={item.stock ?? undefined} onChange={(q) => setQuantity(item.productId, q)} />
+                  <QuantityInput size="sm" value={item.quantity} max={manageStock ? (item.stock ?? undefined) : undefined} onChange={(q) => setQuantity(item.productId, q)} />
                   <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onPress={() => removeItem(item.productId)}>
                     <Trash2Icon /> Remove
                   </Button>

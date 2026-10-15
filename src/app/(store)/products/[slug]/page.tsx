@@ -5,6 +5,7 @@ import { Suspense, cache } from "react";
 import { BanknoteIcon, PackageCheckIcon, TruckIcon } from "lucide-react";
 import { getProductBySlug, getProducts } from "@/lib/data/products";
 import { canonicalFor } from "@/lib/seo";
+import { getSiteSettings } from "@/lib/site-settings";
 import { FREE_SHIPPING_THRESHOLD_CENTS } from "@/lib/config";
 import { formatPrice } from "@/lib/format";
 import { Price } from "@/components/price";
@@ -45,7 +46,9 @@ export default function ProductPage({ params }: { params: Params }) {
 
 async function ProductDetails({ params }: { params: Params }) {
   const { slug } = await params;
-  const product = await loadProduct(slug);
+  // Both read here, in the dynamic part of the page (loadProduct() is uncached), so the
+  // stock switch from Settings → WooCommerce is fresh on every navigation.
+  const [product, { manage_stock }] = await Promise.all([loadProduct(slug), getSiteSettings()]);
   if (!product) notFound();
 
   return (
@@ -75,7 +78,7 @@ async function ProductDetails({ params }: { params: Params }) {
             <Price cents={product.price_cents} compareAtCents={product.compare_at_price_cents} className="mt-3 text-2xl" />
           </div>
           {product.description && <p className="leading-relaxed text-muted-foreground">{product.description}</p>}
-          <ProductPurchasePanel product={product} />
+          <ProductPurchasePanel product={product} manageStock={manage_stock} />
           <Separator />
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li className="flex items-center gap-2">

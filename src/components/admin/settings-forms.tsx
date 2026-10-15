@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, type ReactNode } from "react";
+import { startTransition, useActionState, useState, type ReactNode } from "react";
 import { updateGeneralSettings, updateSeoSettings, updateShopSettings, type AdminFormState } from "@/app/nemesis/actions";
 import type { SiteSettings } from "@/lib/types";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,10 +26,20 @@ function SettingsCard({
   action: Action;
   children: (ctx: { v: Record<string, string>; err: Record<string, string> }) => ReactNode;
 }) {
-  const [state, formAction] = useActionState<AdminFormState, FormData>(action, null);
+  const [state, dispatch, isPending] = useActionState<AdminFormState, FormData>(action, null);
   useFormToast(state);
   return (
-    <form action={formAction} noValidate>
+    // Dispatched from onSubmit instead of `<form action>` on purpose: React 19 resets a form after an
+    // `action` completes, which flips React Aria's switch/checkbox inputs back to their initial DOM
+    // state and makes the next click look dead. Without the reset what you see is what gets saved.
+    <form
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+        startTransition(() => dispatch(formData));
+      }}
+    >
       <Card>
         <CardHeader>
           <CardTitle>{title}</CardTitle>
@@ -38,7 +48,9 @@ function SettingsCard({
           <FieldGroup className="gap-5">{children({ v: state?.values ?? {}, err: state?.fieldErrors ?? {} })}</FieldGroup>
         </CardContent>
         <CardFooter className="border-t">
-          <SubmitButton pendingLabel="Saving…">Save changes</SubmitButton>
+          <SubmitButton pendingLabel="Saving…" pending={isPending}>
+            Save changes
+          </SubmitButton>
         </CardFooter>
       </Card>
     </form>
@@ -47,11 +59,18 @@ function SettingsCard({
 
 /**
  * Labelled switch. The value travels in a hidden input driven by React state
- * (not the switch's own checkbox) so React 19's automatic form reset after a
- * server action can never desync what is shown from what gets submitted.
+ * (not the switch's own checkbox), so what is shown is always what gets
+ * submitted. When the server value changes underneath (saved elsewhere, page
+ * refreshed) the switch follows it.
  */
 function SwitchField({ id, name, label, defaultSelected }: { id: string; name: string; label: string; defaultSelected: boolean }) {
   const [selected, setSelected] = useState(defaultSelected);
+  const [seenDefault, setSeenDefault] = useState(defaultSelected);
+  if (seenDefault !== defaultSelected) {
+    // derived-state reset during render (React-sanctioned pattern, no effect needed)
+    setSeenDefault(defaultSelected);
+    setSelected(defaultSelected);
+  }
   return (
     <FieldLabel htmlFor={id} className="items-center gap-3 py-1 text-sm font-medium has-data-selected:bg-transparent">
       <input type="hidden" name={name} value={selected ? "on" : "off"} />

@@ -19,7 +19,8 @@ export function SettingsTabs({ settings, initialTab = "general" }: { settings: S
 
   return (
     <Tabs selectedKey={tab} onSelectionChange={select} className="gap-5">
-      <TabsList aria-label="Settings sections" className="h-auto max-w-full overflow-x-auto">
+      {/* wraps instead of scrolling – an overflow container showed scrollbar arrows next to the tabs on Windows */}
+      <TabsList aria-label="Settings sections" className="h-auto max-w-full flex-wrap">
         {SETTINGS_TABS.map((t) => (
           <TabsTrigger key={t.id} id={t.id} className="px-3 py-1.5">
             <t.icon /> {t.label}

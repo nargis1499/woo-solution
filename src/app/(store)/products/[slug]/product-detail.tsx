@@ -3,14 +3,12 @@
 import { useState } from "react";
 import { AddToCartButton } from "@/components/add-to-cart-button";
 import { QuantityInput } from "@/components/quantity-input";
-import { useStoreSettings } from "@/components/store-settings";
 import type { Product } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 
 /** Client island: quantity picker + add-to-cart / buy-now buttons. */
-export function ProductPurchasePanel({ product }: { product: Product }) {
+export function ProductPurchasePanel({ product, manageStock }: { product: Product; manageStock: boolean }) {
   const [qty, setQty] = useState(1);
-  const { manageStock } = useStoreSettings();
   // Stock management off (Settings → WooCommerce) = every product is unlimited.
   const inStock = !manageStock || product.stock > 0;
 
@@ -23,8 +21,8 @@ export function ProductPurchasePanel({ product }: { product: Product }) {
       )}
       <div className="flex flex-wrap items-center gap-3">
         {inStock && <QuantityInput value={qty} onChange={setQty} max={manageStock ? product.stock : undefined} />}
-        <AddToCartButton product={product} quantity={qty} size="lg" className="min-w-40" />
-        {inStock && <AddToCartButton product={product} quantity={qty} size="lg" mode="buy" className="min-w-32" />}
+        <AddToCartButton product={product} quantity={qty} size="lg" className="min-w-40" manageStock={manageStock} />
+        {inStock && <AddToCartButton product={product} quantity={qty} size="lg" mode="buy" className="min-w-32" manageStock={manageStock} />}
       </div>
     </div>
   );

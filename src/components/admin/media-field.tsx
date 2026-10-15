@@ -32,23 +32,26 @@ export function MediaField({
 }) {
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [seenUrl, setSeenUrl] = useState(currentUrl);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputId = `${name}_file`;
+
+  // A new `currentUrl` means the save went through (uploaded / removed): start from a clean slate so a
+  // second save cannot re-upload the same file or remove the file that was just uploaded.
+  if (seenUrl !== currentUrl) {
+    setSeenUrl(currentUrl);
+    setRemoving(false);
+    setFilePreview(null);
+  }
+  useEffect(() => {
+    if (fileRef.current) fileRef.current.value = "";
+  }, [currentUrl]);
 
   // Blob URLs leak until revoked.
   useEffect(() => {
     if (!filePreview) return;
     return () => URL.revokeObjectURL(filePreview);
   }, [filePreview]);
-
-  // React 19 resets the form after a server action – the file input is emptied, so drop the stale preview too.
-  useEffect(() => {
-    const form = fileRef.current?.form;
-    if (!form) return;
-    const onReset = () => setFilePreview(null);
-    form.addEventListener("reset", onReset);
-    return () => form.removeEventListener("reset", onReset);
-  }, []);
 
   const previewSrc = filePreview ?? (removing ? null : currentUrl);
 

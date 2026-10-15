@@ -32,7 +32,7 @@ export function ProductCard({ product, priority, manageStock = true }: { product
           </Link>
         </h3>
         <Price cents={product.price_cents} compareAtCents={product.compare_at_price_cents} className="mt-auto" />
-        <AddToCartButton product={product} size="sm" className="mt-2 w-full" />
+        <AddToCartButton product={product} size="sm" className="mt-2 w-full" manageStock={manageStock} />
       </CardContent>
     </Card>
   );
