@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { ChevronDownIcon, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SEO_DESCRIPTION_MAX, SEO_DESCRIPTION_RECOMMENDED, SEO_TITLE_MAX, SEO_TITLE_RECOMMENDED, excerptFromHtml, pageHref, truncate } from "@/lib/pages/shared";
-import type { MediaRef } from "@/lib/types";
+import { SEO_DESCRIPTION_MAX, SEO_DESCRIPTION_RECOMMENDED, SEO_TITLE_MAX, SEO_TITLE_RECOMMENDED, excerptFromHtml, pageHref, truncate, type PageImage } from "@/lib/pages/shared";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -12,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SwitchField } from "@/components/admin/form-bits";
 import { MediaRefField } from "@/components/admin/media/media-ref-field";
-import { BRANDING_FOLDER, SHARE_IMAGE_MIME_TYPES, brandingFileProblem, mediaUrl } from "@/lib/media/shared";
+import { BRANDING_FOLDER, SHARE_IMAGE_MIME_TYPES, brandingFileProblem } from "@/lib/media/shared";
 
 /*
  * Expandable "Search & social" section of the page form. Every field is
@@ -53,7 +52,8 @@ export function SeoSettings({
   siteUrl: string | null;
   storeName: string;
   /** Stored share image (edit mode). */
-  ogImage: MediaRef | null;
+  /** Stored share image (library file or external URL). */
+  ogImage: PageImage | null;
   hasFeaturedImage: boolean;
   defaultOpen?: boolean;
 }) {
@@ -141,9 +141,10 @@ export function SeoSettings({
                 name="og_image"
                 label="Social share image"
                 shape="wide"
-                currentUrl={ogImage ? mediaUrl(ogImage.path) : null}
-                currentMedia={ogImage}
-                error={errors.og_image_media_id}
+                currentUrl={ogImage?.src ?? null}
+                currentMedia={ogImage?.media ?? null}
+                error={errors.og_image_media_id ?? errors.og_image_url}
+                allowUrl
                 chooseLabel={hasFeaturedImage ? "Use a different image" : "Choose image"}
                 picker={{
                   kind: "image",

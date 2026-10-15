@@ -52,7 +52,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
       publishedTime: page.published_at ?? undefined,
       modifiedTime: page.updated_at,
       tags: page.tags?.map((t) => t.name),
-      images: image ? [{ url: image, alt: page.featured_image?.alt ?? seo.ogTitle }] : undefined,
+      images: image ? [{ url: image, alt: page.og_image?.alt ?? page.featured_image?.alt ?? seo.ogTitle }] : undefined,
     },
     twitter: {
       card: image ? "summary_large_image" : "summary",

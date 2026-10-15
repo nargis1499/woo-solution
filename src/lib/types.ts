@@ -113,6 +113,8 @@ export type Page = {
   /** Plain-text summary derived from the content – default meta description. */
   excerpt: string | null;
   featured_image_id: string | null;
+  /** External featured image – used when `featured_image_id` is null. */
+  featured_image_url: string | null;
   status: PageStatus;
   seo_title: string | null;
   seo_description: string | null;
@@ -122,6 +124,8 @@ export type Page = {
   og_title: string | null;
   og_description: string | null;
   og_image_id: string | null;
+  /** External share image – used when `og_image_id` is null. */
+  og_image_url: string | null;
   author_id: string | null;
   published_at: string | null;
   created_at: string;

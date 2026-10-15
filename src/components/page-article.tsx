@@ -2,6 +2,7 @@ import { CalendarIcon } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import { mediaUrl } from "@/lib/media/shared";
 import { sanitizePageHtml } from "@/lib/pages/sanitize";
+import { featuredImage } from "@/lib/pages/shared";
 import type { Page } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -13,12 +14,14 @@ import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
  * `lib/pages/sanitize.ts` is the only thing between the editor and the DOM.
  */
 export function PageArticle({ page, className }: { page: Page; className?: string }) {
-  const image = page.featured_image && !page.featured_image.deleted_at ? page.featured_image : null;
-  const srcSet = image
-    ? [image.variants.medium, image.variants.large]
+  // Media Library file (with responsive renditions) or a pasted external URL.
+  const image = featuredImage(page);
+  const media = image?.media ?? null;
+  const srcSet = media
+    ? [media.variants.medium, media.variants.large]
         .filter((v): v is NonNullable<typeof v> => Boolean(v))
         .map((v) => `${mediaUrl(v.path)} ${v.width}w`)
-        .concat(image.width ? [`${mediaUrl(image.path)} ${image.width}w`] : [])
+        .concat(media.width ? [`${mediaUrl(media.path)} ${media.width}w`] : [])
         .join(", ")
     : undefined;
   const html = sanitizePageHtml(page.content);
@@ -51,12 +54,13 @@ export function PageArticle({ page, className }: { page: Page; className?: strin
         <figure className="mx-auto mt-8 max-w-5xl">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={mediaUrl(image.path)}
+            src={image.src}
             srcSet={srcSet || undefined}
             sizes="(min-width: 1024px) 1024px, 100vw"
-            alt={image.alt ?? ""}
-            width={image.width ?? undefined}
-            height={image.height ?? undefined}
+            alt={media?.alt ?? ""}
+            width={media?.width ?? undefined}
+            height={media?.height ?? undefined}
+            referrerPolicy={media ? undefined : "no-referrer"}
             className="h-auto w-full rounded-2xl object-cover shadow-sm"
             fetchPriority="high"
             data-testid="page-featured-image"

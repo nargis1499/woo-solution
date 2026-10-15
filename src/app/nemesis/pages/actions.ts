@@ -30,6 +30,7 @@ import {
   htmlToText,
   isReservedSlug,
   isValidCanonical,
+  isValidImageUrl,
   parseTagNames,
   slugifyPage,
   tagSlug,
@@ -161,10 +162,12 @@ export async function savePage(_prev: AdminFormState, formData: FormData): Promi
   const ogTitle = str(formData, "og_title", SEO_TITLE_MAX + 1);
   const ogDescription = str(formData, "og_description", SEO_DESCRIPTION_MAX + 1);
   const tagNames = parseTagNames(str(formData, "tags", 2000));
-  const featuredMode = str(formData, "featured_image_mode", 10) || "keep";
+  let featuredMode = str(formData, "featured_image_mode", 10) || "keep";
   const featuredId = str(formData, "featured_image_media_id", 40);
-  const ogMode = str(formData, "og_image_mode", 10) || "keep";
+  const featuredUrl = str(formData, "featured_image_url", 2100);
+  let ogMode = str(formData, "og_image_mode", 10) || "keep";
   const ogId = str(formData, "og_image_media_id", 40);
+  const ogUrl = str(formData, "og_image_url", 2100);
 
   if (!title) fieldErrors.title = "Title is required.";
   else if (title.length > PAGE_TITLE_MAX) fieldErrors.title = `Keep the title under ${PAGE_TITLE_MAX} characters.`;
@@ -176,8 +179,14 @@ export async function savePage(_prev: AdminFormState, formData: FormData): Promi
   if (canonicalUrl && !isValidCanonical(canonicalUrl)) fieldErrors.canonical_url = "Enter a full URL starting with https:// (or leave it empty to use the page's own URL).";
   if (ogTitle.length > SEO_TITLE_MAX) fieldErrors.og_title = `Keep the Open Graph title under ${SEO_TITLE_MAX} characters.`;
   if (ogDescription.length > SEO_DESCRIPTION_MAX) fieldErrors.og_description = `Keep the Open Graph description under ${SEO_DESCRIPTION_MAX} characters.`;
-  if (!["keep", "media", "remove"].includes(featuredMode) || (featuredMode === "media" && !UUID_RE.test(featuredId))) fieldErrors.featured_image_media_id = "Pick an image from the Media Library.";
-  if (!["keep", "media", "remove"].includes(ogMode) || (ogMode === "media" && !UUID_RE.test(ogId))) fieldErrors.og_image_media_id = "Pick an image from the Media Library.";
+  const IMAGE_MODES = ["keep", "media", "url", "remove"];
+  // "Use a URL" left blank = no image
+  if (featuredMode === "url" && !featuredUrl) featuredMode = "remove";
+  if (ogMode === "url" && !ogUrl) ogMode = "remove";
+  if (!IMAGE_MODES.includes(featuredMode) || (featuredMode === "media" && !UUID_RE.test(featuredId))) fieldErrors.featured_image_media_id = "Pick an image from the Media Library.";
+  if (!IMAGE_MODES.includes(ogMode) || (ogMode === "media" && !UUID_RE.test(ogId))) fieldErrors.og_image_media_id = "Pick an image from the Media Library.";
+  if (featuredMode === "url" && !isValidImageUrl(featuredUrl)) fieldErrors.featured_image_url = "Enter a full image URL starting with https://.";
+  if (ogMode === "url" && !isValidImageUrl(ogUrl)) fieldErrors.og_image_url = "Enter a full image URL starting with https://.";
   if (intent === "publish" || intent === "update") Object.assign(fieldErrors, publishProblems(title, content));
   if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
 
@@ -220,10 +229,13 @@ export async function savePage(_prev: AdminFormState, formData: FormData): Promi
       og_title: ogTitle || null,
       og_description: ogDescription || null,
     };
-    if (featuredMode === "media") row.featured_image_id = featuredId;
-    else if (featuredMode === "remove") row.featured_image_id = null;
-    if (ogMode === "media") row.og_image_id = ogId;
-    else if (ogMode === "remove") row.og_image_id = null;
+    // exactly one of <image>_id / <image>_url is kept per image
+    if (featuredMode === "media") Object.assign(row, { featured_image_id: featuredId, featured_image_url: null });
+    else if (featuredMode === "url") Object.assign(row, { featured_image_id: null, featured_image_url: featuredUrl });
+    else if (featuredMode === "remove") Object.assign(row, { featured_image_id: null, featured_image_url: null });
+    if (ogMode === "media") Object.assign(row, { og_image_id: ogId, og_image_url: null });
+    else if (ogMode === "url") Object.assign(row, { og_image_id: null, og_image_url: ogUrl });
+    else if (ogMode === "remove") Object.assign(row, { og_image_id: null, og_image_url: null });
     if (!isEdit) row.author_id = user.id;
 
     const result = isEdit

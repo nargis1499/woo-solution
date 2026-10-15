@@ -15,7 +15,7 @@ export const PAGES_TAG = "pages";
 export const pageTag = (slug: string) => `page:${slug}`;
 
 export const PAGE_COLUMNS =
-  "id, title, slug, content, excerpt, featured_image_id, status, seo_title, seo_description, canonical_url, robots_index, robots_follow, og_title, og_description, og_image_id, author_id, published_at, created_at, updated_at";
+  "id, title, slug, content, excerpt, featured_image_id, featured_image_url, status, seo_title, seo_description, canonical_url, robots_index, robots_follow, og_title, og_description, og_image_id, og_image_url, author_id, published_at, created_at, updated_at";
 
 /** Page row + featured / share image + tags (what the template and the form render). */
 export const PAGE_DETAIL_COLUMNS = `${PAGE_COLUMNS}, featured_image:media!pages_featured_image_id_fkey(${MEDIA_REF_COLUMNS}), og_image:media!pages_og_image_id_fkey(${MEDIA_REF_COLUMNS}), tags:page_tags(position, tag:tags(id, name, slug))`;

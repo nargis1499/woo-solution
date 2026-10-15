@@ -190,17 +190,45 @@ const pick = (...values: (string | null | undefined)[]) => values.find((v) => ty
  * from the title / content / featured image. `siteUrl` = Settings → SEO → site
  * URL (null while unknown → no canonical). Search engines treat these as hints.
  */
+/** A page image is either a Media Library file or an external URL (never both). */
+export type PageImage = { src: string; media: MediaRef | null };
+
+export function featuredImage(page: { featured_image?: MediaRef | null; featured_image_url?: string | null }): PageImage | null {
+  if (page.featured_image && !page.featured_image.deleted_at) return { src: mediaUrl(page.featured_image.path), media: page.featured_image };
+  if (page.featured_image_url) return { src: page.featured_image_url, media: null };
+  return null;
+}
+
+export function shareImage(page: { og_image?: MediaRef | null; og_image_url?: string | null }): PageImage | null {
+  if (page.og_image && !page.og_image.deleted_at) return { src: mediaUrl(page.og_image.path), media: page.og_image };
+  if (page.og_image_url) return { src: page.og_image_url, media: null };
+  return null;
+}
+
+/** `http(s)://…`, at most 2000 characters – what the "Use a URL" option accepts. */
+export function isValidImageUrl(value: string): boolean {
+  if (!value || value.length > 2000) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function pageSeo(
   page: Pick<Page, "title" | "slug" | "content" | "excerpt" | "seo_title" | "seo_description" | "canonical_url" | "robots_index" | "robots_follow" | "og_title" | "og_description"> & {
     featured_image?: MediaRef | null;
+    featured_image_url?: string | null;
     og_image?: MediaRef | null;
+    og_image_url?: string | null;
   },
   siteUrl: string | null,
   indexingEnabled = true,
 ): PageSeo {
   const title = pick(page.seo_title, page.title) ?? page.title;
   const description = pick(page.seo_description, page.excerpt) ?? (page.content ? excerptFromHtml(page.content) || null : null);
-  const image = page.og_image && !page.og_image.deleted_at ? page.og_image : page.featured_image && !page.featured_image.deleted_at ? page.featured_image : null;
+  const image = shareImage(page) ?? featuredImage(page);
   return {
     title,
     description,
@@ -208,7 +236,7 @@ export function pageSeo(
     robots: { index: indexingEnabled && page.robots_index, follow: indexingEnabled && page.robots_follow },
     ogTitle: pick(page.og_title) ?? title,
     ogDescription: pick(page.og_description) ?? description,
-    ogImage: image ? mediaUrl(image.path) : null,
+    ogImage: image?.src ?? null,
   };
 }
 

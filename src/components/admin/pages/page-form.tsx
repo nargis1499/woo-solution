@@ -5,8 +5,7 @@ import { CalendarIcon, ExternalLinkIcon, EyeIcon, GlobeIcon, UserIcon } from "lu
 import { checkPageSlug, savePage } from "@/app/nemesis/pages/actions";
 import type { AdminFormState } from "@/lib/admin/form";
 import { formatDate } from "@/lib/format";
-import { mediaUrl } from "@/lib/media/shared";
-import { PAGE_TITLE_MAX, pageHref, pagePreviewHref, slugifyPage } from "@/lib/pages/shared";
+import { PAGE_TITLE_MAX, featuredImage, pageHref, pagePreviewHref, shareImage, slugifyPage } from "@/lib/pages/shared";
 import type { Page } from "@/lib/types";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,7 +57,8 @@ export function PageForm({
   const [slugTouched, setSlugTouched] = useState(Boolean(page?.slug));
   const [slug, setSlug] = useState(v.slug ?? page?.slug ?? "");
   const [content, setContent] = useState(v.content ?? page?.content ?? "");
-  const [featuredPicked, setFeaturedPicked] = useState(Boolean(page?.featured_image));
+  const featured = page ? featuredImage(page) : null;
+  const [featuredPicked, setFeaturedPicked] = useState(Boolean(featured));
   const intentRef = useRef<Intent>("draft");
   const [submitted, setSubmitted] = useState<Intent | null>(null);
 
@@ -201,7 +201,7 @@ export function PageForm({
           contentHtml={content}
           siteUrl={siteUrl}
           storeName={storeName}
-          ogImage={page?.og_image && !page.og_image.deleted_at ? page.og_image : null}
+          ogImage={page ? shareImage(page) : null}
           hasFeaturedImage={featuredPicked}
           defaultOpen={Boolean(err.seo_title || err.seo_description || err.canonical_url || err.og_title || err.og_description || err.og_image_media_id)}
         />
@@ -293,9 +293,10 @@ export function PageForm({
               name="featured_image"
               label="Image"
               shape="wide"
-              currentUrl={page?.featured_image && !page.featured_image.deleted_at ? mediaUrl(page.featured_image.path) : null}
-              currentMedia={page?.featured_image && !page.featured_image.deleted_at ? page.featured_image : null}
-              error={err.featured_image_media_id}
+              currentUrl={featured?.src ?? null}
+              currentMedia={featured?.media ?? null}
+              error={err.featured_image_media_id ?? err.featured_image_url}
+              allowUrl
               onChange={(has) => { setFeaturedPicked(has); setDirty(true); }}
               picker={{
                 kind: "image",

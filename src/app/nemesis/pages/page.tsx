@@ -5,8 +5,8 @@ import { adminListPages } from "@/lib/admin/data";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatDate } from "@/lib/format";
-import { mediaPreviewUrl, mediaUrl } from "@/lib/media/shared";
-import { PAGE_SORTS, PAGE_STATUSES, pageHref, pagePreviewHref, parsePageSort, parsePageStatus } from "@/lib/pages/shared";
+import { mediaPreviewUrl } from "@/lib/media/shared";
+import { PAGE_SORTS, PAGE_STATUSES, featuredImage, pageHref, pagePreviewHref, parsePageSort, parsePageStatus } from "@/lib/pages/shared";
 import { deletePage, deletePages, publishPages, unpublishPages } from "@/app/nemesis/pages/actions";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { Badge } from "@/components/ui/badge";
@@ -92,8 +92,8 @@ export default async function AdminPagesPage({ searchParams }: { searchParams: S
             ],
           }}
           rows={pages.map((p) => {
-            const image = p.featured_image && !p.featured_image.deleted_at ? p.featured_image : null;
-            const thumb = image ? (mediaPreviewUrl(image, "thumbnail") ?? mediaUrl(image.path)) : null;
+            const image = featuredImage(p);
+            const thumb = image ? (image.media ? (mediaPreviewUrl(image.media, "thumbnail") ?? image.src) : image.src) : null;
             return {
               id: p.id,
               href: editHref(p.id),
