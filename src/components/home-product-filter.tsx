@@ -1,34 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PackageSearchIcon } from "lucide-react";
+import { PRODUCTS_PER_PAGE, productCountLabel } from "@/lib/catalog";
+import { pageCount, pageRange } from "@/lib/pagination";
 import type { Category, Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ProductCard } from "./product-card";
+import { ProductPagination } from "./product-pagination";
 
 const ALL = "all";
 
 /**
  * Home page "filtered products" section (UI → Home page): the shop's category pills with
- * the matching products. Every active product is already on the page, so switching a pill
- * filters in the browser – instant, no navigation, the page keeps its scroll position.
+ * the matching products, PRODUCTS_PER_PAGE at a time. Every active product is already on
+ * the page, so switching a pill or a page happens in the browser – instant, no navigation.
+ * A pill change keeps the scroll position (the pills stay under the pointer); a page change
+ * scrolls back to the top of the section, where the new page starts.
  */
 export function HomeProductFilter({ categories, products, manageStock }: { categories: Category[]; products: Product[]; manageStock: boolean }) {
   const [active, setActive] = useState<string>(ALL);
+  const [requestedPage, setRequestedPage] = useState(1);
+  const top = useRef<HTMLDivElement>(null);
+
   const current = active === ALL ? null : categories.find((c) => c.slug === active) ?? null;
   const shown = current ? products.filter((p) => p.category?.slug === current.slug || p.category_id === current.id) : products;
+  // Clamp instead of resetting in an effect: a server refresh may shrink the list under us.
+  const page = Math.min(requestedPage, pageCount(shown.length, PRODUCTS_PER_PAGE));
+  const { first, last } = pageRange(page, PRODUCTS_PER_PAGE, shown.length);
+  const visible = shown.slice(first - 1, last);
+
+  const goToPage = (next: number) => {
+    setRequestedPage(next);
+    // Back to the section heading (one level up), clear of the sticky header.
+    (top.current?.closest("section") ?? top.current)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
 
   return (
-    <div className="space-y-6" data-testid="home-product-filter">
+    <div ref={top} className="space-y-6" data-testid="home-product-filter">
       <ToggleGroup
         selectionMode="single"
         disallowEmptySelection
         selectedKeys={new Set([active])}
         onSelectionChange={(keys) => {
           const [key] = Array.from(keys);
-          if (key != null) setActive(String(key));
+          if (key == null) return;
+          setActive(String(key));
+          setRequestedPage(1);
         }}
         aria-label="Filter products by category"
         variant="outline"
@@ -44,8 +64,7 @@ export function HomeProductFilter({ categories, products, manageStock }: { categ
       </ToggleGroup>
 
       <p className="text-sm text-muted-foreground" aria-live="polite">
-        {shown.length} {shown.length === 1 ? "product" : "products"}
-        {current ? ` in ${current.name}` : ""}
+        {productCountLabel({ total: shown.length, categoryName: current?.name, first, last })}
       </p>
 
       {shown.length === 0 ? (
@@ -60,11 +79,13 @@ export function HomeProductFilter({ categories, products, manageStock }: { categ
         </Empty>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {shown.map((product) => (
+          {visible.map((product) => (
             <ProductCard key={product.id} product={product} manageStock={manageStock} />
           ))}
         </div>
       )}
+
+      <ProductPagination page={page} total={shown.length} perPage={PRODUCTS_PER_PAGE} onPageChange={goToPage} />
     </div>
   );
 }

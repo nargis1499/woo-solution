@@ -1,21 +1,34 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { SearchIcon } from "lucide-react";
-import { getCategories, getProducts } from "@/lib/data/products";
+import { PRODUCTS_PER_PAGE, productCountLabel, shopHref } from "@/lib/catalog";
+import { getCategories, getProductPage } from "@/lib/data/products";
+import { pageRange, parsePage } from "@/lib/pagination";
 import { canonicalFor } from "@/lib/seo";
 import { ProductGrid, ProductGridSkeleton } from "@/components/product-grid";
+import { ProductPagination } from "@/components/product-pagination";
 import { badgeVariants } from "@/components/ui/badge";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { cn } from "@/lib/utils";
 
-type SearchParams = Promise<{ category?: string; q?: string }>;
+type SearchParams = Promise<{ category?: string; q?: string; page?: string }>;
 
-/** Category pages are canonical on their own (they are in the sitemap); searches collapse onto /shop. */
+/**
+ * Category pages are canonical on their own (they are in the sitemap) and so is every page
+ * of a paginated list (self-referencing `?page=`); searches collapse onto /shop and stay
+ * out of the index.
+ */
 export async function generateMetadata({ searchParams }: { searchParams: SearchParams }): Promise<Metadata> {
-  const { category, q } = await searchParams;
-  const path = category && !q ? `/shop?category=${encodeURIComponent(category)}` : "/shop";
-  return { title: "Shop", alternates: await canonicalFor(path), robots: q ? { index: false, follow: true } : undefined };
+  const { category, q, page: rawPage } = await searchParams;
+  const page = parsePage(rawPage);
+  const path = q ? "/shop" : shopHref({ category, page });
+  return {
+    title: page > 1 ? `Shop – page ${page}` : "Shop",
+    alternates: await canonicalFor(path),
+    robots: q ? { index: false, follow: true } : undefined,
+  };
 }
 
 export default function ShopPage({ searchParams }: { searchParams: SearchParams }) {
@@ -53,28 +66,36 @@ async function SearchBox({ searchParams }: { searchParams: SearchParams }) {
 }
 
 async function Catalog({ searchParams }: { searchParams: SearchParams }) {
-  const { category, q } = await searchParams;
-  const [categories, products] = await Promise.all([getCategories(), getProducts({ categorySlug: category, search: q })]);
+  const { category, q, page: rawPage } = await searchParams;
+  const requested = parsePage(rawPage);
+  const categories = await getCategories();
   const active = categories.find((c) => c.slug === category);
+  // An unknown category slug is an empty category, not the whole catalogue.
+  const result =
+    category && !active
+      ? { items: [], total: 0, page: 1, pages: 1, perPage: PRODUCTS_PER_PAGE }
+      : await getProductPage({ categoryId: active?.id, search: q, page: requested });
+  // `?page=` beyond the last page → the last page (same contract as the admin lists).
+  if (result.page !== requested) redirect(shopHref({ category, q, page: result.page }));
+  const { first, last } = pageRange(result.page, result.perPage, result.total);
 
   return (
     <div className="space-y-6">
       <nav className="flex flex-wrap gap-2" aria-label="Categories">
-        <CategoryPill href={q ? `/shop?q=${encodeURIComponent(q)}` : "/shop"} active={!category}>
+        <CategoryPill href={shopHref({ q })} active={!category}>
           All
         </CategoryPill>
         {categories.map((c) => (
-          <CategoryPill key={c.id} href={`/shop?category=${c.slug}${q ? `&q=${encodeURIComponent(q)}` : ""}`} active={c.slug === category}>
+          <CategoryPill key={c.id} href={shopHref({ category: c.slug, q })} active={c.slug === category}>
             {c.name}
           </CategoryPill>
         ))}
       </nav>
-      <p className="text-sm text-muted-foreground">
-        {products.length} {products.length === 1 ? "product" : "products"}
-        {active ? ` in ${active.name}` : ""}
-        {q ? ` matching “${q}”` : ""}
+      <p className="text-sm text-muted-foreground" data-testid="shop-count">
+        {productCountLabel({ total: result.total, categoryName: active?.name, q, first, last })}
       </p>
-      <ProductGrid products={products} emptyMessage={q ? `Nothing matches “${q}”. Try a different search.` : "No products in this category yet."} />
+      <ProductGrid products={result.items} emptyMessage={q ? `Nothing matches “${q}”. Try a different search.` : "No products in this category yet."} />
+      <ProductPagination page={result.page} total={result.total} perPage={PRODUCTS_PER_PAGE} hrefFor={(p) => shopHref({ category, q, page: p })} />
     </div>
   );
 }

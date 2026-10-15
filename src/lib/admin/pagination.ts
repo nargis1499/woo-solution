@@ -11,6 +11,10 @@
  * Everything else (q, category, …) is carried along untouched.
  */
 
+// Page arithmetic lives in @/lib/pagination (shared with the storefront); re-exported so
+// admin code keeps one import.
+export { pageCount, pageRange, paginationItems, parsePage } from "@/lib/pagination";
+
 export const PER_PAGE_OPTIONS = [10, 20, 50, 100] as const;
 export const DEFAULT_PER_PAGE: (typeof PER_PAGE_OPTIONS)[number] = 10;
 export const PER_PAGE_COOKIE = "admin_per_page";
@@ -23,16 +27,6 @@ export function parsePerPage(value: unknown, fallback: number = DEFAULT_PER_PAGE
   return (PER_PAGE_OPTIONS as readonly number[]).includes(n) ? n : fallback;
 }
 
-/** Validated 1-based page number (≥ 1). */
-export function parsePage(value: unknown): number {
-  const n = typeof value === "string" || typeof value === "number" ? Math.floor(Number(value)) : Number.NaN;
-  return Number.isFinite(n) && n >= 1 ? n : 1;
-}
-
-/** Number of pages for `total` rows – always at least 1 so page 1 exists for an empty list. */
-export function pageCount(total: number, perPage: number): number {
-  return Math.max(1, Math.ceil(Math.max(0, total) / perPage));
-}
 
 /**
  * The page that keeps the first currently visible row in view after the page
@@ -55,21 +49,6 @@ export function listHref(pathname: string, params: ListParams = {}): string {
   if (params.page && params.page > 1) sp.set("page", String(params.page));
   const query = sp.toString();
   return query ? `${pathname}?${query}` : pathname;
-}
-
-/** Items for a numbered pager: 1 … 4 [5] 6 … 12 (`"…"` marks a gap). */
-export function paginationItems(page: number, pages: number, siblings = 1): (number | "…")[] {
-  const windowSize = siblings * 2 + 5; // first, last, current ± siblings, two gaps
-  if (pages <= windowSize) return Array.from({ length: pages }, (_, i) => i + 1);
-
-  const left = Math.max(2, Math.min(page - siblings, pages - siblings * 2 - 2));
-  const right = Math.min(pages - 1, Math.max(page + siblings, siblings * 2 + 3));
-  const items: (number | "…")[] = [1];
-  if (left > 2) items.push("…");
-  for (let i = left; i <= right; i++) items.push(i);
-  if (right < pages - 1) items.push("…");
-  items.push(pages);
-  return items;
 }
 
 /**

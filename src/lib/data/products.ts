@@ -1,6 +1,8 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { MEDIA_REF_COLUMNS, isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
+import { PRODUCTS_PER_PAGE } from "@/lib/catalog";
+import { pageCount } from "@/lib/pagination";
 import type { Category, Product } from "@/lib/types";
 
 const PRODUCT_COLUMNS =
@@ -39,7 +41,8 @@ export async function getProducts(options: {
     .from("products")
     .select(columns)
     .eq("is_active", true)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
 
   if (options.categorySlug) query = query.eq("categories.slug", options.categorySlug);
   if (options.featuredOnly) query = query.eq("is_featured", true);
@@ -49,6 +52,39 @@ export async function getProducts(options: {
   const { data, error } = await query;
   if (error) throw new Error(`Failed to load products: ${error.message}`);
   return (data ?? []) as unknown as Product[];
+}
+
+export type ProductPage = { items: Product[]; total: number; page: number; pages: number; perPage: number };
+
+/**
+ * One page of the public catalogue (/shop). Counts first, clamps the requested page to what
+ * exists, then fetches that window – the caller redirects when `page` differs from what it
+ * asked for, so the URL always matches the products on screen (same contract as the admin
+ * lists). `categoryId` rather than a slug: the shop already has the categories in hand.
+ */
+export async function getProductPage(options: { categoryId?: string; search?: string; page?: number; perPage?: number } = {}): Promise<ProductPage> {
+  const supabase = await createClient();
+  const perPage = Math.max(1, options.perPage ?? PRODUCTS_PER_PAGE);
+  const build = (columns: string, head: boolean) => {
+    let q = supabase.from("products").select(columns, { count: "exact", head }).eq("is_active", true);
+    if (options.categoryId) q = q.eq("category_id", options.categoryId);
+    if (options.search) q = q.ilike("name", `%${options.search}%`);
+    return q;
+  };
+
+  const { count, error: countError } = await build("id", true);
+  if (countError) throw new Error(`Failed to load products: ${countError.message}`);
+  const total = count ?? 0;
+  const pages = pageCount(total, perPage);
+  const page = Math.min(Math.max(1, options.page ?? 1), pages);
+  const from = (page - 1) * perPage;
+
+  const { data, error } = await build(PRODUCT_COLUMNS, false)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false }) // stable order for rows created in the same instant (e.g. seed data)
+    .range(from, from + perPage - 1);
+  if (error) throw new Error(`Failed to load products: ${error.message}`);
+  return { items: (data ?? []) as unknown as Product[], total, page, pages, perPage };
 }
 
 export async function getProductBySlug(slug: string): Promise<Product | null> {

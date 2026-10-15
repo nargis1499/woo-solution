@@ -82,7 +82,7 @@ export default async function HomePage() {
 
       {/* Filtered products – the shop's category filter, heading set by the admin */}
       {settings.home_show_filter && (
-        <section aria-label={settings.home_filter_title ?? "Products"} data-testid="home-filter">
+        <section aria-label={settings.home_filter_title ?? "Products"} data-testid="home-filter" className="scroll-mt-24">
           {settings.home_filter_title && <h2 className="mb-5 text-2xl font-bold tracking-tight">{settings.home_filter_title}</h2>}
           <Suspense fallback={<ProductGridSkeleton count={8} />}>
             <FilteredProducts />

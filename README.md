@@ -6,7 +6,7 @@ A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Comp
 
 | Area | What's included |
 | --- | --- |
-| Catalog | Home page with categories, featured products and an optional filtered product list (sections switchable under **UI → Home page**), `/shop` with category filter + search, product detail pages with related products |
+| Catalog | Home page with categories, featured products and an optional filtered product list (sections switchable under **UI → Home page**), `/shop` with category filter + search, product detail pages with related products. Both product lists show **12 products per page** with a pager once a category has more – `/shop` through shareable `?page=` links, the home-page filter in place |
 | Cart | Guest-friendly cart persisted in `localStorage` (Zustand), quantity controls, stock limits, shipping preview |
 | Auth | E-mail + password **and "Continue with Google"** (Supabase Auth, PKCE flow), sign out, protected routes, open-redirect-safe `?next=` handling |
 | Checkout | Shipping form → atomic `place_order()` Postgres function (prices re-read from DB, stock locked & decremented, order number generated) |
@@ -171,7 +171,7 @@ Every action reports back through a toast notification (bottom-right corner of t
 
 - **Shop by category** – the category tiles (on by default).
 - **Featured products** – the eight products flagged *Featured* with the *View all* link to the shop (on by default).
-- **Filtered products** – the shop's category filter on the home page (off by default): a row of pills (*All* + every category in the admin's category order), a product count and the product grid. Switching a pill filters the grid instantly in the browser – no page change, no URL change. **Section title** is the heading above the pills (optional, up to 80 characters, e.g. *Browse our products*); leave it empty for no heading.
+- **Filtered products** – the shop's category filter on the home page (off by default): a row of pills (*All* + every category in the admin's category order), a product count and the product grid. Switching a pill filters the grid instantly in the browser – no page change, no URL change. More than 12 products in the selected category → a pager (Previous · 1 2 3 · Next) under the grid that swaps the 12 cards in place and scrolls back to the top of the section; switching a pill starts again on page 1. **Section title** is the heading above the pills (optional, up to 80 characters, e.g. *Browse our products*); leave it empty for no heading.
 
 The settings live in `site_settings` (migration 11); the storefront reads them through the same tag-cached `getSiteSettings()` as the rest of the site, so a save invalidates the home page straight away. Switching every section off leaves only the hero.
 
@@ -271,7 +271,8 @@ woo-solution/
 │   │   │   └── home/                        # UI → Home page: section switches + filter title form
 │   │   ├── page-article.tsx                 # storefront template for CMS pages (also used by the admin preview)
 │   │   ├── data-grid.tsx, page-breadcrumbs.tsx  # client wrappers around the React Aria Table (selection, bulk bar, dnd-kit row reordering) / Breadcrumbs
-│   │   ├── home-product-filter.tsx          # home page: client-side category pills + product grid (UI → Home page)
+│   │   ├── home-product-filter.tsx          # home page: client-side category pills + product grid + pager (UI → Home page)
+│   │   ├── product-pagination.tsx           # storefront pager (links on /shop, in-place pages on the home filter)
 │   │   └── header.tsx, footer.tsx, nav-link.tsx, mobile-nav.tsx, user-menu.tsx, cart-*.tsx, product-*.tsx, checkout-form.tsx …
 │   ├── hooks/use-mobile.ts
 │   └── lib/
@@ -280,6 +281,7 @@ woo-solution/
 │       ├── media/{shared,server}.ts         # media URLs / renditions, upload validation
 │       ├── site-settings.ts, menu.ts        # cached store settings / header + footer menus (tag-invalidated)
 │       ├── home-sections.ts                 # home-page section ids, labels and the filter-title limit (shared by admin + storefront)
+│       ├── catalog.ts, pagination.ts        # PRODUCTS_PER_PAGE, /shop URL builder, count label / page arithmetic shared with the admin
 │       ├── menu-config.ts                   # menu locations, URL rules, href resolution (shared by storefront, admin and actions)
 │       ├── seo.ts                           # metadata, robots/sitemap entries, JSON-LD built from the SEO tab
 │       ├── image-hosts.ts                   # next/image allow-list
@@ -348,6 +350,7 @@ The project uses Next.js 16's **Cache Components** (`cacheComponents: true`). Ev
 | Stock management on/off | `/nemesis/settings` → **WooCommerce** (global; `public.stock_managed()` in SQL) |
 | Header / footer navigation links | `/nemesis/ui` → **Menu** (`menu_items`; the storefront never hard-codes a link) |
 | Home page sections (category tiles, featured products, filtered product list + its title) | `/nemesis/ui?tab=home` → **Home page** (`site_settings.home_*`) |
+| Products per page on `/shop` and in the home-page filter | `src/lib/catalog.ts` → `PRODUCTS_PER_PAGE` (12). `/shop` paginates with `?page=` (page 1 has no parameter, a page past the end redirects to the last one, every page is self-canonical); the home-page filter pages the products already on the page |
 | Products / categories | `/nemesis/products` and `/nemesis/categories` (or the Supabase Table Editor). *Draft* products are hidden from the shop, *Featured* ones show on the home page |
 | Product images & files | `/nemesis/media` (Media Library, Storage bucket `media`) – pick them on the product form, or paste any public URL; allow-listed hosts for remote images live in `src/lib/image-hosts.ts` |
 | AI alt text | Set `OPENAI_API_KEY` (and optionally `OPENAI_ALT_TEXT_MODEL`) in `.env.local` – a *Suggest with AI* button appears next to the alt text in the media detail dialog |
