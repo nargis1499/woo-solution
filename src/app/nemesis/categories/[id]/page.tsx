@@ -23,7 +23,7 @@ export default async function EditCategoryPage({ params }: { params: Promise<{ i
         actions={<DeleteButton action={deleteCategory} id={category.id} returnTo="/nemesis/categories" label="Delete category" size="default" title={`Delete "${category.name}"?`} description="Its products will become uncategorised." />}
       />
       <Section className="max-w-xl">
-        <CategoryForm category={category} />
+        <CategoryForm key={`${category.id}:${category.name}:${category.slug}`} category={category} />
       </Section>
     </>
   );

@@ -3,17 +3,20 @@
 import Link from "next/link";
 import { ArrowLeftIcon, ShoppingCartIcon, Trash2Icon } from "lucide-react";
 import { selectCartSubtotal, useCartStore, useHydrated } from "@/lib/cart-store";
-import { formatPrice } from "@/lib/format";
+import { formatMoney } from "@/lib/money";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CartTotals } from "./cart-totals";
+import { useMoney } from "./money-provider";
 import { ProductImage } from "./product-image";
 import { QuantityInput } from "./quantity-input";
 
 export function CartView({ manageStock = true }: { manageStock?: boolean }) {
+  const money = useMoney();
+  const formatPrice = (cents: number) => formatMoney(cents, money);
   const hydrated = useHydrated();
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore(selectCartSubtotal);

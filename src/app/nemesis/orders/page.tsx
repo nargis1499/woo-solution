@@ -5,7 +5,8 @@ import { adminListOrders } from "@/lib/admin/data";
 import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
-import { formatDate, formatOrderNumber, formatPrice } from "@/lib/format";
+import { formatDate, formatOrderNumber } from "@/lib/format";
+import { formatMoney, orderMoney } from "@/lib/money";
 import { deleteOrder, deleteOrders } from "@/app/nemesis/actions";
 import { OrderStatusBadge, PaymentStatusBadge } from "@/components/order-status-badge";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -84,7 +85,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
                   <p className="mt-1 text-xs text-muted-foreground uppercase">{o.payment_method}</p>
                 </div>,
                 <div key="t">
-                  <span className="font-medium">{formatPrice(o.total_cents, o.currency)}</span>
+                  <span className="font-medium">{formatMoney(o.total_cents, orderMoney(o))}</span>
                   <p className="text-xs text-muted-foreground">
                     {items} {items === 1 ? "item" : "items"}
                   </p>

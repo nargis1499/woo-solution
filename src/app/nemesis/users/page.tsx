@@ -5,7 +5,9 @@ import { adminListUsers } from "@/lib/admin/data";
 import { getAdminStatus } from "@/lib/admin/auth";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatDate } from "@/lib/format";
+import { formatMoney } from "@/lib/money";
+import { getMoney } from "@/lib/site-settings";
 import { deleteUser, deleteUsers } from "@/app/nemesis/actions";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { DeleteButton } from "@/components/admin/form-bits";
@@ -24,7 +26,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
   const sp = await searchParams;
   const filters = { q: sp.q?.trim() || undefined };
   const { perPage, requestedPage } = await resolveListParams(sp);
-  const [{ items: users, total, page }, { user: me }] = await Promise.all([adminListUsers({ ...filters, page: requestedPage, perPage }), getAdminStatus()]);
+  const [{ items: users, total, page }, { user: me }, money] = await Promise.all([adminListUsers({ ...filters, page: requestedPage, perPage }), getAdminStatus(), getMoney()]);
   redirectIfClamped(LIST_PATH, filters, sp, requestedPage, page, perPage);
 
   const listUrl = listHref(LIST_PATH, { ...filters, per: perPage, page });
@@ -79,7 +81,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
               </div>,
               u.is_admin ? <ToneBadge key="r" tone="brand">Admin</ToneBadge> : <ToneBadge key="r">Customer</ToneBadge>,
               u.order_count,
-              formatPrice(u.total_spent_cents),
+              formatMoney(u.total_spent_cents, money),
               formatDate(u.created_at),
               <div key="a" className="flex items-center justify-end gap-2">
                 <Link href={detailHref(u.id)} className={buttonVariants({ variant: "outline", size: "sm" })}>

@@ -6,7 +6,8 @@ import { Suspense } from "react";
 import { CircleCheckIcon } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyOrder } from "@/lib/data/orders";
-import { formatDate, formatOrderNumber, formatPrice } from "@/lib/format";
+import { formatDate, formatOrderNumber } from "@/lib/format";
+import { formatMoney, orderMoney } from "@/lib/money";
 import { OrderStatusBadge } from "@/components/order-status-badge";
 import { ProductImage } from "@/components/product-image";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -75,10 +76,10 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
                   <p className="font-medium">{item.product_name}</p>
                 )}
                 <p className="text-sm text-muted-foreground">
-                  {formatPrice(item.unit_price_cents, order.currency)} × {item.quantity}
+                  {formatMoney(item.unit_price_cents, orderMoney(order))} × {item.quantity}
                 </p>
               </div>
-              <p className="font-semibold tabular-nums">{formatPrice(item.line_total_cents, order.currency)}</p>
+              <p className="font-semibold tabular-nums">{formatMoney(item.line_total_cents, orderMoney(order))}</p>
             </li>
           ))}
         </ul>
@@ -87,11 +88,11 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
           <dl className="w-full space-y-2 text-sm">
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Subtotal</dt>
-              <dd className="tabular-nums">{formatPrice(order.subtotal_cents, order.currency)}</dd>
+              <dd className="tabular-nums">{formatMoney(order.subtotal_cents, orderMoney(order))}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Shipping</dt>
-              <dd className="tabular-nums">{order.shipping_cents === 0 ? "Free" : formatPrice(order.shipping_cents, order.currency)}</dd>
+              <dd className="tabular-nums">{order.shipping_cents === 0 ? "Free" : formatMoney(order.shipping_cents, orderMoney(order))}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Payment</dt>
@@ -103,7 +104,7 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
             <Separator />
             <div className="flex justify-between text-base font-semibold">
               <dt>Total</dt>
-              <dd className="tabular-nums">{formatPrice(order.total_cents, order.currency)}</dd>
+              <dd className="tabular-nums">{formatMoney(order.total_cents, orderMoney(order))}</dd>
             </div>
           </dl>
         </CardFooter>

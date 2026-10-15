@@ -5,7 +5,7 @@ import { adminListCategories, adminListProducts } from "@/lib/admin/data";
 import { getSiteSettings } from "@/lib/site-settings";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
-import { formatPrice } from "@/lib/format";
+import { formatMoney, moneyFromSettings } from "@/lib/money";
 import { deleteProduct, deleteProducts } from "@/app/nemesis/actions";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { FilterSelect } from "@/components/admin/filter-select";
@@ -24,11 +24,13 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
   const sp = await searchParams;
   const filters = { q: sp.q?.trim() || undefined, category: sp.category || undefined };
   const { perPage, requestedPage } = await resolveListParams(sp);
-  const [{ items: products, total, page }, categories, { manage_stock: manageStock }] = await Promise.all([
+  const [{ items: products, total, page }, categories, settings] = await Promise.all([
     adminListProducts({ ...filters, page: requestedPage, perPage }),
     adminListCategories(),
     getSiteSettings(),
   ]);
+  const manageStock = settings.manage_stock;
+  const money = moneyFromSettings(settings);
   redirectIfClamped(LIST_PATH, filters, sp, requestedPage, page, perPage);
 
   const listUrl = listHref(LIST_PATH, { ...filters, per: perPage, page });
@@ -105,9 +107,9 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
               </div>,
               p.category?.name ?? "—",
               <span key="price">
-                {formatPrice(p.price_cents)}
+                {formatMoney(p.price_cents, money)}
                 {p.compare_at_price_cents != null && p.compare_at_price_cents > p.price_cents && (
-                  <span className="ml-1 text-xs text-muted-foreground line-through">{formatPrice(p.compare_at_price_cents)}</span>
+                  <span className="ml-1 text-xs text-muted-foreground line-through">{formatMoney(p.compare_at_price_cents, money)}</span>
                 )}
               </span>,
               ...(manageStock

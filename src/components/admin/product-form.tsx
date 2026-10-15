@@ -2,7 +2,9 @@
 
 import { useActionState, useState } from "react";
 import { saveProduct, type AdminFormState } from "@/app/nemesis/actions";
+import { CURRENCIES, centsToInput, toDisplayCents } from "@/lib/money";
 import type { Category, Product } from "@/lib/types";
+import { useMoney } from "@/components/money-provider";
 import { LinkButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -43,10 +45,22 @@ export function ProductForm({
 
   const gallery = (product?.gallery ?? []).flatMap((g) => (g.media ? [g.media] : []));
 
+  // Prices are stored in USD cents and shown in the store currency (Settings → WooCommerce).
+  // The form tells the action which currency/rate it displayed, and what it displayed, so
+  // untouched prices are stored back exactly and edited ones are converted with the same rate.
+  const money = useMoney();
+  const symbol = CURRENCIES[money.currency].symbol;
+  const priceShown = product ? centsToInput(toDisplayCents(product.price_cents, money)) : "";
+  const compareAtShown = product?.compare_at_price_cents != null ? centsToInput(toDisplayCents(product.compare_at_price_cents, money)) : "";
+
   return (
     <form action={formAction} className="grid gap-6 lg:grid-cols-[1fr_340px]" noValidate>
       {product && <input type="hidden" name="id" value={product.id} />}
       <input type="hidden" name="return_to" value={returnTo} />
+      <input type="hidden" name="money_currency" value={money.currency} />
+      <input type="hidden" name="money_rate" value={String(money.rate)} />
+      <input type="hidden" name="price_shown" value={priceShown} />
+      <input type="hidden" name="compare_at_price_shown" value={compareAtShown} />
 
       <div className="space-y-6">
         <Card>
@@ -101,20 +115,38 @@ export function ProductForm({
             <FieldGroup className="gap-5">
               <div className="grid gap-4 sm:grid-cols-3">
                 <Field data-invalid={Boolean(err.price) || undefined}>
-                  <FieldLabel htmlFor="price">Price</FieldLabel>
-                  <Input id="price" name="price" inputMode="decimal" placeholder="19.99" required defaultValue={v.price ?? (product ? (product.price_cents / 100).toFixed(2) : "")} aria-invalid={Boolean(err.price) || undefined} />
+                  <FieldLabel htmlFor="price">Price ({money.currency})</FieldLabel>
+                  <InputGroup>
+                    <InputGroupAddon>
+                      <InputGroupText data-testid="price-currency">{symbol}</InputGroupText>
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      id="price"
+                      name="price"
+                      inputMode="decimal"
+                      placeholder={centsToInput(toDisplayCents(1999, money))}
+                      required
+                      defaultValue={v.price ?? priceShown}
+                      aria-invalid={Boolean(err.price) || undefined}
+                    />
+                  </InputGroup>
                   <FieldError>{err.price}</FieldError>
                 </Field>
                 <Field data-invalid={Boolean(err.compare_at_price) || undefined}>
-                  <FieldLabel htmlFor="compare_at_price">Compare-at price</FieldLabel>
-                  <Input
-                    id="compare_at_price"
-                    name="compare_at_price"
-                    inputMode="decimal"
-                    placeholder="Optional"
-                    defaultValue={v.compare_at_price ?? (product?.compare_at_price_cents != null ? (product.compare_at_price_cents / 100).toFixed(2) : "")}
-                    aria-invalid={Boolean(err.compare_at_price) || undefined}
-                  />
+                  <FieldLabel htmlFor="compare_at_price">Compare-at price ({money.currency})</FieldLabel>
+                  <InputGroup>
+                    <InputGroupAddon>
+                      <InputGroupText data-testid="compare-at-currency">{symbol}</InputGroupText>
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      id="compare_at_price"
+                      name="compare_at_price"
+                      inputMode="decimal"
+                      placeholder="Optional"
+                      defaultValue={v.compare_at_price ?? compareAtShown}
+                      aria-invalid={Boolean(err.compare_at_price) || undefined}
+                    />
+                  </InputGroup>
                   <FieldError>{err.compare_at_price}</FieldError>
                   <FieldDescription>Shown struck-through to mark a sale.</FieldDescription>
                 </Field>

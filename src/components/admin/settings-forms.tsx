@@ -2,10 +2,13 @@
 
 import { startTransition, useActionState, useState, type ReactNode } from "react";
 import { updateGeneralSettings, updateSeoSettings, updateShopSettings, type AdminFormState } from "@/app/nemesis/actions";
+import { CURRENCIES, CURRENCY_CODES, formatExchangeRate, isCurrencyCode, type CurrencyCode } from "@/lib/money";
 import type { MediaRef, SiteSettings } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSeparator, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useFormToast } from "./flash-toast";
 import { SubmitButton, SwitchField } from "./form-bits";
@@ -211,7 +214,67 @@ export function SeoSettingsForm({ settings, shareImage }: { settings: SiteSettin
 export function ShopSettingsForm({ settings }: { settings: SiteSettings }) {
   return (
     <SettingsCard title="WooCommerce" action={updateShopSettings}>
-      {() => <SwitchField id="manage_stock" name="manage_stock" label="Manage stock – track quantities for all products and stop selling when they run out" defaultSelected={settings.manage_stock} />}
+      {({ v, err }) => (
+        <FieldGroup className="gap-5">
+          <SwitchField id="manage_stock" name="manage_stock" label="Manage stock – track quantities for all products and stop selling when they run out" defaultSelected={settings.manage_stock} />
+          <FieldSeparator />
+          <CurrencyFields settings={settings} v={v} err={err} />
+        </FieldGroup>
+      )}
     </SettingsCard>
+  );
+}
+
+/**
+ * Store currency + the USD→BDT rate. Prices stay in USD in the database; the rate field
+ * only exists while BDT is selected (a failed save keeps whatever was typed).
+ */
+function CurrencyFields({ settings, v, err }: { settings: SiteSettings; v: Record<string, string>; err: Record<string, string> }) {
+  const [currency, setCurrency] = useState<CurrencyCode>(isCurrencyCode(v.currency) ? v.currency : settings.currency);
+  const rateShown = v.usd_to_bdt_rate ?? (settings.usd_to_bdt_rate ? formatExchangeRate(settings.usd_to_bdt_rate) : "");
+  return (
+    <FieldSet data-testid="currency-settings">
+      <FieldLegend variant="label">Currency</FieldLegend>
+      <FieldGroup className="gap-4">
+        <Field>
+          <FieldLabel htmlFor="currency">Store currency</FieldLabel>
+          <Select name="currency" selectedKey={currency} onSelectionChange={(key) => isCurrencyCode(key) && setCurrency(key)} aria-label="Store currency">
+            <SelectTrigger id="currency" className="w-full sm:max-w-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CURRENCY_CODES.map((code) => (
+                <SelectItem key={code} id={code}>
+                  {CURRENCIES[code].label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        {currency === "BDT" && (
+          <Field data-invalid={Boolean(err.usd_to_bdt_rate) || undefined}>
+            <FieldLabel htmlFor="usd_to_bdt_rate">Exchange rate</FieldLabel>
+            <InputGroup className="sm:max-w-xs">
+              <InputGroupAddon>
+                <InputGroupText>1 USD =</InputGroupText>
+              </InputGroupAddon>
+              <InputGroupInput
+                id="usd_to_bdt_rate"
+                name="usd_to_bdt_rate"
+                inputMode="decimal"
+                placeholder="120"
+                required
+                defaultValue={rateShown}
+                aria-invalid={Boolean(err.usd_to_bdt_rate) || undefined}
+              />
+              <InputGroupAddon align="inline-end">
+                <InputGroupText>BDT</InputGroupText>
+              </InputGroupAddon>
+            </InputGroup>
+            <FieldError>{err.usd_to_bdt_rate}</FieldError>
+          </Field>
+        )}
+      </FieldGroup>
+    </FieldSet>
   );
 }

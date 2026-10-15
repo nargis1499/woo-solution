@@ -49,6 +49,7 @@ cp .env.example .env.local
    9. [`supabase/migrations/20261022000000_pages_image_urls.sql`](supabase/migrations/20261022000000_pages_image_urls.sql) – `pages.featured_image_url` / `og_image_url` so the featured and share image of a page can also be an external URL (*Use a URL*)
    10. [`supabase/migrations/20261023000000_menus.sql`](supabase/migrations/20261023000000_menus.sql) – **Menus**: `menu_items` (header / footer links to pages, categories or custom URLs, with their own text, new-tab flag and order) + RLS. Carries the current navigation over ("Shop" + the categories that were shown in the header; the footer's Shop / Cart / My orders) and **drops `categories.show_in_menu`** – menus are managed under **UI → Menu** from now on. Safe to run on an existing project
    11. [`supabase/migrations/20261024000000_home_sections.sql`](supabase/migrations/20261024000000_home_sections.sql) – **Home page sections**: `site_settings.home_show_categories` / `home_show_featured` / `home_show_filter` / `home_filter_title` – the switches behind **UI → Home page**. Defaults keep the home page exactly as it was (categories + featured on, filtered products off)
+   12. [`supabase/migrations/20261025000000_currency.sql`](supabase/migrations/20261025000000_currency.sql) – **Currency**: `site_settings.currency` (`USD` / `BDT`, default USD) + `site_settings.usd_to_bdt_rate`, and `orders.exchange_rate` so every order remembers the currency and rate it was placed with (`place_order()` stamps them). Prices stay in USD cents – nothing in `products` or `orders` is rewritten. Safe to run on an existing project
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -67,7 +68,6 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...   # legacy "anon" key also works
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_STORE_NAME=Woo Solution
-NEXT_PUBLIC_CURRENCY=USD
 # optional – enables the "Suggest with AI" alt-text button in the Media Library (server-side only)
 # OPENAI_API_KEY=sk-...
 # OPENAI_ALT_TEXT_MODEL=gpt-4o-mini
@@ -147,7 +147,7 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
 | Media | The Media Library – see [Media](#media) below: uploads, grid / list browsing, search, filters, folders, trash, bulk actions, image optimisation / WebP conversion / editing, alt text, usage tracking and the reusable **media picker** |
 | UI | **Menu** tab – see [Menus](#menus) below: build the storefront **header** and **footer** navigation from pages, categories and custom links, drag to reorder, edit link text, open in a new tab. **Home page** tab – see [Home page](#home-page) below: switch the home-page sections on and off, including a filtered product list with its own title |
-| Settings | Three tabs – see [Settings](#settings) below: **General** (site title, tagline, support e-mail, WhatsApp, Telegram, favicon), **SEO** (search-engine visibility, site URL, title / meta description, share image, verification codes, X handle) and **WooCommerce** (global stock management switch) |
+| Settings | Three tabs – see [Settings](#settings) below: **General** (site title, tagline, support e-mail, WhatsApp, Telegram, favicon), **SEO** (search-engine visibility, site URL, title / meta description, share image, verification codes, X handle) and **WooCommerce** (global stock management switch, store currency USD / BDT + exchange rate) |
 
 The **Pages, Products, Orders and Users** lists are paginated: `?page=` + a **per-page** selector (10 / 20 / 50 / 100, top right of the table, `?per=`, remembered per admin in a cookie). Changing the size keeps the first visible row on screen, a new filter starts on page 1, a page that no longer exists redirects to the last one, and view / edit / delete bring you back to the exact page, size and filter you came from.
 
@@ -183,9 +183,11 @@ The settings live in `site_settings` (migration 11); the storefront reads them t
 | --- | --- | --- |
 | General | Site title, tagline, support e-mail, **WhatsApp** number, **Telegram** username, **favicon** (*Choose icon* opens the Media Library picker – pick an existing ICO / PNG / SVG / WebP or upload a new one; uploads land in the **Branding** folder) | `<title>` template, header, hero, footer (e-mail / `wa.me` / `t.me` links), `<link rel="icon">`, Organization JSON-LD. The favicon is stored as a media reference (`favicon_media_id`), so renaming / replacing the file in the library updates the site; *Remove* only unlinks it – the file stays in the library |
 | SEO | **Search engine visibility** switch, site URL, home page title, meta description (with a 160-character guide), social share image (Open Graph 1200 × 630 – picked from the Media Library or uploaded into its **Branding** folder, stored as `seo_og_image_media_id`), Google Search Console + Bing Webmaster verification codes (paste the token or the whole `<meta>` tag), X / Twitter handle | `<meta name="robots">` (`noindex, nofollow` when visibility is off), `/robots.txt` (disallows everything when off, otherwise `/nemesis`, `/preview`, `/cart`, `/checkout`, `/orders`, `/login`, `/signup`, `/auth` + the sitemap line), `/sitemap.xml` (home, shop, categories, active products, published pages – tag-invalidated on every admin write), canonical URLs, Open Graph / Twitter cards, `google-site-verification` / `msvalidate.01` meta tags, Organization + WebSite (SearchAction) JSON-LD. Cart, checkout, orders, login and signup are always `noindex` |
-| WooCommerce | **Manage stock** switch (on by default) | Off = every product is unlimited (digital goods): no "sold out" / "only N left" badges, quantities are only capped by `MAX_QTY_PER_LINE`, `place_order()` neither checks nor decrements `products.stock`, cancelling / re-opening orders doesn't move stock, the admin stock column / field and the low-stock dashboard card disappear (stored quantities are kept untouched). On = the previous strict behaviour |
+| WooCommerce | **Manage stock** switch (on by default); **Currency** – *Store currency* (USD ($) or BDT (৳), default USD) and, only while BDT is selected, the *Exchange rate* field (`1 USD = … BDT`) | Off = every product is unlimited (digital goods): no "sold out" / "only N left" badges, quantities are only capped by `MAX_QTY_PER_LINE`, `place_order()` neither checks nor decrements `products.stock`, cancelling / re-opening orders doesn't move stock, the admin stock column / field and the low-stock dashboard card disappear (stored quantities are kept untouched). On = the previous strict behaviour |
 
 Without a site URL the app falls back to `NEXT_PUBLIC_SITE_URL` for absolute URLs (sitemap, canonicals, JSON-LD).
+
+**How the currency works.** The database always stores USD cents (`products.price_cents`, `orders.*_cents`, the cart). The WooCommerce tab only changes what people *see*: with BDT selected every amount – storefront, cart, checkout, dashboard, order lists – is shown as `৳` using `USD cents × rate`. In the admin product form the price inputs carry the active symbol (`$` / `৳`) and the fields show the **converted** amounts; whatever you type there is converted back with the same rate and saved as USD cents, while prices you don't touch are written back exactly as they were stored (switching the currency never rounds or rewrites the catalogue). Orders are stamped with `currency` + `exchange_rate` when they are placed, so an order taken in BDT keeps showing ৳ (at that day's rate) after you switch back to USD. The free-shipping threshold and flat rate stay USD-based in `src/lib/config.ts` / `calculate_shipping()` and are displayed converted. Choosing BDT without a usable rate is rejected (the base price is never multiplied by nothing); the last rate is remembered when you go back to USD.
 
 Branding images (favicon, share image) are served through `next/image`; `*.supabase.co` and a few stock-photo hosts are allow-listed in `src/lib/image-hosts.ts` – add your own CDN there. Plain-`http` URLs (e.g. a local Supabase on `127.0.0.1`) are rendered unoptimised.
 
@@ -239,6 +241,7 @@ woo-solution/
 │   ├── migrations/20261022000000_pages_image_urls.sql  # external featured / share image URLs
 │   ├── migrations/20261023000000_menus.sql  # menu_items: header / footer navigation (UI → Menu)
 │   ├── migrations/20261024000000_home_sections.sql  # home-page section switches + filter title (UI → Home page)
+│   ├── migrations/20261025000000_currency.sql     # store currency (USD / BDT) + USD→BDT rate, orders.exchange_rate
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
@@ -307,7 +310,7 @@ media_folders ──1:N──▶ media ◀──N:M──▶ products (product_m
 profiles ──1:N──▶ pages ◀──N:M──▶ tags (page_tags)   pages ◀──N:M──▶ media (page_media = images in the content; featured_image_id / og_image_id)
 ```
 
-- Prices are stored as **integer cents** (`price_cents`) – no floating-point rounding.
+- Prices are stored as **integer USD cents** (`price_cents`) – no floating-point rounding. The display currency (USD or BDT × `usd_to_bdt_rate`) is a `site_settings` option; orders snapshot `currency` + `exchange_rate` (`src/lib/money.ts` holds the conversion / formatting helpers).
 - `place_order(p_items jsonb, p_shipping jsonb)` runs the whole checkout in one transaction:
   validates auth + input → inserts the order → locks each product row (`FOR UPDATE`) → checks & decrements stock → snapshots items → computes shipping (`calculate_shipping`) → returns the order id. Any failure rolls everything back and surfaces a friendly message (e.g. *"Only 2 left in stock for "Everyday Hoodie"."*).
 - Row Level Security: products/categories are readable by everyone (active products only); orders and order items are readable **only by their owner**; nobody can insert/update orders directly from the client.
@@ -342,7 +345,8 @@ The project uses Next.js 16's **Cache Components** (`cacheComponents: true`). Ev
 
 | What | Where |
 | --- | --- |
-| Store name / currency | `.env.local` → `NEXT_PUBLIC_STORE_NAME`, `NEXT_PUBLIC_CURRENCY` (also update `orders.currency` default in the migration if you change currency) |
+| Store name | `.env.local` → `NEXT_PUBLIC_STORE_NAME` (fallback – the dashboard setting wins) |
+| Currency (USD / BDT) + USD→BDT exchange rate | `/nemesis/settings` → **WooCommerce** → *Currency* (`site_settings.currency` / `usd_to_bdt_rate`; amounts are stored in USD cents and converted for display) |
 | Shipping rules | `src/lib/config.ts` **and** `calculate_shipping()` in the migration (keep in sync) |
 | Max quantity per line | `src/lib/config.ts` → `MAX_QTY_PER_LINE` |
 | Store name / tagline / contact links / favicon | `/nemesis/settings` → **General** (stored in `site_settings`; `NEXT_PUBLIC_STORE_NAME` is only the fallback) |
@@ -382,6 +386,7 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 - [ ] **Online payments** – Stripe Checkout (or SSLCommerz / bKash for Bangladesh) and a webhook that marks `payment_status = 'paid'`
 - [x] **Admin dashboard** – products, categories, orders, users, settings (`/nemesis`)
 - [x] **Settings tabs** – General / SEO / WooCommerce (contact links, favicon, robots + sitemap, global stock switch)
+- [x] **Currency** – USD / BDT selector with a USD→BDT rate; converted prices everywhere, base prices untouched, orders stamped with their rate
 - [x] **Product images in Supabase Storage** with an upload UI
 - [x] **Media Library** – uploads, folders, trash, optimisation / WebP, image editor, alt text, usage tracking, reusable picker
 - [x] **Single `media` bucket** – favicon / share image picked from the library, one-click import of the legacy `product-images` / `site-media` buckets

@@ -1,19 +1,5 @@
-import { CURRENCY } from "./config";
-
-const formatters = new Map<string, Intl.NumberFormat>();
-
-export function formatPrice(cents: number, currency: string = CURRENCY): string {
-  let formatter = formatters.get(currency);
-  if (!formatter) {
-    formatter = new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-    });
-    formatters.set(currency, formatter);
-  }
-  return formatter.format(cents / 100);
-}
+// Money formatting lives in src/lib/money.ts (formatMoney / formatCents) – it depends on
+// the store currency chosen in Settings → WooCommerce.
 
 export function formatDate(iso: string): string {
   return new Intl.DateTimeFormat("en-US", {

@@ -3,7 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { adminGetUser } from "@/lib/admin/data";
 import { getAdminStatus } from "@/lib/admin/auth";
-import { formatDate, formatOrderNumber, formatPrice } from "@/lib/format";
+import { formatDate, formatOrderNumber } from "@/lib/format";
+import { formatMoney, orderMoney } from "@/lib/money";
+import { getMoney } from "@/lib/site-settings";
 import { deleteUser } from "@/app/nemesis/actions";
 import { OrderStatusBadge } from "@/components/order-status-badge";
 import { UserForm } from "@/components/admin/user-form";
@@ -18,7 +20,7 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
   const [{ id }, { from }] = await Promise.all([params, searchParams]);
   // Back + delete return to the exact list page (page / size / search) the admin came from.
   const backHref = safeListReturn(from, "/nemesis/users") ?? "/nemesis/users";
-  const [profile, { user: me }] = await Promise.all([adminGetUser(id), getAdminStatus()]);
+  const [profile, { user: me }, money] = await Promise.all([adminGetUser(id), getAdminStatus(), getMoney()]);
   if (!profile) notFound();
   const isSelf = me?.id === profile.id;
 
@@ -46,7 +48,7 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <StatCard label="Orders" value={profile.order_count} />
-            <StatCard label="Total spent" value={formatPrice(profile.total_spent_cents)} hint="Excluding cancelled orders" />
+            <StatCard label="Total spent" value={formatMoney(profile.total_spent_cents, money)} hint="Excluding cancelled orders" />
           </div>
           <Section title="Orders" flush>
             {profile.orders && profile.orders.length > 0 ? (
@@ -58,7 +60,7 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
                     </Link>
                     <span className="text-muted-foreground">{formatDate(o.created_at)}</span>
                     <OrderStatusBadge status={o.status} />
-                    <span className="ml-auto font-medium tabular-nums">{formatPrice(o.total_cents, o.currency)}</span>
+                    <span className="ml-auto font-medium tabular-nums">{formatMoney(o.total_cents, orderMoney(o))}</span>
                   </li>
                 ))}
               </ul>

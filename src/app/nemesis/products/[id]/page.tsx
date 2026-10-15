@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { adminGetProduct, adminListCategories } from "@/lib/admin/data";
 import { getSiteSettings } from "@/lib/site-settings";
+import { moneyFromSettings } from "@/lib/money";
 import { formatDate } from "@/lib/format";
 import { deleteProduct } from "@/app/nemesis/actions";
 import { ProductForm } from "@/components/admin/product-form";
@@ -15,8 +16,12 @@ export default async function EditProductPage({ params, searchParams }: { params
   const [{ id }, { from }] = await Promise.all([params, searchParams]);
   // Back / Cancel / after-save all return to the exact list page the admin came from.
   const backHref = safeListReturn(from, "/nemesis/products") ?? "/nemesis/products";
-  const [product, categories, { manage_stock }] = await Promise.all([adminGetProduct(id), adminListCategories(), getSiteSettings()]);
+  const [product, categories, settings] = await Promise.all([adminGetProduct(id), adminListCategories(), getSiteSettings()]);
   if (!product) notFound();
+  const money = moneyFromSettings(settings);
+  // The router keeps visited pages mounted; a changed product (or currency) must remount the
+  // form so its uncontrolled inputs pick up the fresh values instead of showing stale ones.
+  const formKey = `${product.id}:${product.updated_at ?? ""}:${money.currency}:${money.rate}`;
 
   return (
     <>
@@ -29,7 +34,7 @@ export default async function EditProductPage({ params, searchParams }: { params
           <DeleteButton action={deleteProduct} id={product.id} returnTo={backHref} label="Delete product" size="default" title={`Delete "${product.name}"?`} description="The product is removed permanently. This cannot be undone." />
         }
       />
-      <ProductForm product={product} categories={categories} returnTo={backHref} manageStock={manage_stock} />
+      <ProductForm key={formKey} product={product} categories={categories} returnTo={backHref} manageStock={settings.manage_stock} />
     </>
   );
 }

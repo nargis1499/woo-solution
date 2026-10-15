@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Suspense, type ReactNode } from "react";
-import { getSiteSettings } from "@/lib/site-settings";
+import { getMoney, getSiteSettings } from "@/lib/site-settings";
 import { buildSiteMetadata } from "@/lib/seo";
+import { MoneyProvider } from "@/components/money-provider";
 import { Providers } from "@/components/providers";
 import { TopLoader } from "@/components/top-loader";
 import { AppToaster } from "@/components/app-toaster";
@@ -16,22 +17,27 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * Root shell: fonts, theme + router providers, the navigation progress bar and
- * the toast outlet. The storefront chrome (header / footer) lives in
+ * Root shell: fonts, theme + router + money (store currency) providers, the navigation
+ * progress bar and the toast outlet. The storefront chrome (header / footer) lives in
  * `(store)/layout.tsx`; the admin dashboard brings its own sidebar shell.
  */
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  // Cached + tagged like the metadata above: the store currency is part of the static shell
+  // and flips the moment Settings → WooCommerce is saved.
+  const money = await getMoney();
   return (
     // suppressHydrationWarning: next-themes sets the `class`/`style` on <html> before React hydrates
     <html lang="en" className={`${inter.variable} h-full font-sans`} suppressHydrationWarning>
       <body className="flex min-h-full flex-col">
         <Providers>
-          <Suspense fallback={null}>
-            <TopLoader />
-          </Suspense>
-          {children}
-          {/* Mounted here (not inside the animated page template) so it stays fixed to the viewport */}
-          <AppToaster />
+          <MoneyProvider money={money}>
+            <Suspense fallback={null}>
+              <TopLoader />
+            </Suspense>
+            {children}
+            {/* Mounted here (not inside the animated page template) so it stays fixed to the viewport */}
+            <AppToaster />
+          </MoneyProvider>
         </Providers>
       </body>
     </html>

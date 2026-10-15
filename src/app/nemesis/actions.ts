@@ -6,6 +6,7 @@ import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { HOME_FILTER_TITLE_MAX } from "@/lib/home-sections";
+import { MAX_EXCHANGE_RATE, USD_MONEY, centsToInput, formatExchangeRate, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseCents, toDisplayCents, type Money } from "@/lib/money";
 import { MENU_TAG } from "@/lib/menu";
 import type { OrderStatus, PaymentStatus } from "@/lib/types";
 import {
@@ -33,13 +34,15 @@ import {
 
 export type { AdminFormState } from "@/lib/admin/form";
 
-/** "19.99" → 1999 cents; returns null when empty, NaN when invalid. */
-function parseMoney(value: string): number | null {
-  if (!value) return null;
-  const cleaned = value.replace(/[^0-9.,-]/g, "").replace(",", ".");
-  const n = Number(cleaned);
-  if (!Number.isFinite(n) || n < 0) return Number.NaN;
-  return Math.round(n * 100);
+/**
+ * The currency the product form displayed its prices in (hidden `money_*` fields). Prices
+ * are stored in USD cents, so BDT input is divided by the rate the admin was looking at –
+ * even if the setting changed in another tab meanwhile.
+ */
+function formMoney(formData: FormData): Money {
+  const currency = str(formData, "money_currency", 10);
+  const rate = Number(str(formData, "money_rate", 20));
+  return isCurrencyCode(currency) && currency !== "USD" && Number.isFinite(rate) && rate > 0 ? { currency, rate } : USD_MONEY;
 }
 
 const productsReturn = (fd: FormData) => returnTo(fd, "/nemesis/products");
@@ -60,8 +63,11 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   const slug = slugify(str(formData, "slug", 100) || name);
   const description = str(formData, "description", 5000);
   const categoryId = str(formData, "category_id", 40);
-  const priceCents = parseMoney(str(formData, "price", 20));
-  const compareAtCents = parseMoney(str(formData, "compare_at_price", 20));
+  const money = formMoney(formData);
+  const priceInput = str(formData, "price", 20);
+  const compareAtInput = str(formData, "compare_at_price", 20);
+  const priceDisplayCents = parseMoneyInput(priceInput);
+  const compareAtDisplayCents = parseMoneyInput(compareAtInput);
   const stock = Number(str(formData, "stock", 10) || "0");
   const isActive = bool(formData, "is_active");
   const isFeatured = bool(formData, "is_featured");
@@ -72,8 +78,8 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
 
   if (!name) fieldErrors.name = "Name is required.";
   if (!SLUG_RE.test(slug)) fieldErrors.slug = "Use lowercase letters, numbers and dashes only.";
-  if (priceCents === null || Number.isNaN(priceCents)) fieldErrors.price = "Enter a valid price, e.g. 19.99.";
-  if (Number.isNaN(compareAtCents)) fieldErrors.compare_at_price = "Enter a valid price or leave empty.";
+  if (priceDisplayCents === null || Number.isNaN(priceDisplayCents)) fieldErrors.price = `Enter a valid price, e.g. ${centsToInput(toDisplayCents(1999, money))}.`;
+  if (Number.isNaN(compareAtDisplayCents)) fieldErrors.compare_at_price = "Enter a valid price or leave empty.";
   if (!Number.isInteger(stock) || stock < 0) fieldErrors.stock = "Stock must be a whole number ≥ 0.";
   if (categoryId && !UUID_RE.test(categoryId)) fieldErrors.category_id = "Invalid category.";
   if (!["keep", "media", "url", "remove"].includes(imageMode)) fieldErrors.image_media_id = "Invalid image selection.";
@@ -86,10 +92,17 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   try {
     const { supabase } = await adminClient();
 
+    // Prices the admin did not touch keep their stored USD cents exactly – converting the
+    // displayed BDT amount back could otherwise drift by a cent. Edited ones are converted.
+    let priceCents = toBaseCents(priceDisplayCents as number, money);
+    let compareAtCents = compareAtDisplayCents === null ? null : toBaseCents(compareAtDisplayCents, money);
     if (isEdit) {
-      const { data: current, error } = await supabase.from("products").select("id").eq("id", id).maybeSingle();
+      const { data: current, error } = await supabase.from("products").select("id, price_cents, compare_at_price_cents").eq("id", id).maybeSingle();
       if (error) throw error;
       if (!current) return { error: "This product no longer exists.", values };
+      const shown = { price: str(formData, "price_shown", 20), compareAt: str(formData, "compare_at_price_shown", 20) };
+      if (shown.price && priceInput === shown.price) priceCents = current.price_cents as number;
+      if (compareAtInput === shown.compareAt) compareAtCents = (current.compare_at_price_cents as number | null) ?? compareAtCents;
     }
 
     // ── resolve media-library references (must exist, be images, not trashed) ──
@@ -128,7 +141,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       slug,
       description: description || null,
       category_id: categoryId || null,
-      price_cents: priceCents as number,
+      price_cents: priceCents,
       compare_at_price_cents: compareAtCents,
       stock,
       is_active: isActive,
@@ -506,7 +519,13 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
   if (error) {
     if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
       const message = error.message ?? "";
-      const migration = /home_/i.test(message) ? "20261024000000_home_sections.sql" : /media_id/i.test(message) ? "20261020000000_single_media_bucket.sql" : "20261018000000_settings_tabs.sql";
+      const migration = /currency|bdt_rate/i.test(message)
+        ? "20261025000000_currency.sql"
+        : /home_/i.test(message)
+          ? "20261024000000_home_sections.sql"
+          : /media_id/i.test(message)
+            ? "20261020000000_single_media_bucket.sql"
+            : "20261018000000_settings_tabs.sql";
       return `The database is missing the new settings columns – run supabase/migrations/${migration} in the Supabase SQL Editor.`;
     }
     throw error;
@@ -641,10 +660,27 @@ export async function updateSeoSettings(_prev: AdminFormState, formData: FormDat
 export async function updateShopSettings(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
   const values = echo(formData);
   const manageStock = bool(formData, "manage_stock");
+  const currencyInput = str(formData, "currency", 10);
+  const currency = isCurrencyCode(currencyInput) ? currencyInput : null;
+  const rateInput = str(formData, "usd_to_bdt_rate", 20);
+  const fieldErrors: Record<string, string> = {};
+  if (!currency) fieldErrors.currency = "Pick USD or BDT.";
+  // The rate only matters (and is only shown) for BDT; a USD store keeps the last rate for later.
+  const rate = currency === "BDT" ? parseExchangeRate(rateInput) : null;
+  if (currency === "BDT" && (rate === null || Number.isNaN(rate))) fieldErrors.usd_to_bdt_rate = `Enter how many BDT one USD is worth, e.g. 120 (up to ${MAX_EXCHANGE_RATE.toLocaleString("en-US")}).`;
+  if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
   try {
-    const problem = await saveSiteSettings({ manage_stock: manageStock });
+    const { supabase } = await adminClient();
+    const { data: before } = await supabase.from("site_settings").select("manage_stock").eq("id", 1).maybeSingle();
+    const problem = await saveSiteSettings({ manage_stock: manageStock, currency, ...(rate ? { usd_to_bdt_rate: rate } : {}) });
     if (problem) return { error: problem, values };
-    return { success: manageStock ? "Stock management enabled." : "Stock management disabled – every product is now unlimited.", values };
+    const stockChanged = before && typeof before.manage_stock === "boolean" && before.manage_stock !== manageStock;
+    const success = stockChanged
+      ? manageStock
+        ? "Stock management enabled."
+        : "Stock management disabled – every product is now unlimited."
+      : `WooCommerce settings saved – prices now show in ${currency === "BDT" ? `BDT (৳, 1 USD = ${formatExchangeRate(rate!)} BDT)` : "USD ($)"}.`;
+    return { success, values };
   } catch (e) {
     return { error: friendlyError(e), values };
   }

@@ -1,3 +1,4 @@
+import type { CurrencyCode } from "@/lib/money";
 // Hand-written row types that mirror `supabase/migrations/*_init.sql`.
 // Tip: once your schema grows, generate them instead:
 //   npx supabase gen types typescript --project-id <ref> > src/lib/database.types.ts
@@ -177,7 +178,10 @@ export type Order = {
   status: OrderStatus;
   payment_method: string;
   payment_status: "unpaid" | "paid" | "refunded";
+  /** Currency the customer saw at checkout; amounts below are USD cents × `exchange_rate` for display */
   currency: string;
+  /** USD → `currency` rate stamped at checkout (1 for USD; missing before migration 12) */
+  exchange_rate?: number | string | null;
   subtotal_cents: number;
   shipping_cents: number;
   total_cents: number;
@@ -253,6 +257,10 @@ export type SiteSettings = {
   seo_twitter: string | null;
   // WooCommerce
   manage_stock: boolean;
+  /** Display currency (prices are stored in USD cents – see src/lib/money.ts) */
+  currency: CurrencyCode;
+  /** 1 USD = this many BDT; required while currency = BDT */
+  usd_to_bdt_rate: number | null;
   // Home page (UI → Home page): which sections the storefront home renders
   home_show_categories: boolean;
   home_show_featured: boolean;

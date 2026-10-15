@@ -1,6 +1,7 @@
 import "server-only";
 import { MEDIA_REF_COLUMNS, isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
 import { createClient } from "@/lib/supabase/server";
+import { withOrderColumns } from "@/lib/data/order-columns";
 import { requireAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { pageCount } from "@/lib/admin/pagination";
@@ -21,8 +22,6 @@ const PRODUCT_COLUMNS =
 /** Media-library embeds (main image + ordered gallery). Only used where the form needs them. */
 const PRODUCT_MEDIA_COLUMNS = `${PRODUCT_COLUMNS}, image_media_id, image_media:media!products_image_media_id_fkey(${MEDIA_REF_COLUMNS}), gallery:product_media(media_id, position, media(${MEDIA_REF_COLUMNS}))`;
 
-const ORDER_COLUMNS =
-  "id, order_number, user_id, status, payment_method, payment_status, currency, subtotal_cents, shipping_cents, total_cents, customer_email, shipping_name, shipping_phone, shipping_address_line1, shipping_address_line2, shipping_city, shipping_postal_code, shipping_country, notes, created_at";
 
 const PROFILE_COLUMNS = "id, full_name, phone, email, avatar_url, is_admin, created_at, updated_at";
 
@@ -61,11 +60,9 @@ export async function adminGetStats(): Promise<AdminStats> {
 export async function adminGetRecentOrders(limit = 6): Promise<Order[]> {
   await requireAdmin();
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("orders")
-    .select(`${ORDER_COLUMNS}, order_items(id, quantity)`)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  const { data, error } = await withOrderColumns((columns) =>
+    supabase.from("orders").select(`${columns}, order_items(id, quantity)`).order("created_at", { ascending: false }).limit(limit),
+  );
   if (error) throw new Error(`Failed to load orders: ${error.message}`);
   return (data ?? []) as unknown as Order[];
 }
@@ -256,10 +253,12 @@ export async function adminListOrders(options: OrderListOptions = {}): Promise<L
   const total = count ?? 0;
   const { perPage, page, from, to } = pageWindow(options, total);
 
-  const { data, error } = await build(`${ORDER_COLUMNS}, order_items(id, quantity)`, false)
-    .order("created_at", { ascending: false })
-    .order("order_number", { ascending: false })
-    .range(from, to);
+  const { data, error } = await withOrderColumns((columns) =>
+    build(`${columns}, order_items(id, quantity)`, false)
+      .order("created_at", { ascending: false })
+      .order("order_number", { ascending: false })
+      .range(from, to),
+  );
   if (error) throw new Error(`Failed to load orders: ${error.message}`);
   return { items: (data ?? []) as unknown as Order[], total, page, perPage };
 }
@@ -268,13 +267,13 @@ export async function adminGetOrder(id: string): Promise<Order | null> {
   await requireAdmin();
   if (!isUuid(id)) return null;
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("orders")
-    .select(
-      `${ORDER_COLUMNS}, order_items(id, order_id, product_id, product_name, product_slug, image_url, unit_price_cents, quantity, line_total_cents)`,
-    )
-    .eq("id", id)
-    .maybeSingle();
+  const { data, error } = await withOrderColumns((columns) =>
+    supabase
+      .from("orders")
+      .select(`${columns}, order_items(id, order_id, product_id, product_name, product_slug, image_url, unit_price_cents, quantity, line_total_cents)`)
+      .eq("id", id)
+      .maybeSingle(),
+  );
   if (error) throw new Error(`Failed to load order: ${error.message}`);
   return (data as unknown as Order) ?? null;
 }
@@ -340,12 +339,9 @@ export async function adminGetUser(id: string): Promise<ProfileWithOrders | null
   const supabase = await createClient();
   const [{ data, error }, ordersRes] = await Promise.all([
     supabase.from("profiles").select(PROFILE_COLUMNS).eq("id", id).maybeSingle(),
-    supabase
-      .from("orders")
-      .select(`${ORDER_COLUMNS}, order_items(id, quantity)`)
-      .eq("user_id", id)
-      .order("created_at", { ascending: false })
-      .limit(50),
+    withOrderColumns((columns) =>
+      supabase.from("orders").select(`${columns}, order_items(id, quantity)`).eq("user_id", id).order("created_at", { ascending: false }).limit(50),
+    ),
   ]);
   if (error) throw new Error(`Failed to load user: ${error.message}`);
   if (!data) return null;
@@ -366,7 +362,7 @@ export async function adminGetUser(id: string): Promise<ProfileWithOrders | null
  * the page can show a hint instead of failing on save; `homeMigrated` does the
  * same for the UI → Home page columns (`20261024000000_home_sections.sql`).
  */
-export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migrated: boolean; homeMigrated: boolean; media: SettingsMedia }) | null> {
+export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migrated: boolean; homeMigrated: boolean; currencyMigrated: boolean; media: SettingsMedia }) | null> {
   await requireAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
@@ -391,6 +387,7 @@ export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migra
     updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
     migrated: "manage_stock" in row,
     homeMigrated: "home_show_filter" in row, // 20261024000000_home_sections.sql
+    currencyMigrated: "usd_to_bdt_rate" in row, // 20261025000000_currency.sql
     media,
   };
 }

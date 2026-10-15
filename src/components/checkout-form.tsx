@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { BanknoteIcon, CreditCardIcon, ShoppingCartIcon } from "lucide-react";
 import { placeOrder } from "@/app/(store)/checkout/actions";
 import { selectCartSubtotal, useCartStore, useHydrated } from "@/lib/cart-store";
-import { formatPrice } from "@/lib/format";
+import { formatMoney } from "@/lib/money";
 import type { CurrentUser } from "@/lib/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, LinkButton } from "@/components/ui/button";
@@ -17,10 +17,13 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useMoney } from "./money-provider";
 import { CartTotals } from "./cart-totals";
 import { ProductImage } from "./product-image";
 
 export function CheckoutForm({ user }: { user: CurrentUser }) {
+  const money = useMoney();
+  const formatPrice = (cents: number) => formatMoney(cents, money);
   const router = useRouter();
   const hydrated = useHydrated();
   const items = useCartStore((s) => s.items);

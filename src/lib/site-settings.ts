@@ -2,6 +2,7 @@ import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { STORE_NAME } from "@/lib/config";
+import { isCurrencyCode, moneyFromSettings, type Money } from "@/lib/money";
 import type { SiteSettings } from "@/lib/types";
 
 export const SITE_SETTINGS_TAG = "site-settings";
@@ -24,6 +25,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   seo_bing_verification: null,
   seo_twitter: null,
   manage_stock: true,
+  currency: "USD",
+  usd_to_bdt_rate: null,
   home_show_categories: true,
   home_show_featured: true,
   home_show_filter: false,
@@ -32,12 +35,17 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
 
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
 const flag = (v: unknown, fallback: boolean): boolean => (typeof v === "boolean" ? v : fallback);
+// numeric columns arrive as strings through PostgREST
+const positive = (v: unknown): number | null => {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : Number.NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 /**
  * Turns a raw `site_settings` row into a fully-populated object. Columns that
  * do not exist yet (migration not run) simply fall back to the defaults, so an
  * older database keeps working until `20261018000000_settings_tabs.sql` /
- * `20261024000000_home_sections.sql` are applied.
+ * `20261024000000_home_sections.sql` / `20261025000000_currency.sql` are applied.
  */
 export function normaliseSiteSettings(row: Record<string, unknown> | null | undefined): SiteSettings {
   if (!row) return DEFAULT_SITE_SETTINGS;
@@ -59,6 +67,8 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     seo_bing_verification: text(row.seo_bing_verification),
     seo_twitter: text(row.seo_twitter),
     manage_stock: flag(row.manage_stock, true),
+    currency: isCurrencyCode(row.currency) ? row.currency : "USD",
+    usd_to_bdt_rate: positive(row.usd_to_bdt_rate),
     home_show_categories: flag(row.home_show_categories, true),
     home_show_featured: flag(row.home_show_featured, true),
     home_show_filter: flag(row.home_show_filter, false),
@@ -97,6 +107,11 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     cacheLife("seconds");
     return DEFAULT_SITE_SETTINGS;
   }
+}
+
+/** The display currency + rate for server components (`<MoneyProvider>` covers the client side). */
+export async function getMoney(): Promise<Money> {
+  return moneyFromSettings(await getSiteSettings());
 }
 
 /**

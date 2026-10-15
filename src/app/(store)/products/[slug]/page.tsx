@@ -7,7 +7,7 @@ import { getProductBySlug, getProducts } from "@/lib/data/products";
 import { canonicalFor } from "@/lib/seo";
 import { getSiteSettings } from "@/lib/site-settings";
 import { FREE_SHIPPING_THRESHOLD_CENTS } from "@/lib/config";
-import { formatPrice } from "@/lib/format";
+import { formatMoney, moneyFromSettings } from "@/lib/money";
 import { Price } from "@/components/price";
 import { ProductGallery } from "@/components/product-gallery";
 import { slidesFor } from "@/lib/media/shared";
@@ -49,7 +49,9 @@ async function ProductDetails({ params }: { params: Params }) {
   const { slug } = await params;
   // Both read here, in the dynamic part of the page (loadProduct() is uncached), so the
   // stock switch from Settings → WooCommerce is fresh on every navigation.
-  const [product, { manage_stock }] = await Promise.all([loadProduct(slug), getSiteSettings()]);
+  const [product, settings] = await Promise.all([loadProduct(slug), getSiteSettings()]);
+  const { manage_stock } = settings;
+  const money = moneyFromSettings(settings);
   if (!product) notFound();
 
   return (
@@ -83,7 +85,7 @@ async function ProductDetails({ params }: { params: Params }) {
           <Separator />
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li className="flex items-center gap-2">
-              <TruckIcon className="size-4" aria-hidden /> Free shipping on orders over {formatPrice(FREE_SHIPPING_THRESHOLD_CENTS)}.
+              <TruckIcon className="size-4" aria-hidden /> Free shipping on orders over {formatMoney(FREE_SHIPPING_THRESHOLD_CENTS, money)}.
             </li>
             <li className="flex items-center gap-2">
               <BanknoteIcon className="size-4" aria-hidden /> Cash on delivery available.

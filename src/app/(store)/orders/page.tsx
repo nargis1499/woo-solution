@@ -6,7 +6,8 @@ import { Suspense } from "react";
 import { PackageIcon } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyOrders } from "@/lib/data/orders";
-import { formatDate, formatOrderNumber, formatPrice } from "@/lib/format";
+import { formatDate, formatOrderNumber } from "@/lib/format";
+import { formatMoney, orderMoney } from "@/lib/money";
 import { OrderStatusBadge } from "@/components/order-status-badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { Card } from "@/components/ui/card";
@@ -75,7 +76,7 @@ async function OrdersList() {
               </span>,
               <OrderStatusBadge key="s" status={order.status} />,
               <span key="t">
-                <span className="font-medium tabular-nums">{formatPrice(order.total_cents, order.currency)}</span>
+                <span className="font-medium tabular-nums">{formatMoney(order.total_cents, orderMoney(order))}</span>
                 <span className="text-muted-foreground">
                   {" "}
                   for {itemCount} {itemCount === 1 ? "item" : "items"}

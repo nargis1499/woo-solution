@@ -1,9 +1,14 @@
+"use client";
+
 import { TruckIcon } from "lucide-react";
 import { FREE_SHIPPING_THRESHOLD_CENTS, calculateShippingCents } from "@/lib/config";
-import { formatPrice } from "@/lib/format";
+import { formatMoney } from "@/lib/money";
 import { Separator } from "@/components/ui/separator";
+import { useMoney } from "./money-provider";
 
 export function CartTotals({ subtotalCents, note = true }: { subtotalCents: number; note?: boolean }) {
+  const money = useMoney();
+  const formatPrice = (cents: number) => formatMoney(cents, money);
   const shipping = calculateShippingCents(subtotalCents);
   const total = subtotalCents + shipping;
   const remaining = FREE_SHIPPING_THRESHOLD_CENTS - subtotalCents;

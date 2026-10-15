@@ -7,7 +7,8 @@
  */
 export const STORE_NAME = process.env.NEXT_PUBLIC_STORE_NAME ?? "Woo Solution";
 
-export const CURRENCY = process.env.NEXT_PUBLIC_CURRENCY ?? "USD";
+// The display currency is a setting (Settings → WooCommerce → Currency); amounts in this
+// file and in the database are USD cents – see src/lib/money.ts.
 
 export const FLAT_SHIPPING_CENTS = 500; // 5.00
 export const FREE_SHIPPING_THRESHOLD_CENTS = 5000; // free at or above 50.00

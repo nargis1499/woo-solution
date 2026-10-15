@@ -5,10 +5,11 @@ import { useSearchParams } from "next/navigation";
 import type { Key } from "react-aria-components";
 import { isSettingsTab, SETTINGS_TABS, type SettingsTabId } from "@/lib/admin/settings-tabs";
 import type { SettingsMedia, SiteSettings } from "@/lib/types";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GeneralSettingsForm, SeoSettingsForm, ShopSettingsForm } from "./settings-forms";
 
-export function SettingsTabs({ settings, media }: { settings: SiteSettings; media: SettingsMedia }) {
+export function SettingsTabs({ settings, media, currencyMigrated = true }: { settings: SiteSettings; media: SettingsMedia; currencyMigrated?: boolean }) {
   // The URL is the source of truth (?tab=seo …): it is shareable, survives a reload, and when Next.js
   // restores this page after navigating away the tabs follow the link that was clicked.
   const param = useSearchParams().get("tab") ?? undefined;
@@ -45,7 +46,13 @@ export function SettingsTabs({ settings, media }: { settings: SiteSettings; medi
       <TabsContent id="seo" shouldForceMount className="data-inert:hidden">
         <SeoSettingsForm settings={settings} shareImage={media.share_image} />
       </TabsContent>
-      <TabsContent id="woocommerce" shouldForceMount className="data-inert:hidden">
+      <TabsContent id="woocommerce" shouldForceMount className="space-y-5 data-inert:hidden">
+        {!currencyMigrated && (
+          <Alert variant="destructive">
+            <AlertTitle>Database update required</AlertTitle>
+            <AlertDescription>Run supabase/migrations/20261025000000_currency.sql in the Supabase SQL Editor to enable the currency options.</AlertDescription>
+          </Alert>
+        )}
         <ShopSettingsForm settings={settings} />
       </TabsContent>
     </Tabs>
