@@ -117,7 +117,7 @@ npm install
 npm run dev
 ```
 
-> **"Can't resolve '@tailwindcss/typography'" (or any other package) in `globals.css`** means the install did not finish – stop the dev server, run `npm install` again (it must end without `npm ERR!`), and start `npm run dev` afresh. The dev server does not pick up packages installed while it is running.
+> **"Can't resolve '<package>'" errors after an update** mean the install did not finish – stop the dev server, run `npm install` again (it must end without `npm ERR!`), delete the `.next` folder (Turbopack caches compiler results on disk) and start `npm run dev` afresh.
 
 ### Admin dashboard
 
@@ -178,7 +178,7 @@ Branding images (favicon, share image) are served through `next/image`; `*.supab
 | Featured image & tags | The featured image is picked from the Media Library (upload or select) **or pasted as any public image URL** (*Use a URL*, like the product form); it is shown at the top of the page and used as the default share image. **Tags** are free-form chips with suggestions from existing tags – stored in `tags` / `page_tags` and shown on the page |
 | Publishing | The sticky **Publish** card shows the status, author and timestamps and offers *Save draft* / *Publish* (or *Update* / *Move to draft* once published), **Preview** (drafts included – `/preview/pages/<id>`, admins only) and *View live page*. Publishing requires a title and some content; `published_at` is set the first time a page goes live. The form warns before you leave with unsaved changes |
 | SEO | A collapsible **Search engine settings** panel per page: SEO title (defaults to the page title, counts towards the 60-character guide), meta description (160-character guide), **canonical URL**, *Allow indexing* / *Follow links* switches, Open Graph title / description and a share image picked from the Media Library (or an external URL) – with a live **Google result preview**. Published, indexable pages are listed in `/sitemap.xml` and get canonical, robots, Open Graph (`type=article`) and Twitter card tags |
-| Rendering | Content is sanitised on save **and** again on render (`src/lib/pages/sanitize.ts`: allow-listed tags / attributes, `http(s)` / `mailto` / `tel` links only, images only from the configured hosts, external links get `rel="noopener noreferrer"`), then styled with `@tailwindcss/typography`. Published pages are cached and tag-invalidated (`pages`, `page:<slug>`) whenever an admin saves, so edits appear immediately while visitors are served from the cache. Drafts and unknown slugs are a real 404 |
+| Rendering | Content is sanitised on save **and** again on render (`src/lib/pages/sanitize.ts`: allow-listed tags / attributes, `http(s)` / `mailto` / `tel` links only, images only from the configured hosts, external links get `rel="noopener noreferrer"`), then styled by the `.rich-text` rules in `src/app/globals.css` (no typography plugin). Published pages are cached and tag-invalidated (`pages`, `page:<slug>`) whenever an admin saves, so edits appear immediately while visitors are served from the cache. Drafts and unknown slugs are a real 404 |
 
 ### Media
 

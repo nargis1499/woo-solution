@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@plugin "@tailwindcss/typography";
 
 /* Class-based dark mode: next-themes toggles `class="dark"` on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -152,19 +151,194 @@
   @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
 }
 
-/* Rich text written in the Pages editor – shared by the editor (admin) and the storefront template. */
-.rich-text {
-  @apply prose prose-neutral dark:prose-invert max-w-none prose-headings:scroll-mt-24 prose-headings:tracking-tight prose-a:text-primary prose-a:underline-offset-4 prose-img:rounded-xl prose-img:h-auto prose-img:max-w-full;
-}
-.rich-text table {
-  @apply w-full table-fixed border-collapse text-sm;
-}
-.rich-text th,
-.rich-text td {
-  @apply border border-border px-3 py-2 align-top;
-}
-.rich-text th {
-  @apply bg-muted text-left font-semibold;
+/*
+ * Rich text written in the Pages editor – shared by the editor (admin) and the
+ * storefront template. Hand-written typography on the design tokens (no
+ * @tailwindcss/typography plugin → one less package the CSS build has to
+ * resolve). Sizes are in `em` so `.rich-text-lg` scales everything.
+ */
+@layer components {
+  .rich-text {
+    font-size: 1rem;
+    line-height: 1.75;
+    color: var(--foreground);
+    overflow-wrap: break-word;
+  }
+  .rich-text-lg {
+    font-size: 1.125rem;
+    line-height: 1.78;
+  }
+  .rich-text > :first-child {
+    margin-top: 0;
+  }
+  .rich-text > :last-child {
+    margin-bottom: 0;
+  }
+  .rich-text p {
+    margin: 1.25em 0;
+  }
+  .rich-text a {
+    color: var(--primary);
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .rich-text a:hover {
+    text-decoration-thickness: 2px;
+  }
+  .rich-text strong,
+  .rich-text b {
+    font-weight: 600;
+  }
+  .rich-text h1,
+  .rich-text h2,
+  .rich-text h3,
+  .rich-text h4 {
+    color: var(--foreground);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    scroll-margin-top: 6rem;
+  }
+  .rich-text h1 {
+    margin: 0 0 0.89em;
+    font-size: 2.25em;
+    font-weight: 800;
+    line-height: 1.11;
+  }
+  .rich-text h2 {
+    margin: 2em 0 1em;
+    font-size: 1.5em;
+    line-height: 1.33;
+  }
+  .rich-text h3 {
+    margin: 1.6em 0 0.6em;
+    font-size: 1.25em;
+    font-weight: 600;
+    line-height: 1.6;
+  }
+  .rich-text h4 {
+    margin: 1.5em 0 0.5em;
+    font-size: 1em;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .rich-text h1 + *,
+  .rich-text h2 + *,
+  .rich-text h3 + *,
+  .rich-text h4 + *,
+  .rich-text hr + * {
+    margin-top: 0;
+  }
+  .rich-text ul,
+  .rich-text ol {
+    margin: 1.25em 0;
+    padding-inline-start: 1.625em;
+  }
+  .rich-text ul {
+    list-style-type: disc;
+  }
+  .rich-text ol {
+    list-style-type: decimal;
+  }
+  .rich-text ul ul,
+  .rich-text ul ol,
+  .rich-text ol ul,
+  .rich-text ol ol {
+    margin: 0.75em 0;
+  }
+  .rich-text li {
+    margin: 0.5em 0;
+    padding-inline-start: 0.375em;
+  }
+  .rich-text li::marker {
+    color: var(--muted-foreground);
+  }
+  .rich-text li > p {
+    margin: 0.75em 0;
+  }
+  .rich-text blockquote {
+    margin: 1.6em 0;
+    padding-inline-start: 1em;
+    border-inline-start: 0.25rem solid var(--border);
+    font-style: italic;
+    font-weight: 500;
+  }
+  .rich-text code {
+    padding: 0.15em 0.4em;
+    border-radius: 0.25rem;
+    background: var(--muted);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: 0.875em;
+    font-weight: 600;
+  }
+  .rich-text pre {
+    margin: 1.71em 0;
+    padding: 0.86em 1.14em;
+    overflow-x: auto;
+    border-radius: var(--radius);
+    background: var(--muted);
+    font-size: 0.875em;
+    line-height: 1.71;
+  }
+  .rich-text pre code {
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    font-size: inherit;
+    font-weight: 400;
+  }
+  .rich-text hr {
+    margin: 3em 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+  .rich-text img,
+  .rich-text video {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 2em 0;
+    border-radius: 0.75rem;
+  }
+  .rich-text figure {
+    margin: 2em 0;
+  }
+  .rich-text figure > img {
+    margin: 0;
+  }
+  .rich-text figcaption {
+    margin-top: 0.86em;
+    color: var(--muted-foreground);
+    font-size: 0.875em;
+    line-height: 1.43;
+  }
+  .rich-text table {
+    width: 100%;
+    margin: 2em 0;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 0.875em;
+    line-height: 1.5;
+  }
+  .rich-text th,
+  .rich-text td {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    text-align: start;
+    vertical-align: top;
+  }
+  .rich-text th {
+    background: var(--muted);
+    font-weight: 600;
+  }
+  .rich-text th > p:first-child,
+  .rich-text td > p:first-child {
+    margin-top: 0;
+  }
+  .rich-text th > p:last-child,
+  .rich-text td > p:last-child {
+    margin-bottom: 0;
+  }
 }
 .rich-text p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);

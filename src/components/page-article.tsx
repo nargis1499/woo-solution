@@ -69,9 +69,8 @@ export function PageArticle({ page, className }: { page: Page; className?: strin
       )}
 
       {html ? (
-        // `.rich-text` resets `max-width` (prose default) – keep the measure on a wrapper
         <div className="mx-auto mt-8 max-w-3xl">
-          <div className="rich-text prose-lg" data-testid="page-content" dangerouslySetInnerHTML={{ __html: html }} />
+          <div className="rich-text rich-text-lg" data-testid="page-content" dangerouslySetInnerHTML={{ __html: html }} />
         </div>
       ) : (
         <p className="mx-auto mt-8 max-w-3xl text-muted-foreground">This page has no content yet.</p>
