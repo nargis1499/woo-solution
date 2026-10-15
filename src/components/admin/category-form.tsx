@@ -56,7 +56,6 @@ export function CategoryForm({ category, compact }: { category?: Category | null
           id={`${prefix}show_in_menu`}
           name="show_in_menu"
           label="Show in header menu"
-          // description="List this category in the storefront's main navigation."
           defaultChecked={state?.values ? v.show_in_menu === "on" : (category?.show_in_menu ?? true)}
         />
         <div className="flex gap-2">
