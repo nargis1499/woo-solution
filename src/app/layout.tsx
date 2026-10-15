@@ -4,7 +4,7 @@ import { Suspense, type ReactNode } from "react";
 import { getSiteSettings } from "@/lib/site-settings";
 import { Providers } from "@/components/providers";
 import { TopLoader } from "@/components/top-loader";
-import { Toaster } from "@/components/ui/sonner";
+import { AppToaster } from "@/components/app-toaster";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -33,7 +33,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </Suspense>
           {children}
           {/* Mounted here (not inside the animated page template) so it stays fixed to the viewport */}
-          <Toaster position="top-right" richColors closeButton duration={4500} visibleToasts={4} offset={{ top: 80 }} mobileOffset={{ top: 72 }} />
+          <AppToaster />
         </Providers>
       </body>
     </html>

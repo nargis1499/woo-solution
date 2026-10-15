@@ -6,6 +6,7 @@ import { getSiteSettings } from "@/lib/site-settings";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminSidebar } from "@/components/admin/app-sidebar";
 import { FlashToast } from "@/components/admin/flash-toast";
+import { ToastPlacement } from "@/components/app-toaster";
 import { AdminPageSkeleton } from "@/components/admin/ui";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,6 +30,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <Suspense fallback={<AdminShellSkeleton />}>
         <AdminGate>{children}</AdminGate>
       </Suspense>
+      {/* dashboard toasts live bottom-right, away from the page header and the sidebar's user menu */}
+      <ToastPlacement position="bottom-right" />
       {/* turns ?notice= / ?error= redirects into toasts; useSearchParams() → needs its own Suspense boundary */}
       <Suspense fallback={null}>
         <FlashToast />
