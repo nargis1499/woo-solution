@@ -25,7 +25,7 @@ export function CategoryForm({ category, compact }: { category?: Category | null
   return (
     <form action={formAction} className="space-y-4" noValidate>
       {category && <input type="hidden" name="id" value={category.id} />}
-      <div className={compact ? "grid gap-3 sm:grid-cols-[1fr_1fr_120px]" : "space-y-4"}>
+      <div className={compact ? "grid gap-3 sm:grid-cols-2" : "space-y-4"}>
         <Field data-invalid={Boolean(err.name) || undefined}>
           <FieldLabel htmlFor={`${prefix}name`}>Name</FieldLabel>
           <Input
@@ -44,11 +44,6 @@ export function CategoryForm({ category, compact }: { category?: Category | null
           <FieldLabel htmlFor={`${prefix}slug`}>Slug</FieldLabel>
           <Input id={`${prefix}slug`} name="slug" value={slug} onChange={(e) => { setSlugTouched(true); setSlug(e.target.value); }} placeholder="apparel" aria-invalid={Boolean(err.slug) || undefined} />
           <FieldError>{err.slug}</FieldError>
-        </Field>
-        <Field data-invalid={Boolean(err.sort_order) || undefined}>
-          <FieldLabel htmlFor={`${prefix}sort_order`}>Sort order</FieldLabel>
-          <Input id={`${prefix}sort_order`} name="sort_order" type="number" step={1} defaultValue={v.sort_order ?? category?.sort_order ?? 0} aria-invalid={Boolean(err.sort_order) || undefined} />
-          <FieldError>{err.sort_order}</FieldError>
         </Field>
       </div>
       <div className={compact ? "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" : "space-y-4"}>

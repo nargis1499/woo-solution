@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DataGrid, type BulkDelete, type GridColumn, type GridRow } from "@/components/data-grid";
+import { DataGrid, type BulkDelete, type GridColumn, type GridRow, type Reorder } from "@/components/data-grid";
 
 /* Small layout primitives shared by all /nemesis pages. Server-safe (no hooks). */
 
@@ -66,6 +66,7 @@ export function DataTable({
   className,
   tableClassName,
   bulkDelete,
+  reorder,
 }: {
   label: string;
   columns: GridColumn[];
@@ -73,11 +74,12 @@ export function DataTable({
   className?: string;
   tableClassName?: string;
   bulkDelete?: BulkDelete;
+  reorder?: Reorder;
 }) {
   return (
     // overflow-visible: the selection bar inside is `position: sticky` and must not be clipped by the card
     <Card className={cn("gap-0 overflow-visible py-0", className)}>
-      <DataGrid label={label} columns={columns} rows={rows} className={cn("min-w-[640px]", tableClassName)} bulkDelete={bulkDelete} />
+      <DataGrid label={label} columns={columns} rows={rows} className={cn("min-w-[640px]", tableClassName)} bulkDelete={bulkDelete} reorder={reorder} />
     </Card>
   );
 }

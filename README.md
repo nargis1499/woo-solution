@@ -140,7 +140,7 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Dashboard | Revenue / order / product / customer stats, orders by status, recent orders, low-stock list |
 | Pages | Static content pages (About, Contact, Privacy policy, FAQ …) with a rich-text editor, featured image, tags, draft / published workflow, preview and per-page SEO – see [Pages](#pages) below. Each published page is live at `/<slug>` |
 | Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **main image** + **gallery** picked from the Media Library (upload a new file or select an existing one – see [Media](#media)), or paste any image URL |
-| Categories | Create, rename, reorder, delete (products become uncategorised); **Show in header menu** toggle decides which categories appear in the storefront navigation |
+| Categories | Create, rename, delete (products become uncategorised); **drag the handle** (mouse, touch long-press, or ↑/↓ on a focused handle) to reorder – the storefront menu, shop filter and sitemap follow the saved order; **Show in header menu** toggle decides which categories appear in the storefront navigation |
 | Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
 | Media | The Media Library – see [Media](#media) below: uploads, grid / list browsing, search, filters, folders, trash, bulk actions, image optimisation / WebP conversion / editing, alt text, usage tracking and the reusable **media picker** |
@@ -230,12 +230,12 @@ woo-solution/
 │   │   │   ├── checkout/{page.tsx,actions.ts}  # checkout form + placeOrder server action
 │   │   │   ├── orders/                      # order history + order detail / confirmation
 │   │   │   ├── login/, signup/              # auth pages
-│   │   │   └── error.tsx, not-found.tsx
+│   │   │   └── error.tsx, not-found.tsx, template.tsx (page-enter animation)
 │   │   ├── auth/actions.ts                  # signIn / signUp / signOut / signInWithGoogle server actions
 │   │   ├── auth/callback/route.ts           # e-mail confirmation + OAuth (PKCE code exchange)
 │   │   ├── nemesis/                         # admin: layout (sidebar shell + requireAdmin), actions.ts,
-│   │   │                                    #   dashboard, pages/ (+ actions.ts), products/, categories/, orders/, users/, media/, settings/
-│   │   ├── template.tsx                     # page-enter animation
+│   │   │                                    #   dashboard, pages/ (+ actions.ts), products/, categories/, orders/, users/, media/, settings/,
+│   │   │                                    #   template.tsx (content-only page-enter animation – keeps the fixed sidebar out of it)
 │   │   └── globals.css                      # Tailwind v4 + shadcn theme tokens (light / dark)
 │   ├── components/
 │   │   ├── ui/                              # shadcn/ui (React Aria base) – generated, edit freely
@@ -243,7 +243,7 @@ woo-solution/
 │   │   │   ├── media/                       # Media Library UI + the reusable picker / media-ref-field
 │   │   │   └── pages/                       # page form, Tiptap rich-text editor, tag input, SEO panel, status select
 │   │   ├── page-article.tsx                 # storefront template for CMS pages (also used by the admin preview)
-│   │   ├── data-grid.tsx, page-breadcrumbs.tsx  # client wrappers around the React Aria Table / Breadcrumbs
+│   │   ├── data-grid.tsx, page-breadcrumbs.tsx  # client wrappers around the React Aria Table (selection, bulk bar, dnd-kit row reordering) / Breadcrumbs
 │   │   └── header.tsx, mobile-nav.tsx, user-menu.tsx, cart-*.tsx, product-*.tsx, checkout-form.tsx …
 │   ├── hooks/use-mobile.ts
 │   └── lib/

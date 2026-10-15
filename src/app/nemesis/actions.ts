@@ -211,21 +211,25 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
 
   const name = str(formData, "name", 100);
   const slug = slugify(str(formData, "slug", 100) || name);
-  const sortOrder = Number(str(formData, "sort_order", 10) || "0");
   const showInMenu = bool(formData, "show_in_menu");
 
   const fieldErrors: Record<string, string> = {};
   if (!name) fieldErrors.name = "Name is required.";
   if (!SLUG_RE.test(slug)) fieldErrors.slug = "Use lowercase letters, numbers and dashes only.";
-  if (!Number.isInteger(sortOrder)) fieldErrors.sort_order = "Sort order must be a whole number.";
   if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
 
   try {
     const { supabase } = await adminClient();
-    const row = { name, slug, sort_order: sortOrder, show_in_menu: showInMenu };
-    const result = isEdit
-      ? await supabase.from("categories").update(row).eq("id", id).select("id").single()
-      : await supabase.from("categories").insert(row).select("id").single();
+    const row = { name, slug, show_in_menu: showInMenu };
+    let result;
+    if (isEdit) {
+      result = await supabase.from("categories").update(row).eq("id", id).select("id").single();
+    } else {
+      // New categories join the end of the list; the position is changed by dragging rows in the list.
+      const { data: last, error: lastError } = await supabase.from("categories").select("sort_order").order("sort_order", { ascending: false }).limit(1).maybeSingle();
+      if (lastError) throw lastError;
+      result = await supabase.from("categories").insert({ ...row, sort_order: (last?.sort_order ?? -1) + 1 }).select("id").single();
+    }
     if (result.error) throw result.error;
 
     updateTag(MENU_TAG); // header navigation
@@ -234,6 +238,34 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
   } catch (e) {
     if (isRedirectError(e)) throw e;
     return { error: friendlyError(e), values };
+  }
+}
+
+/**
+ * Store the order the admin dragged the categories into: `sort_order` becomes the row's
+ * position in `ids`. Everything that lists categories (header menu, filters, sitemap)
+ * orders by that column, so the storefront follows immediately.
+ */
+export async function reorderCategories(ids: string[]): Promise<{ error?: string }> {
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || !ids.every((id) => typeof id === "string" && UUID_RE.test(id))) {
+    return { error: "Invalid category order." };
+  }
+  if (new Set(ids).size !== ids.length) return { error: "Invalid category order." };
+  try {
+    const { supabase } = await adminClient();
+    const { data: existing, error: loadError } = await supabase.from("categories").select("id").in("id", ids);
+    if (loadError) throw loadError;
+    if ((existing ?? []).length !== ids.length) return { error: "A category was removed in the meantime – the list has been refreshed." };
+
+    const results = await Promise.all(ids.map((id, index) => supabase.from("categories").update({ sort_order: index }).eq("id", id)));
+    const failed = results.find((r) => r.error);
+    if (failed?.error) throw failed.error;
+
+    updateTag(MENU_TAG); // header navigation
+    revalidateStore(); // also refreshes /nemesis/categories (revalidatePath("/", "layout"))
+    return {};
+  } catch (e) {
+    return { error: friendlyError(e) };
   }
 }
 

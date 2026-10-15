@@ -1,10 +1,16 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import type { Selection } from "react-aria-components";
-import { Trash2Icon, XIcon } from "lucide-react";
+import { DndContext, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVerticalIcon, Trash2Icon, XIcon } from "lucide-react";
+import { toast } from "sonner";
 import { AlertDialog, AlertDialogCancel, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
@@ -26,11 +32,21 @@ export type GridColumn = {
 export type GridRow = {
   id: string;
   cells: ReactNode[];
+  /** Plain-text name of the row – used for the drag handle's label and the reorder announcements. */
+  label?: string;
   className?: string;
   /** Makes the whole row a link (click / Enter opens it; links and buttons inside keep working on their own). */
   href?: string;
   /** Row can be opened but never bulk-selected (e.g. the signed-in admin's own account). */
   unselectable?: boolean;
+};
+
+/** Rows can be dragged into a new order (mouse, touch, or ↑/↓ on the handle for keyboard users). */
+export type Reorder = {
+  /** Server action receiving every row id in the new order; resolve `{ error }` to roll the table back. */
+  action: (ids: string[]) => Promise<{ error?: string } | void>;
+  /** Toast shown once the new order is stored. */
+  savedMessage?: string;
 };
 
 /** Extra (non-destructive) bulk action shown next to Delete, e.g. Publish / Move to drafts. Runs without confirmation. */
@@ -66,13 +82,14 @@ export type BulkDelete = {
  * Pass `bulkDelete` to get a checkbox column (click, Space, Shift+click for ranges, select all)
  * plus a floating "N selected" bar that deletes the selection after a confirmation.
  */
-export function DataGrid({ label, columns, rows, className, bulkDelete }: { label: string; columns: GridColumn[]; rows: GridRow[]; className?: string; bulkDelete?: BulkDelete }) {
+export function DataGrid({ label, columns, rows, className, bulkDelete, reorder }: { label: string; columns: GridColumn[]; rows: GridRow[]; className?: string; bulkDelete?: BulkDelete; reorder?: Reorder }) {
   const selectable = Boolean(bulkDelete);
   const selectableIds = rows.filter((r) => !r.unselectable).map((r) => r.id);
   const disabledKeys = rows.filter((r) => r.unselectable).map((r) => r.id);
 
-  // The selection belongs to the rows currently on screen: whenever that set changes (next
-  // page, new filter, rows deleted) it starts over instead of carrying stale ids around.
+  // The selection (and a drag-and-drop order) belongs to the rows currently on screen: whenever
+  // that set changes (next page, new filter, rows deleted, order saved) it starts over from the
+  // server's rows instead of carrying stale ids around.
   const rowsKey = rows.map((r) => r.id).join("\n");
   const [selectedKeys, setSelectedKeys] = useState<Selection>(() => new Set());
   const [prevRowsKey, setPrevRowsKey] = useState(rowsKey);
@@ -80,10 +97,115 @@ export function DataGrid({ label, columns, rows, className, bulkDelete }: { labe
     setPrevRowsKey(rowsKey);
     setSelectedKeys(new Set());
   }
+  // The drag order is only taken from the server again when rows appear or disappear – a refresh
+  // that merely confirms an earlier save must not undo a drag that happened in the meantime.
+  const rowsSetKey = rows.map((r) => r.id).sort().join("\n");
+  const [order, setOrder] = useState(() => rows.map((r) => r.id));
+  const [prevRowsSetKey, setPrevRowsSetKey] = useState(rowsSetKey);
+  if (prevRowsSetKey !== rowsSetKey) {
+    setPrevRowsSetKey(rowsSetKey);
+    setOrder(rows.map((r) => r.id));
+  }
+  // Last order the server is known to hold – what a failed save rolls back to.
+  const confirmedOrder = useRef(order);
+  const confirmedSetKey = useRef(rowsSetKey);
+  useEffect(() => {
+    if (confirmedSetKey.current === rowsSetKey) return;
+    confirmedSetKey.current = rowsSetKey;
+    confirmedOrder.current = rows.map((r) => r.id);
+  }, [rowsSetKey, rows]);
 
   const selectedIds = selectedKeys === "all" ? selectableIds : selectableIds.filter((id) => selectedKeys.has(id));
+  const rowById = new Map(rows.map((r) => [r.id, r]));
+  const visibleRows = reorder ? order.flatMap((id) => rowById.get(id) ?? []) : rows;
+  const [, startReorder] = useTransition();
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refocusHandle = useRef<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
 
-  return (
+  function save(next: string[]) {
+    if (!reorder) return;
+    startReorder(async () => {
+      try {
+        const result = await reorder.action(next);
+        if (result?.error) throw new Error(result.error);
+        confirmedOrder.current = next;
+        toast.success(reorder.savedMessage ?? "Order saved.");
+      } catch (e) {
+        setOrder(confirmedOrder.current);
+        toast.error(e instanceof Error && e.message ? e.message : "The new order could not be saved.");
+      }
+    });
+  }
+
+  /** Apply a new order optimistically; the server re-renders the list in that order once it is stored. */
+  function moveRows(next: string[], { debounce = 0 } = {}) {
+    if (!reorder || next.join("\n") === order.join("\n")) return;
+    setOrder(next);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (debounce) saveTimer.current = setTimeout(() => save(next), debounce);
+    else save(next);
+  }
+
+  function onDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return;
+    moveRows(arrayMove(order, order.indexOf(String(active.id)), order.indexOf(String(over.id))));
+  }
+
+  /** ↑ / ↓ on a handle moves the row one step; consecutive presses are stored as one change. */
+  function nudge(id: string, direction: -1 | 1) {
+    const from = order.indexOf(id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= order.length) return;
+    refocusHandle.current = id;
+    const label = rowById.get(id)?.label ?? "Row";
+    setAnnouncement(`${label} moved to position ${to + 1} of ${order.length}.`);
+    moveRows(arrayMove(order, from, to), { debounce: 800 });
+  }
+
+  // ↑ / ↓ while a handle is focused. Registered on `window` in the capture phase because React
+  // Aria's grid handles arrow keys in its own capture listener (moving focus to the next row)
+  // before a handler on the button itself would ever run.
+  const nudgeRef = useRef(nudge);
+  useEffect(() => {
+    nudgeRef.current = nudge;
+  });
+  useEffect(() => {
+    if (!reorder) return;
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if ((e.key !== "ArrowUp" && e.key !== "ArrowDown") || e.altKey || e.ctrlKey || e.metaKey) return;
+      const handle = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-drag-handle]") : null;
+      if (!handle || !handle.dataset.dragHandle) return;
+      e.preventDefault();
+      e.stopPropagation();
+      nudgeRef.current(handle.dataset.dragHandle, e.key === "ArrowUp" ? -1 : 1);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [reorder]);
+
+  // Moving a row re-inserts its <tr>, which drops keyboard focus – put it back on the same handle.
+  // React Aria reacts to focus re-entering the table by focusing the first row, so claim it once
+  // more on the next frame after that has happened.
+  useEffect(() => {
+    const id = refocusHandle.current;
+    if (!id) return;
+    refocusHandle.current = null;
+    const focus = () => {
+      const el = document.querySelector<HTMLElement>(`[data-drag-handle="${CSS_ESCAPE(id)}"]`);
+      if (el && document.activeElement !== el) el.focus({ preventScroll: true });
+    };
+    focus();
+    const frame = requestAnimationFrame(focus);
+    return () => cancelAnimationFrame(frame);
+  }, [order]);
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 6 } }),
+  );
+
+  const table = (
     <>
       {/* Clips the rows to the card's radius so the card itself can stay `overflow-visible` for the sticky bar below. */}
       <div className="overflow-hidden rounded-[inherit]">
@@ -98,6 +220,11 @@ export function DataGrid({ label, columns, rows, className, bulkDelete }: { labe
           onSelectionChange={selectable ? setSelectedKeys : undefined}
         >
           <TableHeader>
+            {reorder && (
+              <TableHead id="__drag" className="w-10 pl-3">
+                <span className="sr-only">Reorder</span>
+              </TableHead>
+            )}
             {selectable && (
               <TableHead id="__selection" className="w-10 pl-4">
                 <Checkbox slot="selection" />
@@ -110,13 +237,24 @@ export function DataGrid({ label, columns, rows, className, bulkDelete }: { labe
             ))}
           </TableHeader>
           <TableBody>
-            {rows.map((r) => (
+            {visibleRows.map((r) => (
               <TableRow
                 key={r.id}
                 id={r.id}
                 href={r.href}
-                className={cn("outline-none data-focus-visible:outline-2 data-focus-visible:-outline-offset-2 data-focus-visible:outline-ring", r.href && "cursor-pointer", r.className)}
+                textValue={r.label}
+                className={cn(
+                  "outline-none data-focus-visible:outline-2 data-focus-visible:-outline-offset-2 data-focus-visible:outline-ring",
+                  r.href && "cursor-pointer",
+                  reorder && "data-dragging:relative data-dragging:z-10 data-dragging:bg-muted data-dragging:shadow-md",
+                  r.className,
+                )}
               >
+                {reorder && (
+                  <TableCell className="pl-3">
+                    <DragHandle id={r.id} label={r.label} />
+                  </TableCell>
+                )}
                 {selectable && (
                   <TableCell className="pl-4">
                     <Checkbox slot="selection" />
@@ -137,6 +275,70 @@ export function DataGrid({ label, columns, rows, className, bulkDelete }: { labe
       </div>
       {bulkDelete && selectedIds.length > 0 && <BulkDeleteBar key={rowsKey} ids={selectedIds} onClear={() => setSelectedKeys(new Set())} {...bulkDelete} />}
     </>
+  );
+
+  if (!reorder) return table;
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      modifiers={[restrictToVerticalAxis]}
+      onDragEnd={onDragEnd}
+      accessibility={{ screenReaderInstructions: { draggable: "Press the up or down arrow key to move this row; the new order is saved automatically." } }}
+    >
+      <SortableContext items={order} strategy={verticalListSortingStrategy}>
+        {table}
+      </SortableContext>
+      <p className="sr-only" aria-live="polite">
+        {announcement}
+      </p>
+    </DndContext>
+  );
+}
+
+const CSS_ESCAPE = (value: string) => (typeof window !== "undefined" && window.CSS?.escape ? window.CSS.escape(value) : value.replace(/["\\]/g, "\\$&"));
+
+/**
+ * Grip button that makes its own table row sortable (↑/↓ handling lives in DataGrid). Rendered as
+ * cell *content* on purpose: React Aria builds its collection by rendering rows and cells into a
+ * detached document first, and cell contents are skipped there – so this hook only ever runs
+ * against the real `<tr>`.
+ */
+function DragHandle({ id, label }: { id: string; label?: string }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const rowRef = useRef<HTMLTableRowElement | null>(null);
+
+  const handleRef = useCallback(
+    (el: HTMLButtonElement | null) => {
+      setActivatorNodeRef(el);
+      rowRef.current = el?.closest("tr") ?? null;
+      setNodeRef(rowRef.current);
+    },
+    [setActivatorNodeRef, setNodeRef],
+  );
+
+  // dnd-kit moves the row with a transform; the row element belongs to React Aria, so apply it imperatively.
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    row.style.transform = CSS.Translate.toString(transform) ?? "";
+    row.style.transition = transition ?? "";
+    if (isDragging) row.setAttribute("data-dragging", "true");
+    else row.removeAttribute("data-dragging");
+  }, [transform, transition, isDragging]);
+
+  return (
+    <button
+      ref={handleRef}
+      type="button"
+      {...attributes}
+      {...listeners}
+      data-drag-handle={id}
+      aria-label={`Drag to reorder${label ? ` ${label}` : ""}`}
+      className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "cursor-grab touch-none text-muted-foreground active:cursor-grabbing")}
+    >
+      <GripVerticalIcon className="size-4" />
+    </button>
   );
 }
 
