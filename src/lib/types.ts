@@ -81,14 +81,55 @@ export type MediaItem = {
   updated_at: string;
 };
 
-/** One place a file is used (product image or gallery). */
-/** One row per place a file is used: a product (main image / gallery) or the site settings (favicon / share image). */
+/**
+ * One row per place a file is used: a product (main image / gallery), the site
+ * settings (favicon / share image) or a page (featured image / share image /
+ * inside the content). For the `page_*` roles the `product_*` columns carry the
+ * page id / title / slug.
+ */
 export type MediaUsage = {
   media_id: string;
   product_id: string | null;
   product_name: string | null;
   product_slug: string | null;
-  role: "image" | "gallery" | "favicon" | "share_image";
+  role: "image" | "gallery" | "favicon" | "share_image" | "page_image" | "page_share_image" | "page_content";
+};
+
+/* ─── Pages (CMS) ─────────────────────────────────────────────────────────── */
+
+export type PageStatus = "draft" | "published";
+
+export type Tag = { id: string; name: string; slug: string };
+
+export type PageAuthor = { id: string; full_name: string | null; email: string | null };
+
+/** Row `pages` + the embeds the admin form / storefront template need. */
+export type Page = {
+  id: string;
+  title: string;
+  slug: string;
+  /** Sanitised HTML (the editor's output, cleaned again on the server). */
+  content: string;
+  /** Plain-text summary derived from the content – default meta description. */
+  excerpt: string | null;
+  featured_image_id: string | null;
+  status: PageStatus;
+  seo_title: string | null;
+  seo_description: string | null;
+  canonical_url: string | null;
+  robots_index: boolean;
+  robots_follow: boolean;
+  og_title: string | null;
+  og_description: string | null;
+  og_image_id: string | null;
+  author_id: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+  featured_image?: MediaRef | null;
+  og_image?: MediaRef | null;
+  author?: PageAuthor | null;
+  tags?: Tag[];
 };
 
 export type OrderStatus = "pending" | "processing" | "completed" | "cancelled";

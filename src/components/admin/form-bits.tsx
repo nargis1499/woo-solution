@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useOptimistic, useTransition } from "react";
+import { useId, useOptimistic, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 import type { ReactNode } from "react";
 import { Trash2Icon } from "lucide-react";
@@ -147,5 +147,28 @@ export function MenuToggle({ id, shown, name, action }: { id: string; shown: boo
         });
       }}
     />
+  );
+}
+
+/**
+ * Labelled switch. The value travels in a hidden input driven by React state
+ * (not the switch's own checkbox), so what is shown is always what gets
+ * submitted. When the server value changes underneath (saved elsewhere, page
+ * refreshed) the switch follows it.
+ */
+export function SwitchField({ id, name, label, defaultSelected }: { id: string; name: string; label: ReactNode; defaultSelected: boolean }) {
+  const [selected, setSelected] = useState(defaultSelected);
+  const [seenDefault, setSeenDefault] = useState(defaultSelected);
+  if (seenDefault !== defaultSelected) {
+    // derived-state reset during render (React-sanctioned pattern, no effect needed)
+    setSeenDefault(defaultSelected);
+    setSelected(defaultSelected);
+  }
+  return (
+    <FieldLabel htmlFor={id} className="items-center gap-3 py-1 text-sm font-medium has-data-selected:bg-transparent">
+      <input type="hidden" name={name} value={selected ? "on" : "off"} />
+      <Switch id={id} isSelected={selected} onChange={setSelected} />
+      {label}
+    </FieldLabel>
   );
 }

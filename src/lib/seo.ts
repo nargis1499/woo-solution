@@ -2,6 +2,7 @@ import "server-only";
 import type { Metadata } from "next";
 import { cacheLife, cacheTag } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
+import { getPublishedPagesForSitemap } from "@/lib/data/pages";
 import { getSiteSettings, resolveSiteUrl, telegramHref, whatsappHref } from "@/lib/site-settings";
 import type { SiteSettings } from "@/lib/types";
 
@@ -16,7 +17,7 @@ import type { SiteSettings } from "@/lib/types";
 export const SITEMAP_TAG = "sitemap";
 
 /** Storefront pages that should never be indexed (private, transactional or admin). */
-export const NOINDEX_PATHS = ["/nemesis", "/checkout", "/cart", "/orders", "/login", "/signup", "/auth"];
+export const NOINDEX_PATHS = ["/nemesis", "/checkout", "/cart", "/orders", "/login", "/signup", "/auth", "/preview"];
 
 export function siteTitle(s: Pick<SiteSettings, "store_name" | "seo_title">): string {
   return s.seo_title || s.store_name;
@@ -95,15 +96,19 @@ export async function getSitemapEntries(): Promise<SitemapEntry[]> {
 
   try {
     const supabase = createPublicClient();
-    const [categories, products] = await Promise.all([
+    const [categories, products, pages] = await Promise.all([
       supabase.from("categories").select("slug").order("sort_order", { ascending: true }),
       supabase.from("products").select("slug, updated_at").eq("is_active", true).order("created_at", { ascending: false }).limit(5000),
+      getPublishedPagesForSitemap(),
     ]);
     for (const c of categories.data ?? []) {
       entries.push({ path: `/shop?category=${encodeURIComponent(c.slug)}`, changeFrequency: "weekly", priority: 0.7 });
     }
     for (const p of products.data ?? []) {
       entries.push({ path: `/products/${encodeURIComponent(p.slug)}`, lastModified: p.updated_at ?? undefined, changeFrequency: "weekly", priority: 0.8 });
+    }
+    for (const page of pages) {
+      entries.push({ path: `/${encodeURIComponent(page.slug)}`, lastModified: page.updated_at, changeFrequency: "monthly", priority: 0.6 });
     }
   } catch {
     // keep the static pages – a flaky database should not blank the sitemap

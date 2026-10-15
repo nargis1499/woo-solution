@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
 
 /* Class-based dark mode: next-themes toggles `class="dark"` on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -149,4 +150,29 @@
 /* Page width + gutters shared by the storefront pages. */
 @utility container-page {
   @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+/* Rich text written in the Pages editor – shared by the editor (admin) and the storefront template. */
+.rich-text {
+  @apply prose prose-neutral dark:prose-invert max-w-none prose-headings:scroll-mt-24 prose-headings:tracking-tight prose-a:text-primary prose-a:underline-offset-4 prose-img:rounded-xl prose-img:h-auto prose-img:max-w-full;
+}
+.rich-text table {
+  @apply w-full table-fixed border-collapse text-sm;
+}
+.rich-text th,
+.rich-text td {
+  @apply border border-border px-3 py-2 align-top;
+}
+.rich-text th {
+  @apply bg-muted text-left font-semibold;
+}
+.rich-text p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  @apply pointer-events-none float-left h-0 text-muted-foreground;
+}
+.rich-text .selectedCell {
+  @apply bg-primary/10;
+}
+.rich-text img.ProseMirror-selectednode {
+  @apply ring-2 ring-primary ring-offset-2 ring-offset-background;
 }

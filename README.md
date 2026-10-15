@@ -45,6 +45,7 @@ cp .env.example .env.local
    5. [`supabase/migrations/20261018000000_settings_tabs.sql`](supabase/migrations/20261018000000_settings_tabs.sql) – settings tabs: contact links, favicon & SEO columns on `site_settings`, the global `manage_stock` switch (`stock_managed()`, honoured by `place_order()` and the order-status trigger) and the (now legacy) `site-media` Storage bucket (safe to run on an existing project)
    6. [`supabase/migrations/20261019000000_media_library.sql`](supabase/migrations/20261019000000_media_library.sql) – **Media Library**: `media`, `media_folders`, `product_media` (galleries), `products.image_media_id`, `media_usage()` / `media_totals()`, RLS and the public `media` Storage bucket (5 MB per file, admin-only writes). Safe to run on an existing project – current product images keep working as plain URLs
    7. [`supabase/migrations/20261020000000_single_media_bucket.sql`](supabase/migrations/20261020000000_single_media_bucket.sql) – **one bucket for everything**: `site_settings.favicon_media_id` / `seo_og_image_media_id` (favicon and share image become Media Library references), `media_usage()` also reports *site favicon* / *share image*, and admins may read / delete rows in `storage.buckets` so the legacy `product-images` and `site-media` buckets can be removed from the dashboard. Safe to run on an existing project
+   8. [`supabase/migrations/20261021000000_pages.sql`](supabase/migrations/20261021000000_pages.sql) – **Pages**: `pages` (title, slug, rich-text content, featured image, draft / published, per-page SEO + Open Graph fields, author), `tags`, `page_tags`, `page_media` (images used inside the content), RLS (everyone reads published pages, admins manage everything) and `media_usage()` reporting *page image* / *page share image* / *page content*
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -123,6 +124,7 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Section | What you can do |
 | --- | --- |
 | Dashboard | Revenue / order / product / customer stats, orders by status, recent orders, low-stock list |
+| Pages | Static content pages (About, Contact, Privacy policy, FAQ …) with a rich-text editor, featured image, tags, draft / published workflow, preview and per-page SEO – see [Pages](#pages) below. Each published page is live at `/<slug>` |
 | Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **main image** + **gallery** picked from the Media Library (upload a new file or select an existing one – see [Media](#media)), or paste any image URL |
 | Categories | Create, rename, reorder, delete (products become uncategorised); **Show in header menu** toggle decides which categories appear in the storefront navigation |
 | Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
@@ -130,9 +132,9 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Media | The Media Library – see [Media](#media) below: uploads, grid / list browsing, search, filters, folders, trash, bulk actions, image optimisation / WebP conversion / editing, alt text, usage tracking and the reusable **media picker** |
 | Settings | Three tabs – see [Settings](#settings) below: **General** (site title, tagline, support e-mail, WhatsApp, Telegram, favicon), **SEO** (search-engine visibility, site URL, title / meta description, share image, verification codes, X handle) and **WooCommerce** (global stock management switch) |
 
-The **Products, Orders and Users** lists are paginated: `?page=` + a **per-page** selector (10 / 20 / 50 / 100, top right of the table, `?per=`, remembered per admin in a cookie). Changing the size keeps the first visible row on screen, a new filter starts on page 1, a page that no longer exists redirects to the last one, and view / edit / delete bring you back to the exact page, size and filter you came from.
+The **Pages, Products, Orders and Users** lists are paginated: `?page=` + a **per-page** selector (10 / 20 / 50 / 100, top right of the table, `?per=`, remembered per admin in a cookie). Changing the size keeps the first visible row on screen, a new filter starts on page 1, a page that no longer exists redirects to the last one, and view / edit / delete bring you back to the exact page, size and filter you came from.
 
-**Bulk delete** – the same three lists have a checkbox column. Tick rows (the header checkbox selects the whole page, Shift+click selects a range, Space toggles the focused row) and a floating **N selected → Delete** bar appears; confirming removes them in one go and reports the result as a toast. Rows are links as well: click anywhere on a row to open it while nothing is selected – once something is ticked, clicking a row toggles it instead. Your own account can be opened but never selected, and `deleteUsers` additionally skips the caller's id on the server.
+**Bulk delete** – the same lists have a checkbox column. Tick rows (the header checkbox selects the whole page, Shift+click selects a range, Space toggles the focused row) and a floating **N selected → Delete** bar appears; confirming removes them in one go and reports the result as a toast. Rows are links as well: click anywhere on a row to open it while nothing is selected – once something is ticked, clicking a row toggles it instead. Your own account can be opened but never selected, and `deleteUsers` additionally skips the caller's id on the server.
 
 Every action reports back through a toast notification (bottom-right corner of the dashboard, [sonner](https://sonner.emilkowal.ski/)) – successes in green, failures in red – while validation errors stay next to the fields they belong to.
 
@@ -143,14 +145,28 @@ Every action reports back through a toast notification (bottom-right corner of t
 | Tab | Options | Where it shows up |
 | --- | --- | --- |
 | General | Site title, tagline, support e-mail, **WhatsApp** number, **Telegram** username, **favicon** (*Choose icon* opens the Media Library picker – pick an existing ICO / PNG / SVG / WebP or upload a new one; uploads land in the **Branding** folder) | `<title>` template, header, hero, footer (e-mail / `wa.me` / `t.me` links), `<link rel="icon">`, Organization JSON-LD. The favicon is stored as a media reference (`favicon_media_id`), so renaming / replacing the file in the library updates the site; *Remove* only unlinks it – the file stays in the library |
-| SEO | **Search engine visibility** switch, site URL, home page title, meta description (with a 160-character guide), social share image (Open Graph 1200 × 630 – picked from the Media Library or uploaded into its **Branding** folder, stored as `seo_og_image_media_id`), Google Search Console + Bing Webmaster verification codes (paste the token or the whole `<meta>` tag), X / Twitter handle | `<meta name="robots">` (`noindex, nofollow` when visibility is off), `/robots.txt` (disallows everything when off, otherwise `/nemesis`, `/cart`, `/checkout`, `/orders`, `/login`, `/signup`, `/auth` + the sitemap line), `/sitemap.xml` (home, shop, categories, active products – tag-invalidated on every admin write), canonical URLs, Open Graph / Twitter cards, `google-site-verification` / `msvalidate.01` meta tags, Organization + WebSite (SearchAction) JSON-LD. Cart, checkout, orders, login and signup are always `noindex` |
+| SEO | **Search engine visibility** switch, site URL, home page title, meta description (with a 160-character guide), social share image (Open Graph 1200 × 630 – picked from the Media Library or uploaded into its **Branding** folder, stored as `seo_og_image_media_id`), Google Search Console + Bing Webmaster verification codes (paste the token or the whole `<meta>` tag), X / Twitter handle | `<meta name="robots">` (`noindex, nofollow` when visibility is off), `/robots.txt` (disallows everything when off, otherwise `/nemesis`, `/preview`, `/cart`, `/checkout`, `/orders`, `/login`, `/signup`, `/auth` + the sitemap line), `/sitemap.xml` (home, shop, categories, active products, published pages – tag-invalidated on every admin write), canonical URLs, Open Graph / Twitter cards, `google-site-verification` / `msvalidate.01` meta tags, Organization + WebSite (SearchAction) JSON-LD. Cart, checkout, orders, login and signup are always `noindex` |
 | WooCommerce | **Manage stock** switch (on by default) | Off = every product is unlimited (digital goods): no "sold out" / "only N left" badges, quantities are only capped by `MAX_QTY_PER_LINE`, `place_order()` neither checks nor decrements `products.stock`, cancelling / re-opening orders doesn't move stock, the admin stock column / field and the low-stock dashboard card disappear (stored quantities are kept untouched). On = the previous strict behaviour |
 
 Without a site URL the app falls back to `NEXT_PUBLIC_SITE_URL` for absolute URLs (sitemap, canonicals, JSON-LD).
 
 Branding images (favicon, share image) are served through `next/image`; `*.supabase.co` and a few stock-photo hosts are allow-listed in `src/lib/image-hosts.ts` – add your own CDN there. Plain-`http` URLs (e.g. a local Supabase on `127.0.0.1`) are rendered unoptimised.
 
-#### Media
+#
+### Pages
+
+`/nemesis/pages` is a small CMS for everything that is not a product: About us, Contact, Privacy policy, Terms, FAQ, Shipping & returns … Each page is rendered by one storefront template at **`/<slug>`** (header, footer and breadcrumbs included), so an *About us* page is simply `/about-us`.
+
+| | |
+| --- | --- |
+| List | Title, URL, tags, **status** (switchable right in the row), author, updated / published dates; search by title or slug; filter by status; sort by last updated, published, title or created; pagination + per-page selector; **View** (published) / **Preview** (draft) and Edit per row; bulk **Publish**, **Move to drafts** and **Delete** |
+| Editor | Title (≤ 200 characters) with a **URL slug** that is generated as you type and can be edited – it is checked live against existing pages and the reserved storefront routes (`shop`, `cart`, `products`, `nemesis` …) and a free alternative is suggested on a clash. The **content** editor (Tiptap, `rich-text-editor.tsx`) offers headings H1–H3, paragraphs, bold / italic / underline / strikethrough, bulleted and numbered lists, block quotes, code, links, alignment, horizontal rules, tables and **images picked from the Media Library** (or uploaded on the spot); the toolbar is keyboard-accessible and Ctrl/⌘-B / I / U / Z / Y work as expected |
+| Featured image & tags | The featured image is a Media Library reference (shown at the top of the page and used as the default share image); **tags** are free-form chips with suggestions from existing tags – stored in `tags` / `page_tags` and shown on the page |
+| Publishing | The sticky **Publish** card shows the status, author and timestamps and offers *Save draft* / *Publish* (or *Update* / *Move to draft* once published), **Preview** (drafts included – `/preview/pages/<id>`, admins only) and *View live page*. Publishing requires a title and some content; `published_at` is set the first time a page goes live. The form warns before you leave with unsaved changes |
+| SEO | A collapsible **Search engine settings** panel per page: SEO title (defaults to the page title, counts towards the 60-character guide), meta description (160-character guide), **canonical URL**, *Allow indexing* / *Follow links* switches, Open Graph title / description and a share image picked from the Media Library – with a live **Google result preview**. Published, indexable pages are listed in `/sitemap.xml` and get canonical, robots, Open Graph (`type=article`) and Twitter card tags |
+| Rendering | Content is sanitised on save **and** again on render (`src/lib/pages/sanitize.ts`: allow-listed tags / attributes, `http(s)` / `mailto` / `tel` links only, images only from the configured hosts, external links get `rel="noopener noreferrer"`), then styled with `@tailwindcss/typography`. Published pages are cached and tag-invalidated (`pages`, `page:<slug>`) whenever an admin saves, so edits appear immediately while visitors are served from the cache. Drafts and unknown slugs are a real 404 |
+
+### Media
 
 `/nemesis/media` (sidebar → **Media**, just above Settings) is a WordPress-style media library backed by the public `media` Storage bucket and the `public.media` table. **It is the only Storage bucket the app uses** – product images, galleries, the favicon and the share image all live there (branding files in the *Branding* folder).
 
@@ -182,6 +198,7 @@ woo-solution/
 │   ├── migrations/20261018000000_settings_tabs.sql  # contact/SEO/stock settings, stock_managed()
 │   ├── migrations/20261019000000_media_library.sql  # media library tables, galleries, media bucket
 │   ├── migrations/20261020000000_single_media_bucket.sql  # favicon/share image as media refs, legacy-bucket cleanup
+│   ├── migrations/20261021000000_pages.sql  # pages, tags, page_tags, page_media
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
@@ -192,6 +209,8 @@ woo-solution/
 │   │   │   ├── page.tsx                     # home: hero, categories, featured products
 │   │   │   ├── shop/page.tsx                # catalog (?category=slug&q=search)
 │   │   │   ├── products/[slug]/             # product detail + purchase panel
+│   │   │   ├── [slug]/page.tsx              # published CMS pages (/about-us, /privacy-policy, …)
+│   │   │   ├── preview/pages/[id]/          # admin-only draft preview in the storefront layout
 │   │   │   ├── cart/page.tsx                # cart (client-side)
 │   │   │   ├── checkout/{page.tsx,actions.ts}  # checkout form + placeOrder server action
 │   │   │   ├── orders/                      # order history + order detail / confirmation
@@ -200,23 +219,28 @@ woo-solution/
 │   │   ├── auth/actions.ts                  # signIn / signUp / signOut / signInWithGoogle server actions
 │   │   ├── auth/callback/route.ts           # e-mail confirmation + OAuth (PKCE code exchange)
 │   │   ├── nemesis/                         # admin: layout (sidebar shell + requireAdmin), actions.ts,
-│   │   │                                    #   dashboard, products/, categories/, orders/, users/, settings/
+│   │   │                                    #   dashboard, pages/ (+ actions.ts), products/, categories/, orders/, users/, media/, settings/
 │   │   ├── template.tsx                     # page-enter animation
 │   │   └── globals.css                      # Tailwind v4 + shadcn theme tokens (light / dark)
 │   ├── components/
 │   │   ├── ui/                              # shadcn/ui (React Aria base) – generated, edit freely
 │   │   ├── admin/                           # dashboard: app-sidebar, admin-header, forms, list toolbar …
+│   │   │   ├── media/                       # Media Library UI + the reusable picker / media-ref-field
+│   │   │   └── pages/                       # page form, Tiptap rich-text editor, tag input, SEO panel, status select
+│   │   ├── page-article.tsx                 # storefront template for CMS pages (also used by the admin preview)
 │   │   ├── data-grid.tsx, page-breadcrumbs.tsx  # client wrappers around the React Aria Table / Breadcrumbs
 │   │   └── header.tsx, mobile-nav.tsx, user-menu.tsx, cart-*.tsx, product-*.tsx, checkout-form.tsx …
 │   ├── hooks/use-mobile.ts
 │   └── lib/
-│       ├── admin/{auth,data,storage,list-params,pagination,constants}.ts
+│       ├── admin/{auth,data,form,list-params,pagination,constants}.ts
+│       ├── pages/{shared,sanitize}.ts       # slug rules, SEO helpers, HTML sanitiser for page content
+│       ├── media/{shared,server}.ts         # media URLs / renditions, upload validation
 │       ├── site-settings.ts, menu.ts        # cached store settings / header categories (tag-invalidated)
 │       ├── seo.ts                           # metadata, robots/sitemap entries, JSON-LD built from the SEO tab
 │       ├── image-hosts.ts                   # next/image allow-list
 │       ├── supabase/{server,proxy}.ts       # Supabase clients (server components / actions, proxy)
 │       ├── auth.ts                          # getCurrentUser() – verified via getClaims()
-│       ├── data/{products,orders}.ts        # data-access layer
+│       ├── data/{products,orders,pages}.ts  # data-access layer (cached, tag-invalidated)
 │       ├── cart-store.ts                    # Zustand cart (persisted)
 │       ├── config.ts                        # store name, currency, shipping rules
 │       ├── format.ts, types.ts, utils.ts
@@ -233,6 +257,7 @@ auth.users ──1:1──▶ profiles (auto-created by trigger)
 categories ──1:N──▶ products
 auth.users ──1:N──▶ orders ──1:N──▶ order_items (price & name snapshotted at purchase)
 media_folders ──1:N──▶ media ◀──N:M──▶ products (product_media = gallery, products.image_media_id = main image)
+profiles ──1:N──▶ pages ◀──N:M──▶ tags (page_tags)   pages ◀──N:M──▶ media (page_media = images in the content; featured_image_id / og_image_id)
 ```
 
 - Prices are stored as **integer cents** (`price_cents`) – no floating-point rounding.
@@ -310,6 +335,7 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 - [x] **Product images in Supabase Storage** with an upload UI
 - [x] **Media Library** – uploads, folders, trash, optimisation / WebP, image editor, alt text, usage tracking, reusable picker
 - [x] **Single `media` bucket** – favicon / share image picked from the library, one-click import of the legacy `product-images` / `site-media` buckets
+- [x] **Pages** – rich-text content pages at `/<slug>` with drafts, preview, tags, featured image and per-page SEO
 - [ ] Admin extras – CSV export, audit log, per-section roles
 - [ ] **Server-side cart** (`cart_items` table) synced across devices, merged on login
 - [ ] **Coupons & discounts**, tax rules, multiple shipping methods

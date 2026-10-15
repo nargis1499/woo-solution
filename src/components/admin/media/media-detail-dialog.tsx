@@ -43,7 +43,7 @@ import {
   updateMediaAlt,
 } from "@/app/nemesis/media/actions";
 import { ImageEditor } from "./image-editor";
-import { ConfirmButton, FileTypeIcon, USAGE_ROLE_LABEL, dimensionsOf, downloadHref, triggerDownload, useCopy, usageLabel } from "./media-bits";
+import { ConfirmButton, FileTypeIcon, USAGE_ROLE_LABEL, dimensionsOf, downloadHref, isPageUsage, triggerDownload, useCopy, usageHref, usageLabel } from "./media-bits";
 
 export function MediaDetailDialog({
   item,
@@ -380,11 +380,11 @@ function Details({
               <span className="block">{uses?.replace("Used in ", "")}</span>
               {usage.map((u) =>
                 u.product_id ? (
-                  <Link key={`${u.product_id}-${u.role}`} href={`/nemesis/products/${u.product_id}`} className="block truncate text-primary underline-offset-4 hover:underline">
-                    {u.product_name} <span className="text-muted-foreground">({USAGE_ROLE_LABEL[u.role]})</span>
+                  <Link key={`${u.product_id}-${u.role}`} href={usageHref(u)} className="block truncate text-primary underline-offset-4 hover:underline">
+                    {u.product_name} <span className="text-muted-foreground">({isPageUsage(u) ? `page · ${USAGE_ROLE_LABEL[u.role]}` : USAGE_ROLE_LABEL[u.role]})</span>
                   </Link>
                 ) : (
-                  <Link key={u.role} href={u.role === "favicon" ? "/nemesis/settings" : "/nemesis/settings?tab=seo"} className="block truncate text-primary underline-offset-4 hover:underline">
+                  <Link key={u.role} href={usageHref(u)} className="block truncate text-primary underline-offset-4 hover:underline">
                     {USAGE_ROLE_LABEL[u.role]} <span className="text-muted-foreground">(Settings)</span>
                   </Link>
                 ),

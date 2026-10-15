@@ -167,14 +167,34 @@ export function dimensionsOf(item: Pick<MediaItem, "width" | "height">): string 
 export function usageLabel(rows: MediaUsage[] | undefined): string | null {
   if (!rows?.length) return null;
   const parts: string[] = [];
-  const products = new Set(rows.map((r) => r.product_id).filter(Boolean)).size;
+  const products = new Set(rows.filter((r) => !isPageUsage(r)).map((r) => r.product_id).filter(Boolean)).size;
+  const pages = new Set(rows.filter(isPageUsage).map((r) => r.product_id).filter(Boolean)).size;
   if (products) parts.push(`${products} product${products === 1 ? "" : "s"}`);
+  if (pages) parts.push(`${pages} page${pages === 1 ? "" : "s"}`);
   if (rows.some((r) => r.role === "favicon")) parts.push("site favicon");
   if (rows.some((r) => r.role === "share_image")) parts.push("social share image");
   return `Used in ${parts.join(" · ")}`;
 }
 
-export const USAGE_ROLE_LABEL: Record<MediaUsage["role"], string> = { image: "main image", gallery: "gallery", favicon: "Site favicon", share_image: "Social share image" };
+/** `page_*` rows carry the page id / title in the `product_*` columns. */
+export const isPageUsage = (u: MediaUsage) => u.role.startsWith("page_");
+
+/** Admin link for a usage row (product form, page editor or the settings tab). */
+export function usageHref(u: MediaUsage): string {
+  if (u.role === "favicon") return "/nemesis/settings";
+  if (u.role === "share_image") return "/nemesis/settings?tab=seo";
+  return isPageUsage(u) ? `/nemesis/pages/${u.product_id}` : `/nemesis/products/${u.product_id}`;
+}
+
+export const USAGE_ROLE_LABEL: Record<MediaUsage["role"], string> = {
+  image: "main image",
+  gallery: "gallery",
+  favicon: "Site favicon",
+  share_image: "Social share image",
+  page_image: "featured image",
+  page_share_image: "share image",
+  page_content: "in the content",
+};
 
 /* ─── confirm button (AlertDialog) ─────────────────────────────────────────── */
 

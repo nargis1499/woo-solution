@@ -5,6 +5,7 @@ import { useTransition } from "react";
 import {
   ChevronsUpDownIcon,
   ExternalLinkIcon,
+  FileTextIcon,
   GaugeIcon,
   LogOutIcon,
   PackageIcon,
@@ -36,6 +37,7 @@ import {
 
 export const ADMIN_NAV = [
   { href: "/nemesis", label: "Dashboard", icon: GaugeIcon, exact: true },
+  { href: "/nemesis/pages", label: "Pages", icon: FileTextIcon },
   { href: "/nemesis/products", label: "Products", icon: PackageIcon },
   { href: "/nemesis/categories", label: "Categories", icon: TagsIcon },
   { href: "/nemesis/orders", label: "Orders", icon: ShoppingCartIcon },

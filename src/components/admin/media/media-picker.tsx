@@ -186,6 +186,9 @@ function PickerBody({ isOpen, onOpenChange, multiple = false, kind, excludeIds =
               className="flex items-center gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
+                // The dialog is portalled, but React still bubbles this submit to the
+                // *host* form (page / settings form) – it must not save that one.
+                e.stopPropagation();
                 setPage(1);
                 setQuery(q.trim());
               }}

@@ -1,45 +1,36 @@
 "use server";
 
-import { revalidatePath, updateTag } from "next/cache";
+import { updateTag } from "next/cache";
 import { redirect } from "next/navigation";
-import { AdminAuthError, assertAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
-import { SITEMAP_TAG } from "@/lib/seo";
 import { MENU_TAG } from "@/lib/menu";
-import { safeListReturn } from "@/lib/admin/pagination";
-import { createClient } from "@/lib/supabase/server";
 import type { OrderStatus, PaymentStatus } from "@/lib/types";
+import {
+  UUID_RE,
+  SLUG_RE,
+  adminClient,
+  bool,
+  count,
+  echo,
+  failure,
+  friendlyError,
+  idsFrom,
+  isRedirectError,
+  notice,
+  returnTo,
+  revalidateStore,
+  slugify,
+  str,
+  type AdminFormState,
+} from "@/lib/admin/form";
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Shared helpers
+ * Shared helpers live in src/lib/admin/form.ts (also used by the pages / media actions)
  * ────────────────────────────────────────────────────────────────────────── */
 
-export type AdminFormState = {
-  error?: string;
-  success?: string;
-  fieldErrors?: Record<string, string>;
-  /** Echo of the submitted values so the form keeps them after a failed submit. */
-  values?: Record<string, string>;
-} | null;
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-const str = (fd: FormData, key: string, max = 500) =>
-  (typeof fd.get(key) === "string" ? (fd.get(key) as string) : "").trim().slice(0, max);
-const bool = (fd: FormData, key: string) => fd.get(key) === "on" || fd.get(key) === "true";
-
-function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-}
+export type { AdminFormState } from "@/lib/admin/form";
 
 /** "19.99" → 1999 cents; returns null when empty, NaN when invalid. */
 function parseMoney(value: string): number | null {
@@ -50,58 +41,7 @@ function parseMoney(value: string): number | null {
   return Math.round(n * 100);
 }
 
-function echo(fd: FormData): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of fd.entries()) if (typeof v === "string" && !k.startsWith("$")) out[k] = v;
-  return out;
-}
-
-/** Turns thrown Errors *and* plain Supabase/PostgREST error objects into a readable sentence. */
-function friendlyError(e: unknown): string {
-  if (e instanceof AdminAuthError) return e.message;
-  const record = typeof e === "object" && e !== null ? (e as { message?: unknown; code?: unknown; details?: unknown }) : null;
-  const message = e instanceof Error ? e.message : typeof record?.message === "string" ? record.message : typeof e === "string" ? e : "";
-  const code = typeof record?.code === "string" ? record.code : "";
-  if (code === "23505" || /duplicate key/.test(message)) return "That slug is already in use. Please pick another one.";
-  if (code === "23514" || /stock_check|violates check constraint/.test(message)) return "Not enough stock to re-open this order.";
-  if (code === "42501" || /row-level security|permission denied/i.test(message)) return "You are not allowed to do that.";
-  if (code === "42P01" || code === "PGRST205" || code === "PGRST204" || /relation "?(public\.)?(media|product_media)"? does not exist|image_media_id|product_media.*schema cache|media.*schema cache/i.test(message))
-    return "The Media Library tables are missing – run supabase/migrations/20261019000000_media_library.sql in the Supabase SQL Editor, then try again.";
-  return message || "Something went wrong. Please try again.";
-}
-
-async function adminClient() {
-  const user = await assertAdmin();
-  const supabase = await createClient();
-  return { user, supabase };
-}
-
-/** Admin writes touch data that the storefront renders dynamically – purge the router cache for everything. */
-function revalidateStore() {
-  revalidatePath("/", "layout");
-  updateTag(SITEMAP_TAG); // product / category / settings changes all show up in sitemap.xml
-}
-
-const withFlash = (path: string, key: "notice" | "error", message: string) =>
-  `${path}${path.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(message)}`;
-const notice = (path: string, message: string) => withFlash(path, "notice", message);
-const failure = (path: string, message: string) => withFlash(path, "error", message);
-
-/** Where a list action sends the admin afterwards: the exact list page (page / size / filter) they came from. */
-const returnTo = (fd: FormData, listPath: string) => safeListReturn(str(fd, "return_to", 600), listPath) ?? listPath;
 const productsReturn = (fd: FormData) => returnTo(fd, "/nemesis/products");
-
-/** Bulk actions post one `ids` field per selected row; a page never holds more than 100. */
-const MAX_BULK_IDS = 200;
-function idsFrom(fd: FormData): string[] {
-  const ids = fd
-    .getAll("ids")
-    .filter((v): v is string => typeof v === "string")
-    .map((v) => v.trim())
-    .filter((v) => UUID_RE.test(v));
-  return [...new Set(ids)].slice(0, MAX_BULK_IDS);
-}
-const count = (n: number, singular: string, plural: string) => `${n} ${n === 1 ? singular : plural}`;
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Products
@@ -683,6 +623,3 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
 }
 
 /* `redirect()` works by throwing – make sure our catch blocks let it through. */
-function isRedirectError(e: unknown): boolean {
-  return typeof e === "object" && e !== null && "digest" in e && String((e as { digest: unknown }).digest).startsWith("NEXT_REDIRECT");
-}

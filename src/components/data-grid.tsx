@@ -33,6 +33,15 @@ export type GridRow = {
   unselectable?: boolean;
 };
 
+/** Extra (non-destructive) bulk action shown next to Delete, e.g. Publish / Move to drafts. Runs without confirmation. */
+export type BulkAction = {
+  id: string;
+  label: string;
+  icon?: ReactNode;
+  /** Server action; receives every selected id as a repeated `ids` field plus `return_to`. */
+  action: (formData: FormData) => void | Promise<void>;
+};
+
 export type BulkDelete = {
   /** Server action; receives every selected id as a repeated `ids` field plus `return_to`. */
   action: (formData: FormData) => void | Promise<void>;
@@ -41,6 +50,8 @@ export type BulkDelete = {
   /** Singular / plural noun for the bar and the confirmation copy, e.g. `["product", "products"]`. */
   noun: [singular: string, plural: string];
   description: string;
+  /** Additional actions for the selection (shown before Delete). */
+  extra?: BulkAction[];
 };
 
 /**
@@ -134,20 +145,23 @@ export function DataGrid({ label, columns, rows, className, bulkDelete }: { labe
  * hovers above the fold while a long table is on screen and docks at the bottom of the card
  * once you reach the end – always centred on the content, no portal or viewport maths needed.
  */
-function BulkDeleteBar({ ids, onClear, action, returnTo, noun, description }: BulkDelete & { ids: string[]; onClear: () => void }) {
+function BulkDeleteBar({ ids, onClear, action, returnTo, noun, description, extra = [] }: BulkDelete & { ids: string[]; onClear: () => void }) {
   const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [running, setRunning] = useState<string | null>(null);
   const count = ids.length;
   const what = `${count} ${count === 1 ? noun[0] : noun[1]}`;
 
-  function confirm() {
+  function submit(run: (formData: FormData) => void | Promise<void>, id: string) {
+    setRunning(id);
     startTransition(async () => {
       const formData = new FormData();
-      for (const id of ids) formData.append("ids", id);
+      for (const i of ids) formData.append("ids", i);
       formData.set("return_to", returnTo);
-      await action(formData); // redirects back to the list with a toast
+      await run(formData); // redirects back to the list with a toast
     });
   }
+  const confirm = () => submit(action, "delete");
 
   return (
     <div className="pointer-events-none sticky bottom-3 z-20 flex justify-center px-3 py-3" data-testid="bulk-actions">
@@ -160,10 +174,16 @@ function BulkDeleteBar({ ids, onClear, action, returnTo, noun, description }: Bu
           <span className="font-semibold">{count}</span> selected
         </p>
         <Separator orientation="vertical" className="mx-2" />
-        <Button variant="ghost" size="sm" className="rounded-full" onPress={onClear}>
+        <Button variant="ghost" size="sm" className="rounded-full" onPress={onClear} isDisabled={pending}>
           <XIcon /> Clear
         </Button>
-        <Button variant="destructive" size="sm" className="rounded-full" aria-label="Delete selected" onPress={() => setConfirming(true)}>
+        {extra.map((a) => (
+          <Button key={a.id} variant="outline" size="sm" className="rounded-full" onPress={() => submit(a.action, a.id)} isPending={pending} isDisabled={pending} aria-busy={pending && running === a.id} data-testid={`bulk-${a.id}`}>
+            {pending && running === a.id ? <Spinner /> : a.icon}
+            {a.label}
+          </Button>
+        ))}
+        <Button variant="destructive" size="sm" className="rounded-full" aria-label="Delete selected" onPress={() => setConfirming(true)} isDisabled={pending}>
           <Trash2Icon /> Delete
         </Button>
       </div>

@@ -6,10 +6,9 @@ import type { MediaRef, SiteSettings } from "@/lib/types";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useFormToast } from "./flash-toast";
-import { SubmitButton } from "./form-bits";
+import { SubmitButton, SwitchField } from "./form-bits";
 import { BRANDING_FOLDER, FAVICON_MIME_TYPES, SHARE_IMAGE_MIME_TYPES, brandingFileProblem } from "@/lib/media/shared";
 import { MediaRefField } from "./media/media-ref-field";
 
@@ -36,6 +35,7 @@ function SettingsCard({
     <form
       noValidate
       onSubmit={(e) => {
+        if (e.target !== e.currentTarget) return; // a form inside the (portalled) media picker, not this one
         e.preventDefault();
         const formData = new FormData(e.currentTarget);
         startTransition(() => dispatch(formData));
@@ -55,29 +55,6 @@ function SettingsCard({
         </CardFooter>
       </Card>
     </form>
-  );
-}
-
-/**
- * Labelled switch. The value travels in a hidden input driven by React state
- * (not the switch's own checkbox), so what is shown is always what gets
- * submitted. When the server value changes underneath (saved elsewhere, page
- * refreshed) the switch follows it.
- */
-function SwitchField({ id, name, label, defaultSelected }: { id: string; name: string; label: string; defaultSelected: boolean }) {
-  const [selected, setSelected] = useState(defaultSelected);
-  const [seenDefault, setSeenDefault] = useState(defaultSelected);
-  if (seenDefault !== defaultSelected) {
-    // derived-state reset during render (React-sanctioned pattern, no effect needed)
-    setSeenDefault(defaultSelected);
-    setSelected(defaultSelected);
-  }
-  return (
-    <FieldLabel htmlFor={id} className="items-center gap-3 py-1 text-sm font-medium has-data-selected:bg-transparent">
-      <input type="hidden" name={name} value={selected ? "on" : "off"} />
-      <Switch id={id} isSelected={selected} onChange={setSelected} />
-      {label}
-    </FieldLabel>
   );
 }
 

@@ -5,7 +5,9 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { pageCount } from "@/lib/admin/pagination";
 import { normaliseSiteSettings } from "@/lib/site-settings";
-import type { AdminStats, Category, MediaRef, Order, OrderStatus, Product, Profile, SettingsMedia, SiteSettingsRow } from "@/lib/types";
+import { PAGE_COLUMNS, PAGE_DETAIL_COLUMNS, withTags } from "@/lib/data/pages";
+import type { PageSort } from "@/lib/pages/shared";
+import type { AdminStats, Category, MediaRef, Order, OrderStatus, Page, PageStatus, Product, Profile, SettingsMedia, SiteSettingsRow, Tag } from "@/lib/types";
 
 /*
  * Admin read models. Every helper calls `requireAdmin()` first (cheap – the
@@ -121,6 +123,76 @@ export async function adminGetProduct(id: string): Promise<Product | null> {
   if (error && isMissingMediaSchema(error.message)) ({ data, error } = await supabase.from("products").select(PRODUCT_COLUMNS).eq("id", id).maybeSingle());
   if (error) throw new Error(`Failed to load product: ${error.message}`);
   return data ? withSortedGallery(data as unknown as Product) : null;
+}
+
+// ─── Pages (CMS) ────────────────────────────────────────────────────────────
+
+export type PageListOptions = PageRequest & { q?: string; status?: PageStatus | ""; sort?: PageSort };
+
+/** List columns: no content (can be large), but the featured image thumbnail, the author and the tags. */
+const PAGE_LIST_COLUMNS = `${PAGE_COLUMNS.replace("content, ", "")}, featured_image:media!pages_featured_image_id_fkey(${MEDIA_REF_COLUMNS}), author:profiles(id, full_name, email), tags:page_tags(position, tag:tags(id, name, slug))`;
+
+const PAGE_FORM_COLUMNS = `${PAGE_DETAIL_COLUMNS}, author:profiles(id, full_name, email)`;
+
+/** One page of the admin pages list plus the total for the same filter (drives the pager). */
+export async function adminListPages(options: PageListOptions = {}): Promise<ListPage<Page>> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const search = options.q ? `title.ilike.%${escapeLike(options.q)}%,slug.ilike.%${escapeLike(options.q)}%` : null;
+  const build = (columns: string, head: boolean) => {
+    let q = supabase.from("pages").select(columns, { count: "exact", head });
+    if (search) q = q.or(search);
+    if (options.status) q = q.eq("status", options.status);
+    return q;
+  };
+
+  const { count, error: countError } = await build("id", true);
+  if (countError) throw new Error(`Failed to load pages: ${countError.message}`);
+  const total = count ?? 0;
+  const { perPage, page, from, to } = pageWindow(options, total);
+
+  let query = build(PAGE_LIST_COLUMNS, false);
+  switch (options.sort ?? "updated_desc") {
+    case "created_desc":
+      query = query.order("created_at", { ascending: false });
+      break;
+    case "published_desc":
+      query = query.order("published_at", { ascending: false, nullsFirst: false });
+      break;
+    case "title_asc":
+      query = query.order("title", { ascending: true });
+      break;
+    case "title_desc":
+      query = query.order("title", { ascending: false });
+      break;
+    default:
+      query = query.order("updated_at", { ascending: false });
+  }
+  const { data, error } = await query.order("id", { ascending: false }).range(from, to);
+  if (error) throw new Error(`Failed to load pages: ${error.message}`);
+  return { items: ((data ?? []) as unknown as Page[]).map((p) => withTags(p) as Page), total, page, perPage };
+}
+
+export async function adminGetPage(id: string): Promise<Page | null> {
+  await requireAdmin();
+  if (!isUuid(id)) return null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("pages").select(PAGE_FORM_COLUMNS).eq("id", id).maybeSingle();
+  if (error) throw new Error(`Failed to load page: ${error.message}`);
+  return data ? (withTags(data as unknown as Page) as Page) : null;
+}
+
+/** Every tag, A → Z (suggestions in the page form). */
+export async function adminListTags(): Promise<Tag[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("tags").select("id, name, slug").order("name", { ascending: true }).limit(1000);
+  if (error) {
+    // the pages migration has not run yet – the form still works without suggestions
+    if (/relation .* does not exist|schema cache|Could not find the table/i.test(error.message)) return [];
+    throw new Error(`Failed to load tags: ${error.message}`);
+  }
+  return (data ?? []) as Tag[];
 }
 
 // ─── Categories ─────────────────────────────────────────────────────────────

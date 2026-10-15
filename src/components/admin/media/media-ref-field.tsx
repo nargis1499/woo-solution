@@ -29,6 +29,7 @@ export function MediaRefField({
   picker,
   chooseLabel = "Choose image",
   removeLabel = "Remove",
+  onChange,
 }: {
   name: string;
   label: string;
@@ -42,6 +43,8 @@ export function MediaRefField({
   picker: Pick<MediaPickerProps, "kind" | "accept" | "acceptFile" | "uploadFolderName" | "title" | "description" | "confirmLabel">;
   chooseLabel?: string;
   removeLabel?: string;
+  /** Fired when the admin picks or removes a file (true = a file is selected). */
+  onChange?: (hasImage: boolean) => void;
 }) {
   const [mode, setMode] = useState<Mode>("keep");
   const [picked, setPicked] = useState<MediaItem | null>(null);
@@ -65,8 +68,9 @@ export function MediaRefField({
       <input type="hidden" name={`${name}_mode`} value={mode} />
       <input type="hidden" name={`${name}_media_id`} value={mode === "media" ? (picked?.id ?? "") : ""} />
       <FieldLabel>{label}</FieldLabel>
-      <div className={cn("flex gap-4", shape === "wide" ? "flex-col sm:flex-row sm:items-start" : "items-start")}>
-        <div className={cn("relative shrink-0 overflow-hidden rounded-lg border border-dashed bg-muted", shape === "wide" ? "aspect-[1200/630] w-full sm:w-64" : "size-24")}>
+      {/* container query: the wide preview sits beside the buttons only when the field itself is wide enough (settings), and stacks in narrow sidebars (page form) */}
+      <div className={cn("flex gap-4 @container", shape === "wide" ? "flex-col @md:flex-row @md:items-start" : "items-start")}>
+        <div className={cn("relative shrink-0 overflow-hidden rounded-lg border border-dashed bg-muted", shape === "wide" ? "aspect-[1200/630] w-full @md:w-64" : "size-24")}>
           {previewUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={previewUrl} alt="" className={cn("h-full w-full", shape === "wide" ? "object-cover" : "object-contain p-2")} data-testid={`${name}-preview`} />
@@ -89,6 +93,7 @@ export function MediaRefField({
                 onPress={() => {
                   setMode("remove");
                   setPicked(null);
+                  onChange?.(false);
                 }}
                 data-testid={`remove-${name}`}
               >
@@ -115,6 +120,7 @@ export function MediaRefField({
           if (!items[0]) return;
           setPicked(items[0]);
           setMode("media");
+          onChange?.(true);
         }}
       />
     </Field>
