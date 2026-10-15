@@ -4,11 +4,11 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { Key } from "react-aria-components";
 import { isSettingsTab, SETTINGS_TABS, type SettingsTabId } from "@/lib/admin/settings-tabs";
-import type { SiteSettings } from "@/lib/types";
+import type { SettingsMedia, SiteSettings } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GeneralSettingsForm, SeoSettingsForm, ShopSettingsForm } from "./settings-forms";
 
-export function SettingsTabs({ settings }: { settings: SiteSettings }) {
+export function SettingsTabs({ settings, media }: { settings: SiteSettings; media: SettingsMedia }) {
   // The URL is the source of truth (?tab=seo …): it is shareable, survives a reload, and when Next.js
   // restores this page after navigating away the tabs follow the link that was clicked.
   const param = useSearchParams().get("tab") ?? undefined;
@@ -40,10 +40,10 @@ export function SettingsTabs({ settings }: { settings: SiteSettings }) {
       </TabsList>
       {/* shouldForceMount keeps every form mounted, so unsaved edits survive switching tabs */}
       <TabsContent id="general" shouldForceMount className="data-inert:hidden">
-        <GeneralSettingsForm settings={settings} />
+        <GeneralSettingsForm settings={settings} favicon={media.favicon} />
       </TabsContent>
       <TabsContent id="seo" shouldForceMount className="data-inert:hidden">
-        <SeoSettingsForm settings={settings} />
+        <SeoSettingsForm settings={settings} shareImage={media.share_image} />
       </TabsContent>
       <TabsContent id="woocommerce" shouldForceMount className="data-inert:hidden">
         <ShopSettingsForm settings={settings} />

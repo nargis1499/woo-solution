@@ -15,7 +15,7 @@ import { useMediaUploader } from "@/lib/media/client-upload";
 import { pageCount } from "@/lib/admin/pagination";
 import { MEDIA_KINDS, MEDIA_SORTS, mediaKindFor, type MediaPage, type MediaSort, type MediaView } from "@/lib/media/shared";
 import type { MediaFolder, MediaItem, MediaKind } from "@/lib/types";
-import { browseMedia, listFolders } from "@/app/nemesis/media/actions";
+import { browseMedia, listFolders, mediaItems } from "@/app/nemesis/media/actions";
 import { MediaGrid, MediaList } from "./media-grid";
 import { MediaUploader } from "./media-uploader";
 
@@ -30,6 +30,12 @@ export type MediaPickerProps = {
   kind?: MediaKind;
   /** Files already attached – shown but not selectable again. */
   excludeIds?: string[];
+  /** `accept` for the upload input (defaults to the kind, e.g. "image/*"). */
+  accept?: string;
+  /** Extra per-file check for uploads, e.g. "favicons must be ICO/PNG/SVG". */
+  acceptFile?: (file: File) => string | null;
+  /** Uploads made from the picker are filed under this folder (created on first use). */
+  uploadFolderName?: string;
   title?: string;
   description?: string;
   confirmLabel?: string;
@@ -47,7 +53,7 @@ export function MediaPickerDialog(props: MediaPickerProps) {
   return props.isOpen ? <PickerBody key="open" {...props} /> : null;
 }
 
-function PickerBody({ isOpen, onOpenChange, multiple = false, kind, excludeIds = [], title, description, confirmLabel, onSelect }: MediaPickerProps) {
+function PickerBody({ isOpen, onOpenChange, multiple = false, kind, excludeIds = [], accept, acceptFile, uploadFolderName, title, description, confirmLabel, onSelect }: MediaPickerProps) {
   const [tab, setTab] = useState<"library" | "upload">("library");
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
@@ -88,7 +94,11 @@ function PickerBody({ isOpen, onOpenChange, multiple = false, kind, excludeIds =
 
   const uploader = useMediaUploader({
     folderId: folder && folder !== "none" ? folder : null,
-    accept: kind ? (file) => (mediaKindFor(file.type, file.name) === kind ? null : `Only ${kind}s can be added here.`) : undefined,
+    folderName: uploadFolderName ?? null,
+    accept: (file) => {
+      if (kind && mediaKindFor(file.type, file.name) !== kind) return `Only ${kind}s can be added here.`;
+      return acceptFile?.(file) ?? null;
+    },
     onUploaded: (item) => {
       setSelected((prev) => {
         const next = multiple ? new Map(prev) : new Map<string, MediaItem>();
@@ -104,6 +114,21 @@ function PickerBody({ isOpen, onOpenChange, multiple = false, kind, excludeIds =
         setSort("date_desc");
         load();
       }
+    },
+    // the same bytes are already in the library → select that file instead of storing a copy
+    onSkipDuplicate: (existing) => {
+      startLoad(async () => {
+        const res = await mediaItems([existing.id]);
+        const item = res.ok ? res.data[0] : undefined;
+        if (!item) return void toast.error("The existing file could not be loaded.");
+        setSelected((prev) => {
+          const next = multiple ? new Map(prev) : new Map<string, MediaItem>();
+          next.set(item.id, item);
+          return next;
+        });
+        toast.success(`Selected the existing file “${item.name}”`);
+        setTab("library");
+      });
     },
   });
 
@@ -236,8 +261,8 @@ function PickerBody({ isOpen, onOpenChange, multiple = false, kind, excludeIds =
               </div>
             )}
             {data && items.length === 0 ? (
-              <EmptyState title={query || folder || kindFilter ? "No files match" : "No files yet"}>
-                {query || folder || kindFilter ? "Try another search or filter." : "Use the Upload tab to add the first one."}
+              <EmptyState title={query || folder ? "No files match" : "Nothing here yet"}>
+                {query || folder ? "Try another search or folder." : "Switch to “Upload new” to add the first file."}
               </EmptyState>
             ) : view === "list" ? (
               <MediaList items={items} selected={selectedIds} onToggle={toggle} onOpen={pick} compact readOnly disabledIds={excluded} />
@@ -270,7 +295,13 @@ function PickerBody({ isOpen, onOpenChange, multiple = false, kind, excludeIds =
         </TabsContent>
 
         <TabsContent id="upload">
-          <MediaUploader uploader={uploader} accept={kind === "image" ? "image/*" : kind === "video" ? "video/*" : undefined} hint={kind === "image" ? "JPEG, PNG, WebP, GIF, AVIF or SVG · max 5 MB each. Thumbnails are generated automatically." : undefined} compact />
+          <MediaUploader
+            uploader={uploader}
+            duplicateSkipLabel="Use existing"
+            accept={accept ?? (kind === "image" ? "image/*" : kind === "video" ? "video/*" : undefined)}
+            hint={uploadFolderName ? `Files land in the “${uploadFolderName}” folder of the Media Library.` : kind === "image" ? "JPEG, PNG, WebP, GIF, AVIF or SVG · max 5 MB each. Thumbnails are generated automatically." : undefined}
+            compact
+          />
         </TabsContent>
       </Tabs>
 

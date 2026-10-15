@@ -26,7 +26,7 @@ export default async function AdminSettingsPage() {
               </AlertDescription>
             </Alert>
           )}
-          <SettingsTabs settings={settings} />
+          <SettingsTabs settings={settings} media={settings.media} />
         </div>
       ) : (
         <Alert variant="destructive">

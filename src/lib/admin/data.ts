@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { pageCount } from "@/lib/admin/pagination";
 import { normaliseSiteSettings } from "@/lib/site-settings";
-import type { AdminStats, Category, Order, OrderStatus, Product, Profile, SiteSettingsRow } from "@/lib/types";
+import type { AdminStats, Category, MediaRef, Order, OrderStatus, Product, Profile, SettingsMedia, SiteSettingsRow } from "@/lib/types";
 
 /*
  * Admin read models. Every helper calls `requireAdmin()` first (cheap – the
@@ -293,16 +293,31 @@ export async function adminGetUser(id: string): Promise<ProfileWithOrders | null
  * run `20261018000000_settings_tabs.sql` yet (the newer columns are missing) so
  * the page can show a hint instead of failing on save.
  */
-export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migrated: boolean }) | null> {
+export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migrated: boolean; media: SettingsMedia }) | null> {
   await requireAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
   if (error) throw new Error(`Failed to load settings: ${error.message}`);
   if (!data) return null;
   const row = data as Record<string, unknown>;
+  const settings = normaliseSiteSettings(row);
+
+  // Library files behind the branding URLs (for the previews / names in the forms).
+  const media: SettingsMedia = { favicon: null, share_image: null };
+  const ids = [settings.favicon_media_id, settings.seo_og_image_media_id].filter((v): v is string => Boolean(v));
+  if (ids.length) {
+    const { data: refs } = await supabase.from("media").select(MEDIA_REF_COLUMNS).in("id", ids);
+    for (const ref of (refs ?? []) as MediaRef[]) {
+      if (ref.id === settings.favicon_media_id) media.favicon = ref;
+      if (ref.id === settings.seo_og_image_media_id) media.share_image = ref;
+    }
+  }
+
   return {
-    ...normaliseSiteSettings(row),
+    ...settings,
     updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
     migrated: "manage_stock" in row,
+    media,
   };
 }
+

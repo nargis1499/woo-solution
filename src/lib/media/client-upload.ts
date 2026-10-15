@@ -86,11 +86,15 @@ const nextId = () => `u${Date.now().toString(36)}-${(seq++).toString(36)}`;
 
 export function useMediaUploader(options: {
   folderId?: string | null;
+  /** Used when `folderId` is empty: new files are filed under this folder (created on first use). */
+  folderName?: string | null;
   /** Optional filter, e.g. "image" – other kinds are rejected before upload. */
   accept?: (file: File) => string | null;
   onUploaded?: (item: MediaItem) => void;
   /** Fires once when every entry of a batch reached a final state. */
   onSettled?: (uploaded: MediaItem[]) => void;
+  /** The user chose not to upload a duplicate – e.g. the picker selects the existing file instead. */
+  onSkipDuplicate?: (existing: { id: string; name: string }) => void;
 }) {
   const [entries, setEntries] = useState<UploadEntry[]>([]);
   const tokenRef = useRef<string | null>(null);
@@ -145,7 +149,7 @@ export function useMediaUploader(options: {
             onProgress: (p) => patch(id, { progress: p }),
           });
           patch(id, { status: "processing", progress: 1 });
-          const res = await registerUpload({ path: entry.path!, name: entry.name, type: entry.file.type, folderId: optionsRef.current.folderId ?? null });
+          const res = await registerUpload({ path: entry.path!, name: entry.name, type: entry.file.type, folderId: optionsRef.current.folderId ?? null, folderName: optionsRef.current.folderName ?? null });
           if (!res.ok) throw new Error(res.error);
           patch(id, { status: "done", item: res.data });
           batchDone.current.push(res.data);
@@ -236,6 +240,7 @@ export function useMediaUploader(options: {
         enqueue([id]);
       } else {
         patch(id, { status: "skipped" });
+        if (entry.duplicateOf) optionsRef.current.onSkipDuplicate?.(entry.duplicateOf);
         settleCheck();
       }
     },

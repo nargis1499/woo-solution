@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { LegacyImportCard } from "@/components/admin/media/legacy-import-card";
 import { MediaLibrary } from "@/components/admin/media/media-library";
 import { PageHeader } from "@/components/admin/ui";
 import { getMediaTotals, getMediaUsage, listMedia, listMediaFolders } from "@/lib/media/server";
@@ -58,6 +59,8 @@ export default async function AdminMediaPage({ searchParams }: { searchParams: S
             : `${count} ${count === 1 ? "file" : "files"} · ${formatBytes(bytes)} used. Upload once, reuse everywhere.`
         }
       />
+      {/* only renders while the pre-library buckets (product-images / site-media) still exist */}
+      {!params.trash && <LegacyImportCard />}
       <MediaLibrary params={params} page={page} folders={folders} totals={totals} usage={usage} aiAlt={Boolean(process.env.OPENAI_API_KEY)} />
     </>
   );

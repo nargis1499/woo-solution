@@ -82,7 +82,14 @@ export type MediaItem = {
 };
 
 /** One place a file is used (product image or gallery). */
-export type MediaUsage = { media_id: string; product_id: string; product_name: string; product_slug: string; role: "image" | "gallery" };
+/** One row per place a file is used: a product (main image / gallery) or the site settings (favicon / share image). */
+export type MediaUsage = {
+  media_id: string;
+  product_id: string | null;
+  product_name: string | null;
+  product_slug: string | null;
+  role: "image" | "gallery" | "favicon" | "share_image";
+};
 
 export type OrderStatus = "pending" | "processing" | "completed" | "cancelled";
 
@@ -163,14 +170,18 @@ export type SiteSettings = {
   telegram: string | null;
   /** WhatsApp number, digits only incl. country code → https://wa.me/<whatsapp> */
   whatsapp: string | null;
-  /** Public URL of the uploaded favicon (bucket `site-media`), null = default icon */
+  /** Public URL of the favicon (a Media Library file), null = default icon */
   favicon_url: string | null;
+  /** Media Library file behind `favicon_url` */
+  favicon_media_id: string | null;
   // SEO
   seo_indexing: boolean;
   seo_site_url: string | null;
   seo_title: string | null;
   seo_description: string | null;
   seo_og_image_url: string | null;
+  /** Media Library file behind `seo_og_image_url` */
+  seo_og_image_media_id: string | null;
   seo_google_verification: string | null;
   seo_bing_verification: string | null;
   /** X / Twitter handle without the "@" */
@@ -180,6 +191,9 @@ export type SiteSettings = {
 };
 
 export type SiteSettingsRow = SiteSettings & { updated_at: string | null };
+
+/** Media Library files behind the branding URLs of the settings row. */
+export type SettingsMedia = { favicon: MediaRef | null; share_image: MediaRef | null };
 
 /** Shape returned by the `admin_stats()` SQL function. */
 export type AdminStats = {

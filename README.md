@@ -40,10 +40,11 @@ cp .env.example .env.local
 2. Run the migrations **in order** – paste each file and execute it:
    1. [`supabase/migrations/20261014000000_init.sql`](supabase/migrations/20261014000000_init.sql) – schema, RLS, `place_order()`
    2. [`supabase/migrations/20261015000000_google_auth.sql`](supabase/migrations/20261015000000_google_auth.sql) – `profiles.avatar_url` + Google-aware profile trigger (safe to run on an existing project)
-   3. [`supabase/migrations/20261016000000_admin.sql`](supabase/migrations/20261016000000_admin.sql) – `profiles.is_admin`, admin RLS policies, `site_settings`, the public `product-images` Storage bucket, `admin_stats()` / `admin_delete_user()` (safe to run on an existing project)
+   3. [`supabase/migrations/20261016000000_admin.sql`](supabase/migrations/20261016000000_admin.sql) – `profiles.is_admin`, admin RLS policies, `site_settings`, `admin_stats()` / `admin_delete_user()` and the (now legacy) `product-images` Storage bucket (safe to run on an existing project)
    4. [`supabase/migrations/20261017000000_category_menu.sql`](supabase/migrations/20261017000000_category_menu.sql) – `categories.show_in_menu` (header-menu visibility toggle; existing categories stay visible)
-   5. [`supabase/migrations/20261018000000_settings_tabs.sql`](supabase/migrations/20261018000000_settings_tabs.sql) – settings tabs: contact links, favicon & SEO columns on `site_settings`, the global `manage_stock` switch (`stock_managed()`, honoured by `place_order()` and the order-status trigger) and the public `site-media` Storage bucket for branding files (safe to run on an existing project)
+   5. [`supabase/migrations/20261018000000_settings_tabs.sql`](supabase/migrations/20261018000000_settings_tabs.sql) – settings tabs: contact links, favicon & SEO columns on `site_settings`, the global `manage_stock` switch (`stock_managed()`, honoured by `place_order()` and the order-status trigger) and the (now legacy) `site-media` Storage bucket (safe to run on an existing project)
    6. [`supabase/migrations/20261019000000_media_library.sql`](supabase/migrations/20261019000000_media_library.sql) – **Media Library**: `media`, `media_folders`, `product_media` (galleries), `products.image_media_id`, `media_usage()` / `media_totals()`, RLS and the public `media` Storage bucket (5 MB per file, admin-only writes). Safe to run on an existing project – current product images keep working as plain URLs
+   7. [`supabase/migrations/20261020000000_single_media_bucket.sql`](supabase/migrations/20261020000000_single_media_bucket.sql) – **one bucket for everything**: `site_settings.favicon_media_id` / `seo_og_image_media_id` (favicon and share image become Media Library references), `media_usage()` also reports *site favicon* / *share image*, and admins may read / delete rows in `storage.buckets` so the legacy `product-images` and `site-media` buckets can be removed from the dashboard. Safe to run on an existing project
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -109,7 +110,7 @@ The back office lives at **`/nemesis`** (deliberately not linked anywhere public
 
 1. `src/proxy.ts` redirects signed-out visitors to `/login?next=/nemesis`.
 2. `src/app/nemesis/layout.tsx` calls `requireAdmin()`; a signed-in user without the flag gets the normal **404** page (the route doesn't reveal itself).
-3. Every Server Action re-checks the flag **and** Postgres RLS only lets admins write to `products`, `categories`, `orders`, other users' `profiles`, `site_settings` and the `product-images` bucket. Promoting someone through the UI or the API without being an admin is rejected by a trigger.
+3. Every Server Action re-checks the flag **and** Postgres RLS only lets admins write to `products`, `categories`, `orders`, other users' `profiles`, `site_settings` and the `media` bucket. Promoting someone through the UI or the API without being an admin is rejected by a trigger.
 
 **Bootstrapping the first admin** – nobody is an admin by default. Sign up in the app (e-mail or Google), then run in the SQL Editor:
 
@@ -141,8 +142,8 @@ Every action reports back through a toast notification (bottom-right corner of t
 
 | Tab | Options | Where it shows up |
 | --- | --- | --- |
-| General | Site title, tagline, support e-mail, **WhatsApp** number, **Telegram** username, **favicon** upload | `<title>` template, header, hero, footer (e-mail / `wa.me` / `t.me` links), `<link rel="icon">`, Organization JSON-LD. Favicons go to the separate **`site-media`** bucket (`branding/…`), never into `product-images`; replacing or removing one deletes the old file |
-| SEO | **Search engine visibility** switch, site URL, home page title, meta description (with a 160-character guide), social share image (Open Graph 1200 × 630, uploaded to `site-media`), Google Search Console + Bing Webmaster verification codes (paste the token or the whole `<meta>` tag), X / Twitter handle | `<meta name="robots">` (`noindex, nofollow` when visibility is off), `/robots.txt` (disallows everything when off, otherwise `/nemesis`, `/cart`, `/checkout`, `/orders`, `/login`, `/signup`, `/auth` + the sitemap line), `/sitemap.xml` (home, shop, categories, active products – tag-invalidated on every admin write), canonical URLs, Open Graph / Twitter cards, `google-site-verification` / `msvalidate.01` meta tags, Organization + WebSite (SearchAction) JSON-LD. Cart, checkout, orders, login and signup are always `noindex` |
+| General | Site title, tagline, support e-mail, **WhatsApp** number, **Telegram** username, **favicon** (*Choose icon* opens the Media Library picker – pick an existing ICO / PNG / SVG / WebP or upload a new one; uploads land in the **Branding** folder) | `<title>` template, header, hero, footer (e-mail / `wa.me` / `t.me` links), `<link rel="icon">`, Organization JSON-LD. The favicon is stored as a media reference (`favicon_media_id`), so renaming / replacing the file in the library updates the site; *Remove* only unlinks it – the file stays in the library |
+| SEO | **Search engine visibility** switch, site URL, home page title, meta description (with a 160-character guide), social share image (Open Graph 1200 × 630 – picked from the Media Library or uploaded into its **Branding** folder, stored as `seo_og_image_media_id`), Google Search Console + Bing Webmaster verification codes (paste the token or the whole `<meta>` tag), X / Twitter handle | `<meta name="robots">` (`noindex, nofollow` when visibility is off), `/robots.txt` (disallows everything when off, otherwise `/nemesis`, `/cart`, `/checkout`, `/orders`, `/login`, `/signup`, `/auth` + the sitemap line), `/sitemap.xml` (home, shop, categories, active products – tag-invalidated on every admin write), canonical URLs, Open Graph / Twitter cards, `google-site-verification` / `msvalidate.01` meta tags, Organization + WebSite (SearchAction) JSON-LD. Cart, checkout, orders, login and signup are always `noindex` |
 | WooCommerce | **Manage stock** switch (on by default) | Off = every product is unlimited (digital goods): no "sold out" / "only N left" badges, quantities are only capped by `MAX_QTY_PER_LINE`, `place_order()` neither checks nor decrements `products.stock`, cancelling / re-opening orders doesn't move stock, the admin stock column / field and the low-stock dashboard card disappear (stored quantities are kept untouched). On = the previous strict behaviour |
 
 Without a site URL the app falls back to `NEXT_PUBLIC_SITE_URL` for absolute URLs (sitemap, canonicals, JSON-LD).
@@ -151,7 +152,7 @@ Branding images (favicon, share image) are served through `next/image`; `*.supab
 
 #### Media
 
-`/nemesis/media` (sidebar → **Media**, just above Settings) is a WordPress-style media library backed by the public `media` Storage bucket and the `public.media` table.
+`/nemesis/media` (sidebar → **Media**, just above Settings) is a WordPress-style media library backed by the public `media` Storage bucket and the `public.media` table. **It is the only Storage bucket the app uses** – product images, galleries, the favicon and the share image all live there (branding files in the *Branding* folder).
 
 | Area | What it does |
 | --- | --- |
@@ -162,7 +163,8 @@ Branding images (favicon, share image) are served through `next/image`; `*.supab
 | Bulk | Select All / Clear Selection; download as a zip; move to a folder; optimise / convert; move to trash. From the **Trash** view: restore, delete permanently (also removes the renditions from Storage) or **Empty trash** – permanent deletion is only possible from the trash |
 | Images | **Optimize** (re-encode without visible quality loss, adjustable quality slider), convert PNG / JPEG → **WebP** (or AVIF), single or bulk with a progress bar and a before/after size summary. **Edit**: crop (free or fixed ratios), rotate, flip – *Apply* overwrites the file in place, *Save as a copy* creates `<name>-edited.<ext>` |
 | Organise | Flat **folders** (create / rename / delete – files are kept, just unfiled), usage tracking (*Used in 1 product* on the tile, product links in the detail dialog), soft delete with a trash |
-| Picker | The **media picker** (`src/components/admin/media/media-picker.tsx`) is the same library as a dialog: on the product form *Add image* / *Add images* offer **Media Library** (browse, search, filter, grid / list, single or multiple selection) or **Upload new**. Products store the **media reference** (`products.image_media_id`, `product_media` for the gallery) – not just a URL – so renaming, replacing, trashing or converting a file is reflected everywhere it is used. The storefront product page shows the main image plus a switchable gallery with the alt text |
+| Picker | The **media picker** (`src/components/admin/media/media-picker.tsx`) is the same library as a dialog: on the product form *Add image* / *Add images* offer **Media Library** (browse, search, filter, grid / list, single or multiple selection) or **Upload new**. Products store the **media reference** (`products.image_media_id`, `product_media` for the gallery) – not just a URL – so renaming, replacing, trashing or converting a file is reflected everywhere it is used. The storefront product page shows the main image plus a switchable gallery with the alt text. Settings use the same picker for the **favicon** and the **share image** (`media-ref-field.tsx`) |
+| Legacy buckets | Projects created before the Media Library also have `product-images` and `site-media` buckets. While they still exist, the Media page shows a **Files from before the Media Library** card listing every file in them with a one-click *Move N files into the Media Library* button: each file is copied into `media` (identical bytes reuse the existing library item, branding files go to the *Branding* folder), every product `image_url` and the favicon / share-image settings that pointed at the old URL are repointed, the old object is deleted and – once both buckets are empty – the buckets themselves are removed. The card disappears when they are gone. If a bucket still contains files the importer could not handle, it stays and can be deleted by hand under *Storage → Buckets* |
 
 Technical notes: uploads are validated twice (browser + server, including the real stored size and type), Storage policies allow writes to the `media` bucket for admins only, renditions and conversions use [sharp](https://sharp.pixelplumbing.com/), zips are built with [fflate](https://github.com/101arrowz/fflate), and every long-running action (uploads, bulk optimise, zip downloads) reports progress and finishes with a toast.
 
@@ -175,10 +177,11 @@ woo-solution/
 ├── supabase/
 │   ├── migrations/20261014000000_init.sql   # schema, RLS, triggers, place_order() RPC
 │   ├── migrations/20261015000000_google_auth.sql
-│   ├── migrations/20261016000000_admin.sql  # is_admin flag, admin RLS, site_settings, Storage bucket
+│   ├── migrations/20261016000000_admin.sql  # is_admin flag, admin RLS, site_settings
 │   ├── migrations/20261017000000_category_menu.sql  # categories.show_in_menu
-│   ├── migrations/20261018000000_settings_tabs.sql  # contact/SEO/stock settings, stock_managed(), site-media bucket
+│   ├── migrations/20261018000000_settings_tabs.sql  # contact/SEO/stock settings, stock_managed()
 │   ├── migrations/20261019000000_media_library.sql  # media library tables, galleries, media bucket
+│   ├── migrations/20261020000000_single_media_bucket.sql  # favicon/share image as media refs, legacy-bucket cleanup
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
@@ -306,6 +309,7 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 - [x] **Settings tabs** – General / SEO / WooCommerce (contact links, favicon, robots + sitemap, global stock switch)
 - [x] **Product images in Supabase Storage** with an upload UI
 - [x] **Media Library** – uploads, folders, trash, optimisation / WebP, image editor, alt text, usage tracking, reusable picker
+- [x] **Single `media` bucket** – favicon / share image picked from the library, one-click import of the legacy `product-images` / `site-media` buckets
 - [ ] Admin extras – CSV export, audit log, per-section roles
 - [ ] **Server-side cart** (`cart_items` table) synced across devices, merged on login
 - [ ] **Coupons & discounts**, tax rules, multiple shipping methods

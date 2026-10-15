@@ -163,11 +163,18 @@ export function dimensionsOf(item: Pick<MediaItem, "width" | "height">): string 
 /* ─── usage ────────────────────────────────────────────────────────────────── */
 
 /** "Used in 2 products" – products are counted once even when a file is both main image and gallery. */
+/** "Used in 2 products · favicon" – products are counted once even when a file is main image *and* in the gallery. */
 export function usageLabel(rows: MediaUsage[] | undefined): string | null {
   if (!rows?.length) return null;
-  const products = new Set(rows.map((r) => r.product_id)).size;
-  return `Used in ${products} product${products === 1 ? "" : "s"}`;
+  const parts: string[] = [];
+  const products = new Set(rows.map((r) => r.product_id).filter(Boolean)).size;
+  if (products) parts.push(`${products} product${products === 1 ? "" : "s"}`);
+  if (rows.some((r) => r.role === "favicon")) parts.push("site favicon");
+  if (rows.some((r) => r.role === "share_image")) parts.push("social share image");
+  return `Used in ${parts.join(" · ")}`;
 }
+
+export const USAGE_ROLE_LABEL: Record<MediaUsage["role"], string> = { image: "main image", gallery: "gallery", favicon: "Site favicon", share_image: "Social share image" };
 
 /* ─── confirm button (AlertDialog) ─────────────────────────────────────────── */
 

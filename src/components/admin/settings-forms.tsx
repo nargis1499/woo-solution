@@ -2,7 +2,7 @@
 
 import { startTransition, useActionState, useState, type ReactNode } from "react";
 import { updateGeneralSettings, updateSeoSettings, updateShopSettings, type AdminFormState } from "@/app/nemesis/actions";
-import type { SiteSettings } from "@/lib/types";
+import type { MediaRef, SiteSettings } from "@/lib/types";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useFormToast } from "./flash-toast";
 import { SubmitButton } from "./form-bits";
-import { MediaField } from "./media-field";
+import { BRANDING_FOLDER, FAVICON_MIME_TYPES, SHARE_IMAGE_MIME_TYPES, brandingFileProblem } from "@/lib/media/shared";
+import { MediaRefField } from "./media/media-ref-field";
 
 /* One <form> per tab so each section saves independently; no helper text under
  * the inputs on purpose – the space is reserved for more options per tab. */
@@ -84,7 +85,7 @@ const invalid = (message?: string) => (message ? { "data-invalid": true as const
 
 /* ── General ─────────────────────────────────────────────────────────────── */
 
-export function GeneralSettingsForm({ settings }: { settings: SiteSettings }) {
+export function GeneralSettingsForm({ settings, favicon }: { settings: SiteSettings; favicon: MediaRef | null }) {
   return (
     <SettingsCard title="General" action={updateGeneralSettings}>
       {({ v, err }) => (
@@ -117,13 +118,22 @@ export function GeneralSettingsForm({ settings }: { settings: SiteSettings }) {
               <FieldError>{err.telegram}</FieldError>
             </Field>
           </div>
-          <MediaField
+          <MediaRefField
             name="favicon"
             label="Favicon"
             currentUrl={settings.favicon_url}
-            accept=".ico,image/x-icon,image/vnd.microsoft.icon,image/png,image/svg+xml,image/webp"
-            error={err.favicon_file}
-            removeLabel="Remove the custom favicon"
+            currentMedia={favicon}
+            error={err.favicon_media_id}
+            picker={{
+              title: "Favicon",
+              description: "Pick an icon from the Media Library or upload a new one (ICO, PNG, SVG or WebP – square, at least 32 × 32).",
+              confirmLabel: "Use as favicon",
+              accept: `.ico,${FAVICON_MIME_TYPES.join(",")}`,
+              acceptFile: (file) => brandingFileProblem(file, "favicon"),
+              uploadFolderName: BRANDING_FOLDER,
+            }}
+            chooseLabel="Choose icon"
+            removeLabel="Use the default icon"
           />
         </>
       )}
@@ -135,7 +145,7 @@ export function GeneralSettingsForm({ settings }: { settings: SiteSettings }) {
 
 const DESCRIPTION_IDEAL = 160;
 
-export function SeoSettingsForm({ settings }: { settings: SiteSettings }) {
+export function SeoSettingsForm({ settings, shareImage }: { settings: SiteSettings; shareImage: MediaRef | null }) {
   const [descriptionLength, setDescriptionLength] = useState((settings.seo_description ?? "").length);
 
   return (
@@ -176,13 +186,21 @@ export function SeoSettingsForm({ settings }: { settings: SiteSettings }) {
               onChange={(e) => setDescriptionLength(e.target.value.length)}
             />
           </Field>
-          <MediaField
+          <MediaRefField
             name="share_image"
             label="Social share image (Open Graph · 1200 × 630)"
             currentUrl={settings.seo_og_image_url}
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            error={err.share_image_file}
+            currentMedia={shareImage}
+            error={err.share_image_media_id}
             shape="wide"
+            picker={{
+              title: "Social share image",
+              description: "Shown when a page is shared on social networks – JPEG, PNG, WebP or GIF, ideally 1200 × 630.",
+              confirmLabel: "Use as share image",
+              accept: SHARE_IMAGE_MIME_TYPES.join(","),
+              acceptFile: (file) => brandingFileProblem(file, "share_image"),
+              uploadFolderName: BRANDING_FOLDER,
+            }}
             removeLabel="Remove the share image"
           />
           <div className="grid gap-5 sm:grid-cols-2">

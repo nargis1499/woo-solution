@@ -1,11 +1,13 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { cookies } from "next/headers";
 import { AdminAuthError, assertAdmin } from "@/lib/admin/auth";
+import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { createClient } from "@/lib/supabase/server";
 import type { MediaFolder, MediaItem, MediaUsage } from "@/lib/types";
 import {
+  BRANDING_FOLDER,
   MAX_MEDIA_BULK,
   MAX_MEDIA_BYTES,
   MEDIA_PER_PAGE_COOKIE,
@@ -41,6 +43,7 @@ import {
   sha256,
   uploadObject,
 } from "@/lib/media/server";
+import { LEGACY_BUCKETS, isLegacyBucket, legacyBucketStatus, legacyDisplayName, legacyPublicUrl, type LegacyBucket, type LegacyBucketStatus } from "@/lib/media/legacy";
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Shared
@@ -98,10 +101,77 @@ async function loadItem(supabase: Awaited<ReturnType<typeof createClient>>, id: 
   return (data as unknown as MediaItem) ?? null;
 }
 
-/** Products render `image_url` directly – keep it pointing at the file after its URL changed. */
-async function repointProducts(supabase: Awaited<ReturnType<typeof createClient>>, mediaId: string, url: string | null) {
-  const { error } = await supabase.from("products").update({ image_url: url }).eq("image_media_id", mediaId);
-  if (error) console.error(`[media] could not repoint products for ${mediaId}: ${error.message}`);
+type Db = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Products and the site settings keep a denormalised copy of a file's URL –
+ * point them at the new URL (or clear them) when the file moves or goes away.
+ */
+async function repointReferences(supabase: Db, mediaIds: string[], urlFor: (mediaId: string) => string | null) {
+  for (const id of mediaIds) {
+    const { error } = await supabase.from("products").update({ image_url: urlFor(id) }).eq("image_media_id", id);
+    if (error) console.error(`[media] could not repoint products for ${id}: ${error.message}`);
+  }
+  const { data: settings } = await supabase.from("site_settings").select("favicon_media_id, seo_og_image_media_id").eq("id", 1).maybeSingle();
+  const row = (settings ?? {}) as { favicon_media_id?: string | null; seo_og_image_media_id?: string | null };
+  const patch: Record<string, string | null> = {};
+  if (row.favicon_media_id && mediaIds.includes(row.favicon_media_id)) patch.favicon_url = urlFor(row.favicon_media_id);
+  if (row.seo_og_image_media_id && mediaIds.includes(row.seo_og_image_media_id)) patch.seo_og_image_url = urlFor(row.seo_og_image_media_id);
+  if (Object.keys(patch).length) {
+    const { error } = await supabase.from("site_settings").update(patch).eq("id", 1);
+    if (error) console.error(`[media] could not repoint site settings: ${error.message}`);
+    else updateTag(SITE_SETTINGS_TAG);
+  }
+}
+
+/** Finds (or creates) a folder by name – used for uploads that belong somewhere specific, e.g. "Branding". */
+async function folderIdByName(supabase: Db, name: string): Promise<string | null> {
+  const clean = name.trim().replace(/\s+/g, " ").slice(0, 80);
+  if (!clean) return null;
+  const { data: existing } = await supabase.from("media_folders").select("id").ilike("name", clean.replace(/[%_]/g, "\\$&")).limit(1).maybeSingle();
+  if (existing?.id) return existing.id as string;
+  const { data: created, error } = await supabase.from("media_folders").insert({ name: clean }).select("id").single();
+  if (error) {
+    const { data: raced } = await supabase.from("media_folders").select("id").ilike("name", clean).limit(1).maybeSingle();
+    return (raced?.id as string | undefined) ?? null;
+  }
+  return created.id as string;
+}
+
+/**
+ * Inspects `buffer` (already uploaded to `path`), generates the image sizes
+ * and inserts the library row. Shared by browser uploads and the legacy import.
+ */
+async function storeMediaRow(
+  supabase: Db,
+  userId: string,
+  input: { path: string; name: string; mime: string; buffer: Buffer; folderId: string | null; alt?: string | null },
+): Promise<MediaItem> {
+  const { path, name, mime, buffer } = input;
+  const kind = mediaKindFor(mime, name);
+  const info = kind === "image" ? await inspectImage(buffer) : { width: null, height: null, animated: false, format: null };
+  const { variants, variants_size } = kind === "image" ? await generateVariants(supabase, buffer, mime, path, info) : { variants: {}, variants_size: 0 };
+  const row = {
+    folder_id: input.folderId,
+    name,
+    path,
+    mime_type: mime,
+    kind,
+    size: buffer.length,
+    width: info.width,
+    height: info.height,
+    alt: input.alt ?? null,
+    hash: sha256(buffer),
+    variants,
+    variants_size,
+    uploaded_by: userId,
+  };
+  const { data, error } = await supabase.from("media").insert(row).select(MEDIA_COLUMNS).single();
+  if (error) {
+    await removeObjects(supabase, [path, ...Object.values(variants).map((v) => v!.path)]);
+    throw error;
+  }
+  return data as unknown as MediaItem;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -124,6 +194,20 @@ export async function listFolders(): Promise<MediaResult<MediaFolder[]>> {
     const { data, error } = await supabase.from("media_folders").select("id, name, created_at").order("name");
     if (error) throw error;
     return okay((data ?? []) as MediaFolder[]);
+  } catch (e) {
+    return fail(friendlyError(e));
+  }
+}
+
+/** Library rows by id (the picker uses it to select an already-stored duplicate). */
+export async function mediaItems(ids: string[]): Promise<MediaResult<MediaItem[]>> {
+  const list = cleanIds(ids);
+  if (list.length === 0) return okay([]);
+  try {
+    const { supabase } = await adminClient();
+    const { data, error } = await supabase.from("media").select(MEDIA_COLUMNS).in("id", list).is("deleted_at", null);
+    if (error) throw error;
+    return okay((data ?? []) as unknown as MediaItem[]);
   } catch (e) {
     return fail(friendlyError(e));
   }
@@ -199,6 +283,8 @@ export async function registerUpload(input: {
   name: string;
   type: string;
   folderId?: string | null;
+  /** Alternative to `folderId`: file it under this folder, creating it on first use. */
+  folderName?: string | null;
 }): Promise<MediaResult<MediaItem>> {
   const path = String(input.path ?? "");
   if (!/^\d{4}\/\d{2}\/[a-z0-9-]+(\.[a-z0-9]{1,8})?$/.test(path)) return fail("Invalid upload path.");
@@ -215,30 +301,8 @@ export async function registerUpload(input: {
       return fail(problem ?? `The file is larger than ${MAX_MEDIA_BYTES / 1024 / 1024} MB.`);
     }
 
-    const kind = mediaKindFor(mime, name);
-    const info = kind === "image" ? await inspectImage(buffer) : { width: null, height: null, animated: false, format: null };
-    const { variants, variants_size } = kind === "image" ? await generateVariants(supabase, buffer, mime, path, info) : { variants: {}, variants_size: 0 };
-
-    const row = {
-      folder_id: isUuid(input.folderId) ? input.folderId : null,
-      name,
-      path,
-      mime_type: mime,
-      kind,
-      size: buffer.length,
-      width: info.width,
-      height: info.height,
-      hash: sha256(buffer),
-      variants,
-      variants_size,
-      uploaded_by: user.id,
-    };
-    const { data, error } = await supabase.from("media").insert(row).select(MEDIA_COLUMNS).single();
-    if (error) {
-      await removeObjects(supabase, [path, ...Object.values(variants).map((v) => v!.path)]);
-      throw error;
-    }
-    return okay(data as unknown as MediaItem);
+    const folderId = isUuid(input.folderId) ? input.folderId : input.folderName ? await folderIdByName(supabase, String(input.folderName)) : null;
+    return okay(await storeMediaRow(supabase, user.id, { path, name, mime, buffer, folderId }));
   } catch (e) {
     return fail(friendlyError(e));
   }
@@ -342,9 +406,8 @@ export async function deleteMediaForever(ids: string[]): Promise<MediaResult<num
     if (victims.length === 0) return fail("Only files in the trash can be deleted permanently.");
     const victimIds = victims.map((v) => v.id);
 
-    // products lose the picture (FK sets image_media_id to null; image_url would otherwise dangle)
-    const { error: productError } = await supabase.from("products").update({ image_url: null }).in("image_media_id", victimIds);
-    if (productError) throw productError;
+    // products / settings lose the picture (the FKs set the *_media_id columns to null; the URLs would otherwise dangle)
+    await repointReferences(supabase, victimIds, () => null);
 
     const { error: delError } = await supabase.from("media").delete().in("id", victimIds);
     if (delError) throw delError;
@@ -475,7 +538,7 @@ export async function optimizeMedia(id: string, options: OptimizeOptions): Promi
       throw error;
     }
     if (converting) {
-      await repointProducts(supabase, id, mediaUrl(path));
+      await repointReferences(supabase, [id], () => mediaUrl(path));
       await removeObjects(supabase, objectPathsOf(item));
     } else {
       const stale = Object.values(item.variants ?? {}).map((v) => v!.path).filter((p) => !Object.values(variants).some((v) => v!.path === p));
@@ -623,6 +686,111 @@ export async function suggestAltText(id: string): Promise<MediaResult<string>> {
     const text = json.choices?.[0]?.message?.content?.trim().replace(/^["']|["']$/g, "").slice(0, 300);
     if (!text) return fail("The AI service returned no text.");
     return okay(text);
+  } catch (e) {
+    return fail(friendlyError(e));
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Legacy buckets (product-images / site-media) → Media Library
+ * ────────────────────────────────────────────────────────────────────────── */
+
+export type LegacyStatus = { buckets: LegacyBucketStatus[] };
+
+/** Which legacy buckets are still around and what is inside them. */
+export async function legacyMediaStatus(): Promise<MediaResult<LegacyStatus>> {
+  try {
+    const { supabase } = await adminClient();
+    const buckets = await Promise.all(LEGACY_BUCKETS.map((b) => legacyBucketStatus(supabase, b)));
+    return okay({ buckets: buckets.filter((b) => b.exists || b.objects.length > 0) });
+  } catch (e) {
+    return fail(friendlyError(e));
+  }
+}
+
+export type LegacyImportResult = { item: MediaItem; reused: boolean; products: number; settings: number };
+
+/**
+ * Moves one legacy object into the library: downloads it, registers it like a
+ * fresh upload (same-bytes files are reused instead of duplicated), points the
+ * products / settings that used the old URL at the new file and deletes the
+ * old object.
+ */
+export async function importLegacyObject(bucket: string, path: string): Promise<MediaResult<LegacyImportResult>> {
+  if (!isLegacyBucket(bucket)) return fail("Unknown bucket.");
+  const clean = String(path ?? "").trim();
+  if (!clean || clean.length > 500 || clean.includes("..") || clean.startsWith("/")) return fail("Invalid object path.");
+  try {
+    const { user, supabase } = await adminClient();
+    const oldUrl = legacyPublicUrl(bucket, clean);
+    const name = legacyDisplayName(clean);
+
+    const res = await fetch(`${oldUrl}?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return fail(`${name}: the file could not be read from the ${bucket} bucket (${res.status}).`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const mime = mimeFor(name, res.headers.get("content-type") ?? "");
+    const problem = validateMediaFile({ name, size: buffer.length, type: mime });
+    if (problem) return fail(problem);
+
+    // same bytes already in the library? reuse that row instead of storing a copy
+    const hash = sha256(buffer);
+    const { data: twin } = await supabase.from("media").select(MEDIA_COLUMNS).eq("hash", hash).is("deleted_at", null).limit(1).maybeSingle();
+    let item = (twin as unknown as MediaItem | null) ?? null;
+    const reused = Boolean(item);
+    if (!item) {
+      const newPath = newObjectPath(name);
+      await uploadObject(supabase, newPath, buffer, mime);
+      const folderId = bucket === "site-media" ? await folderIdByName(supabase, BRANDING_FOLDER) : null;
+      item = await storeMediaRow(supabase, user.id, { path: newPath, name, mime, buffer, folderId });
+    }
+    const newUrl = mediaUrl(item.path);
+
+    // repoint everything that rendered the old URL
+    const { data: products, error: productError } = await supabase.from("products").update({ image_url: newUrl, image_media_id: item.id }).eq("image_url", oldUrl).select("id");
+    if (productError) throw productError;
+    let settings = 0;
+    const { data: row } = await supabase.from("site_settings").select("favicon_url, seo_og_image_url").eq("id", 1).maybeSingle();
+    const current = (row ?? {}) as { favicon_url?: string | null; seo_og_image_url?: string | null };
+    const patch: Record<string, string> = {};
+    if (current.favicon_url === oldUrl) Object.assign(patch, { favicon_url: newUrl, favicon_media_id: item.id });
+    if (current.seo_og_image_url === oldUrl) Object.assign(patch, { seo_og_image_url: newUrl, seo_og_image_media_id: item.id });
+    if (Object.keys(patch).length) {
+      const { error } = await supabase.from("site_settings").update(patch).eq("id", 1);
+      if (error) throw error;
+      settings = Object.keys(patch).length / 2;
+      updateTag(SITE_SETTINGS_TAG);
+    }
+
+    const { error: removeError } = await supabase.storage.from(bucket).remove([clean]);
+    if (removeError) console.error(`[media] legacy object ${bucket}/${clean} could not be removed: ${removeError.message}`);
+
+    revalidateMedia(true);
+    return okay({ item, reused, products: products?.length ?? 0, settings });
+  } catch (e) {
+    return fail(friendlyError(e));
+  }
+}
+
+export type LegacyCleanupResult = { removed: LegacyBucket[]; remaining: { id: LegacyBucket; reason: string }[] };
+
+/** Deletes the legacy buckets that are empty by now; reports the ones that are not. */
+export async function removeLegacyBuckets(): Promise<MediaResult<LegacyCleanupResult>> {
+  try {
+    const { supabase } = await adminClient();
+    const result: LegacyCleanupResult = { removed: [], remaining: [] };
+    for (const id of LEGACY_BUCKETS) {
+      const status = await legacyBucketStatus(supabase, id);
+      if (!status.exists && status.objects.length === 0) continue; // already gone
+      if (status.objects.length) {
+        result.remaining.push({ id, reason: `still holds ${count(status.objects.length, "file")}` });
+        continue;
+      }
+      const { error } = await supabase.storage.deleteBucket(id);
+      if (error) result.remaining.push({ id, reason: `could not be deleted from here (${error.message}) – remove it in the Supabase dashboard under Storage → Buckets` });
+      else result.removed.push(id);
+    }
+    revalidateMedia();
+    return okay(result);
   } catch (e) {
     return fail(friendlyError(e));
   }

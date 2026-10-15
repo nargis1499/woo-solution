@@ -240,6 +240,24 @@ export const IMAGE_MIME_EXT: Record<string, string> = {
   "image/svg+xml": "svg",
 };
 
+/* ─── branding files (Settings → favicon / social share image) ───────────── */
+
+/** Everything browsers accept for <link rel="icon">. */
+export const FAVICON_MIME_TYPES = ["image/x-icon", "image/vnd.microsoft.icon", "image/png", "image/svg+xml", "image/webp", "image/jpeg", "image/gif", "image/avif"];
+/** Open Graph images: raster only, no SVG / ICO. */
+export const SHARE_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+export const BRANDING_FOLDER = "Branding";
+
+export type BrandingRole = "favicon" | "share_image";
+
+/** Mime check shared by the picker (before upload) and the settings actions (on save). */
+export function brandingFileProblem(file: { name: string; type: string }, role: BrandingRole): string | null {
+  // browsers report .ico inconsistently (image/x-icon, image/vnd.microsoft.icon or nothing at all)
+  const mime = (file.type || "").toLowerCase() || (/\.ico$/i.test(file.name) ? "image/x-icon" : "");
+  if (role === "favicon") return FAVICON_MIME_TYPES.includes(mime) ? null : "Favicons must be an ICO, PNG, SVG, WebP, JPEG or GIF file.";
+  return SHARE_IMAGE_MIME_TYPES.includes(mime) ? null : "Use a JPEG, PNG, WebP or GIF image for the share image.";
+}
+
 /** Raster formats sharp can read *and* write – the only ones optimise / convert / edit accept. */
 export function isEditableImage(mime: string): boolean {
   return ["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"].includes(mime);

@@ -22,6 +22,7 @@ export function MediaUploader({
   hint,
   compact = false,
   className,
+  duplicateSkipLabel = "Skip",
 }: {
   uploader: Uploader;
   /** `accept` attribute for the file input, e.g. "image/*". */
@@ -29,6 +30,8 @@ export function MediaUploader({
   hint?: string;
   compact?: boolean;
   className?: string;
+  /** Label of the "don't upload this duplicate" button ("Use existing" inside the picker). */
+  duplicateSkipLabel?: string;
 }) {
   const { entries, summary, addFiles, resolveDuplicate, resolveAllDuplicates, clearFinished } = uploader;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -128,7 +131,7 @@ export function MediaUploader({
           </div>
           <ul className="max-h-72 divide-y overflow-y-auto">
             {entries.map((entry) => (
-              <UploadRow key={entry.id} entry={entry} onDuplicate={(upload) => resolveDuplicate(entry.id, upload)} />
+              <UploadRow key={entry.id} entry={entry} skipLabel={duplicateSkipLabel} onDuplicate={(upload) => resolveDuplicate(entry.id, upload)} />
             ))}
           </ul>
         </div>
@@ -137,7 +140,7 @@ export function MediaUploader({
   );
 }
 
-function UploadRow({ entry, onDuplicate }: { entry: UploadEntry; onDuplicate: (upload: boolean) => void }) {
+function UploadRow({ entry, skipLabel, onDuplicate }: { entry: UploadEntry; skipLabel: string; onDuplicate: (upload: boolean) => void }) {
   const pct = entry.status === "done" || entry.status === "processing" ? 100 : entry.status === "uploading" ? Math.round(entry.progress * 100) : 0;
   const statusLabel: Record<UploadEntry["status"], string> = {
     hashing: "Checking…",
@@ -183,7 +186,7 @@ function UploadRow({ entry, onDuplicate }: { entry: UploadEntry; onDuplicate: (u
               Identical to <span className="font-medium text-foreground">{entry.duplicateOf.name}</span>.
             </span>
             <Button variant="outline" size="xs" onPress={() => onDuplicate(false)}>
-              Skip
+              {skipLabel}
             </Button>
             <Button variant="ghost" size="xs" onPress={() => onDuplicate(true)}>
               Upload anyway

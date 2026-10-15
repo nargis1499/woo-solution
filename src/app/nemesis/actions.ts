@@ -4,16 +4,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { AdminAuthError, assertAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
-import {
-  removeProductImageIfOwned,
-  removeProductImages,
-  removeSiteMediaIfOwned,
-  storagePathFromUrl,
-  uploadSiteMedia,
-  validateFaviconFile,
-  validateShareImageFile,
-} from "@/lib/admin/storage";
-import { MAX_PRODUCT_GALLERY, mediaUrl } from "@/lib/media/shared";
+import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { SITEMAP_TAG } from "@/lib/seo";
 import { MENU_TAG } from "@/lib/menu";
@@ -154,13 +145,10 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   try {
     const { supabase } = await adminClient();
 
-    // ── current state (for image clean-up) ─────────────────────────────────
-    let previousImageUrl: string | null = null;
     if (isEdit) {
-      const { data: current, error } = await supabase.from("products").select("image_url").eq("id", id).maybeSingle();
+      const { data: current, error } = await supabase.from("products").select("id").eq("id", id).maybeSingle();
       if (error) throw error;
       if (!current) return { error: "This product no longer exists.", values };
-      previousImageUrl = current.image_url;
     }
 
     // ── resolve media-library references (must exist, be images, not trashed) ──
@@ -181,19 +169,15 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       }
     }
 
-    // ── figure out the new main image ───────────────────────────────────────
-    let imageUrl: string | null = previousImageUrl;
+    // ── figure out the new main image ("keep" leaves both columns alone) ────
     const image: { image_url?: string | null; image_media_id?: string | null } = {};
     if (imageMode === "media") {
-      imageUrl = mediaUrl(found.get(imageMediaId)!.path);
-      image.image_url = imageUrl;
+      image.image_url = mediaUrl(found.get(imageMediaId)!.path);
       image.image_media_id = imageMediaId;
     } else if (imageMode === "url") {
-      imageUrl = imageUrlInput;
-      image.image_url = imageUrl;
+      image.image_url = imageUrlInput;
       image.image_media_id = null;
     } else if (imageMode === "remove") {
-      imageUrl = null;
       image.image_url = null;
       image.image_media_id = null;
     }
@@ -225,12 +209,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       if (insertError) throw insertError;
     }
 
-    // Legacy uploads (product-images bucket) are removed once the row points elsewhere;
     // Media Library files are never deleted from here – they stay reusable.
-    if (previousImageUrl && previousImageUrl !== imageUrl) {
-      await removeProductImageIfOwned(supabase, previousImageUrl);
-    }
-
     revalidateStore();
     redirect(notice(isEdit ? productsReturn(formData) : "/nemesis/products", isEdit ? `"${name}" updated.` : `"${name}" created.`));
   } catch (e) {
@@ -245,13 +224,12 @@ export async function deleteProduct(formData: FormData): Promise<void> {
   if (!UUID_RE.test(id)) redirect(failure(back, "Invalid product id."));
   try {
     const { supabase } = await adminClient();
-    const { data: product, error } = await supabase.from("products").select("name, image_url").eq("id", id).maybeSingle();
+    const { data: product, error } = await supabase.from("products").select("name").eq("id", id).maybeSingle();
     if (error) throw error;
     if (!product) redirect(failure(back, "Product not found."));
 
     const { error: delError } = await supabase.from("products").delete().eq("id", id);
     if (delError) throw delError;
-    await removeProductImageIfOwned(supabase, product.image_url);
 
     revalidateStore();
     redirect(notice(back, `"${product.name}" deleted.`));
@@ -261,19 +239,17 @@ export async function deleteProduct(formData: FormData): Promise<void> {
   }
 }
 
-/** Deletes every selected product in one statement, then cleans up the images we uploaded for them. */
+/** Deletes every selected product in one statement (their Media Library files stay in the library). */
 export async function deleteProducts(formData: FormData): Promise<void> {
   const back = productsReturn(formData);
   const ids = idsFrom(formData);
   if (ids.length === 0) redirect(failure(back, "Select at least one product first."));
   try {
     const { supabase } = await adminClient();
-    const { data, error } = await supabase.from("products").delete().in("id", ids).select("image_url");
+    const { data, error } = await supabase.from("products").delete().in("id", ids).select("id");
     if (error) throw error;
     const deleted = data ?? [];
     if (deleted.length === 0) redirect(failure(back, "Those products no longer exist."));
-
-    await removeProductImages(supabase, deleted.map((p) => storagePathFromUrl(p.image_url)));
 
     revalidateStore();
     redirect(notice(back, `${count(deleted.length, "product", "products")} deleted.`));
@@ -562,7 +538,8 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
   const { data, error } = await supabase.from("site_settings").update(patch).eq("id", 1).select("id").maybeSingle();
   if (error) {
     if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
-      return "The database is missing the new settings columns – run supabase/migrations/20261018000000_settings_tabs.sql in the Supabase SQL Editor.";
+      const media = /media_id/i.test(error.message ?? "");
+      return `The database is missing the new settings columns – run supabase/migrations/${media ? "20261020000000_single_media_bucket.sql" : "20261018000000_settings_tabs.sql"} in the Supabase SQL Editor.`;
     }
     throw error;
   }
@@ -572,20 +549,35 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
   return null;
 }
 
-/** Resolves the upload / remove / keep choice of a branding file field. */
-async function resolveMediaField(
+/**
+ * Branding images come from the Media Library (`<field>_mode` = keep | media | remove,
+ * `<field>_media_id`). Returns the columns to write, or nothing for "keep".
+ */
+async function resolveBrandingField(
   formData: FormData,
-  field: "favicon" | "share_image",
-  validate: (file: File) => string | null,
+  field: BrandingRole,
   fieldErrors: Record<string, string>,
-): Promise<{ mode: "keep" } | { mode: "remove" } | { mode: "upload"; file: File }> {
-  const file = formData.get(`${field}_file`);
-  if (file instanceof File && file.size > 0) {
-    const problem = validate(file);
-    if (problem) fieldErrors[`${field}_file`] = problem;
-    return { mode: "upload", file };
+): Promise<Record<string, string | null>> {
+  const mode = str(formData, `${field}_mode`, 10) || "keep";
+  const mediaId = str(formData, `${field}_media_id`, 40);
+  const urlColumn = field === "favicon" ? "favicon_url" : "seo_og_image_url";
+  const idColumn = field === "favicon" ? "favicon_media_id" : "seo_og_image_media_id";
+  if (mode === "remove") return { [urlColumn]: null, [idColumn]: null };
+  if (mode !== "media") return {};
+  if (!UUID_RE.test(mediaId)) {
+    fieldErrors[`${field}_media_id`] = "Pick an image from the Media Library.";
+    return {};
   }
-  return bool(formData, `${field}_remove`) ? { mode: "remove" } : { mode: "keep" };
+  const { supabase } = await adminClient();
+  const { data, error } = await supabase.from("media").select("id, name, path, mime_type, kind, deleted_at").eq("id", mediaId).maybeSingle();
+  if (error) throw error;
+  const item = data as { id: string; name: string; path: string; mime_type: string; kind: string; deleted_at: string | null } | null;
+  const problem = !item || item.deleted_at || item.kind !== "image" ? "That image is no longer in the Media Library – pick another one." : brandingFileProblem({ name: item.name, type: item.mime_type }, field);
+  if (problem) {
+    fieldErrors[`${field}_media_id`] = problem;
+    return {};
+  }
+  return { [urlColumn]: mediaUrl(item!.path), [idColumn]: item!.id };
 }
 
 export async function updateGeneralSettings(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
@@ -610,33 +602,19 @@ export async function updateGeneralSettings(_prev: AdminFormState, formData: For
     fieldErrors.telegram = "Enter a Telegram username (5–32 letters, digits or underscores).";
   }
 
-  const favicon = await resolveMediaField(formData, "favicon", validateFaviconFile, fieldErrors);
-  if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
-
   try {
-    const { supabase } = await adminClient();
-    const patch: Record<string, unknown> = {
+    const favicon = await resolveBrandingField(formData, "favicon", fieldErrors);
+    if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
+
+    const problem = await saveSiteSettings({
       store_name: storeName,
       tagline: tagline || null,
       support_email: supportEmail || null,
       whatsapp: whatsapp || null,
       telegram: telegram || null,
-    };
-
-    let previousFavicon: string | null = null;
-    if (favicon.mode !== "keep") {
-      const { data } = await supabase.from("site_settings").select("favicon_url").eq("id", 1).maybeSingle();
-      previousFavicon = (data as { favicon_url?: string | null } | null)?.favicon_url ?? null;
-      patch.favicon_url = favicon.mode === "upload" ? (await uploadSiteMedia(supabase, favicon.file, "favicon")).url : null;
-    }
-
-    const problem = await saveSiteSettings(patch);
-    if (problem) {
-      if (typeof patch.favicon_url === "string") await removeSiteMediaIfOwned(supabase, patch.favicon_url); // don't leave orphans behind
-      return { error: problem, values };
-    }
-    if (favicon.mode !== "keep") await removeSiteMediaIfOwned(supabase, previousFavicon);
-
+      ...favicon,
+    });
+    if (problem) return { error: problem, values };
     return { success: "General settings saved.", values };
   } catch (e) {
     return { error: friendlyError(e), values };
@@ -671,12 +649,11 @@ export async function updateSeoSettings(_prev: AdminFormState, formData: FormDat
   if (google && !/^[A-Za-z0-9_\-=.:]+$/.test(google)) fieldErrors.seo_google_verification = "Paste only the code from the content=\"…\" attribute.";
   if (bing && !/^[A-Za-z0-9_\-=.:]+$/.test(bing)) fieldErrors.seo_bing_verification = "Paste only the code from the content=\"…\" attribute.";
 
-  const shareImage = await resolveMediaField(formData, "share_image", validateShareImageFile, fieldErrors);
-  if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
-
   try {
-    const { supabase } = await adminClient();
-    const patch: Record<string, unknown> = {
+    const shareImage = await resolveBrandingField(formData, "share_image", fieldErrors);
+    if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
+
+    const problem = await saveSiteSettings({
       seo_indexing: indexing,
       seo_site_url: siteUrl,
       seo_title: title || null,
@@ -684,22 +661,9 @@ export async function updateSeoSettings(_prev: AdminFormState, formData: FormDat
       seo_twitter: twitter || null,
       seo_google_verification: google || null,
       seo_bing_verification: bing || null,
-    };
-
-    let previousImage: string | null = null;
-    if (shareImage.mode !== "keep") {
-      const { data } = await supabase.from("site_settings").select("seo_og_image_url").eq("id", 1).maybeSingle();
-      previousImage = (data as { seo_og_image_url?: string | null } | null)?.seo_og_image_url ?? null;
-      patch.seo_og_image_url = shareImage.mode === "upload" ? (await uploadSiteMedia(supabase, shareImage.file, "share-image")).url : null;
-    }
-
-    const problem = await saveSiteSettings(patch);
-    if (problem) {
-      if (typeof patch.seo_og_image_url === "string") await removeSiteMediaIfOwned(supabase, patch.seo_og_image_url);
-      return { error: problem, values };
-    }
-    if (shareImage.mode !== "keep") await removeSiteMediaIfOwned(supabase, previousImage);
-
+      ...shareImage,
+    });
+    if (problem) return { error: problem, values };
     return { success: "SEO settings saved.", values };
   } catch (e) {
     return { error: friendlyError(e), values };
