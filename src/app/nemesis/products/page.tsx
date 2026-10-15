@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PackageIcon, PlusIcon } from "lucide-react";
 import { adminListCategories, adminListProducts } from "@/lib/admin/data";
+import { getSiteSettings } from "@/lib/site-settings";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatPrice } from "@/lib/format";
@@ -23,9 +24,10 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
   const sp = await searchParams;
   const filters = { q: sp.q?.trim() || undefined, category: sp.category || undefined };
   const { perPage, requestedPage } = await resolveListParams(sp);
-  const [{ items: products, total, page }, categories] = await Promise.all([
+  const [{ items: products, total, page }, categories, { manage_stock: manageStock }] = await Promise.all([
     adminListProducts({ ...filters, page: requestedPage, perPage }),
     adminListCategories(),
+    getSiteSettings(),
   ]);
   redirectIfClamped(LIST_PATH, filters, sp, requestedPage, page, perPage);
 
@@ -77,7 +79,8 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
             { id: "product", label: "Product", className: "pl-4" },
             { id: "category", label: "Category", cellClassName: "text-muted-foreground" },
             { id: "price", label: "Price", align: "right", cellClassName: "tabular-nums" },
-            { id: "stock", label: "Stock", align: "right", cellClassName: "tabular-nums" },
+            // Settings → WooCommerce → stock management off hides the stock column everywhere
+            ...(manageStock ? [{ id: "stock", label: "Stock", align: "right" as const, cellClassName: "tabular-nums" }] : []),
             { id: "status", label: "Status" },
             { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
           ]}
@@ -107,9 +110,13 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
                   <span className="ml-1 text-xs text-muted-foreground line-through">{formatPrice(p.compare_at_price_cents)}</span>
                 )}
               </span>,
-              <span key="stock" className={p.stock === 0 ? "font-semibold text-destructive" : p.stock <= 5 ? "font-semibold text-amber-600 dark:text-amber-400" : undefined}>
-                {p.stock}
-              </span>,
+              ...(manageStock
+                ? [
+                    <span key="stock" className={p.stock === 0 ? "font-semibold text-destructive" : p.stock <= 5 ? "font-semibold text-amber-600 dark:text-amber-400" : undefined}>
+                      {p.stock}
+                    </span>,
+                  ]
+                : []),
               <div key="status" className="flex flex-wrap gap-1">
                 <ToneBadge tone={p.is_active ? "emerald" : "neutral"}>{p.is_active ? "Active" : "Draft"}</ToneBadge>
                 {p.is_featured && <ToneBadge tone="brand">Featured</ToneBadge>}

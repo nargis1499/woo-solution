@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { adminGetProduct, adminListCategories } from "@/lib/admin/data";
+import { getSiteSettings } from "@/lib/site-settings";
 import { formatDate } from "@/lib/format";
 import { deleteProduct } from "@/app/nemesis/actions";
 import { ProductForm } from "@/components/admin/product-form";
@@ -14,7 +15,7 @@ export default async function EditProductPage({ params, searchParams }: { params
   const [{ id }, { from }] = await Promise.all([params, searchParams]);
   // Back / Cancel / after-save all return to the exact list page the admin came from.
   const backHref = safeListReturn(from, "/nemesis/products") ?? "/nemesis/products";
-  const [product, categories] = await Promise.all([adminGetProduct(id), adminListCategories()]);
+  const [product, categories, { manage_stock }] = await Promise.all([adminGetProduct(id), adminListCategories(), getSiteSettings()]);
   if (!product) notFound();
 
   return (
@@ -28,7 +29,7 @@ export default async function EditProductPage({ params, searchParams }: { params
           <DeleteButton action={deleteProduct} id={product.id} returnTo={backHref} label="Delete product" size="default" title={`Delete "${product.name}"?`} description="The product is removed permanently. This cannot be undone." />
         }
       />
-      <ProductForm product={product} categories={categories} returnTo={backHref} />
+      <ProductForm product={product} categories={categories} returnTo={backHref} manageStock={manage_stock} />
     </>
   );
 }

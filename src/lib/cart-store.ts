@@ -11,7 +11,8 @@ export type CartItem = {
   name: string;
   priceCents: number;
   imageUrl: string | null;
-  stock: number;
+  /** Units available when stock is managed; null = unlimited (Settings → WooCommerce → stock management off) */
+  stock: number | null;
   quantity: number;
 };
 
@@ -23,8 +24,9 @@ type CartState = {
   clear: () => void;
 };
 
-function clampQty(qty: number, stock: number) {
-  return Math.max(1, Math.min(qty, MAX_QTY_PER_LINE, Math.max(stock, 1)));
+function clampQty(qty: number, stock: number | null) {
+  const available = stock == null ? MAX_QTY_PER_LINE : Math.max(stock, 1);
+  return Math.max(1, Math.min(qty, MAX_QTY_PER_LINE, available));
 }
 
 /**

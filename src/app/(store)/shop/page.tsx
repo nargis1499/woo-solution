@@ -3,14 +3,20 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { SearchIcon } from "lucide-react";
 import { getCategories, getProducts } from "@/lib/data/products";
+import { canonicalFor } from "@/lib/seo";
 import { ProductGrid, ProductGridSkeleton } from "@/components/product-grid";
 import { badgeVariants } from "@/components/ui/badge";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Shop" };
-
 type SearchParams = Promise<{ category?: string; q?: string }>;
+
+/** Category pages are canonical on their own (they are in the sitemap); searches collapse onto /shop. */
+export async function generateMetadata({ searchParams }: { searchParams: SearchParams }): Promise<Metadata> {
+  const { category, q } = await searchParams;
+  const path = category && !q ? `/shop?category=${encodeURIComponent(category)}` : "/shop";
+  return { title: "Shop", alternates: await canonicalFor(path), robots: q ? { index: false, follow: true } : undefined };
+}
 
 export default function ShopPage({ searchParams }: { searchParams: SearchParams }) {
   return (

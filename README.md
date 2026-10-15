@@ -42,6 +42,7 @@ cp .env.example .env.local
    2. [`supabase/migrations/20261015000000_google_auth.sql`](supabase/migrations/20261015000000_google_auth.sql) – `profiles.avatar_url` + Google-aware profile trigger (safe to run on an existing project)
    3. [`supabase/migrations/20261016000000_admin.sql`](supabase/migrations/20261016000000_admin.sql) – `profiles.is_admin`, admin RLS policies, `site_settings`, the public `product-images` Storage bucket, `admin_stats()` / `admin_delete_user()` (safe to run on an existing project)
    4. [`supabase/migrations/20261017000000_category_menu.sql`](supabase/migrations/20261017000000_category_menu.sql) – `categories.show_in_menu` (header-menu visibility toggle; existing categories stay visible)
+   5. [`supabase/migrations/20261018000000_settings_tabs.sql`](supabase/migrations/20261018000000_settings_tabs.sql) – settings tabs: contact links, favicon & SEO columns on `site_settings`, the global `manage_stock` switch (`stock_managed()`, honoured by `place_order()` and the order-status trigger) and the public `site-media` Storage bucket for branding files (safe to run on an existing project)
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -121,13 +122,25 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Categories | Create, rename, reorder, delete (products become uncategorised); **Show in header menu** toggle decides which categories appear in the storefront navigation |
 | Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
-| Settings | Store name (used in the `<title>`, header, footer and hero), tagline (footer + meta description), support e-mail |
+| Settings | Three tabs – see [Settings](#settings) below: **General** (site title, tagline, support e-mail, WhatsApp, Telegram, favicon), **SEO** (search-engine visibility, site URL, title / meta description, share image, verification codes, X handle) and **WooCommerce** (global stock management switch) |
 
 The **Products, Orders and Users** lists are paginated: `?page=` + a **per-page** selector (10 / 20 / 50 / 100, top right of the table, `?per=`, remembered per admin in a cookie). Changing the size keeps the first visible row on screen, a new filter starts on page 1, a page that no longer exists redirects to the last one, and view / edit / delete bring you back to the exact page, size and filter you came from.
 
 **Bulk delete** – the same three lists have a checkbox column. Tick rows (the header checkbox selects the whole page, Shift+click selects a range, Space toggles the focused row) and a floating **N selected → Delete** bar appears; confirming removes them in one go and reports the result as a toast. Rows are links as well: click anywhere on a row to open it while nothing is selected – once something is ticked, clicking a row toggles it instead. Your own account can be opened but never selected, and `deleteUsers` additionally skips the caller's id on the server.
 
 Every action reports back through a toast notification (bottom-right corner of the dashboard, [sonner](https://sonner.emilkowal.ski/)) – successes in green, failures in red – while validation errors stay next to the fields they belong to.
+
+#### Settings
+
+`/nemesis/settings` is organised in tabs (shadcn/React Aria `Tabs`; every tab is its own form and Server Action, unsaved edits survive switching, `?tab=seo` deep-links). Everything saved there is live immediately – the `site_settings` row is cached with a tag that each save invalidates.
+
+| Tab | Options | Where it shows up |
+| --- | --- | --- |
+| General | Site title, tagline, support e-mail, **WhatsApp** number, **Telegram** username, **favicon** upload | `<title>` template, header, hero, footer (e-mail / `wa.me` / `t.me` links), `<link rel="icon">`, Organization JSON-LD. Favicons go to the separate **`site-media`** bucket (`branding/…`), never into `product-images`; replacing or removing one deletes the old file |
+| SEO | **Search engine visibility** switch, site URL, home page title, meta description (with a 160-character guide), social share image (Open Graph 1200 × 630, uploaded to `site-media`), Google Search Console + Bing Webmaster verification codes (paste the token or the whole `<meta>` tag), X / Twitter handle | `<meta name="robots">` (`noindex, nofollow` when visibility is off), `/robots.txt` (disallows everything when off, otherwise `/nemesis`, `/cart`, `/checkout`, `/orders`, `/login`, `/signup`, `/auth` + the sitemap line), `/sitemap.xml` (home, shop, categories, active products – tag-invalidated on every admin write), canonical URLs, Open Graph / Twitter cards, `google-site-verification` / `msvalidate.01` meta tags, Organization + WebSite (SearchAction) JSON-LD. Cart, checkout, orders, login and signup are always `noindex` |
+| WooCommerce | **Manage stock** switch (on by default) | Off = every product is unlimited (digital goods): no "sold out" / "only N left" badges, quantities are only capped by `MAX_QTY_PER_LINE`, `place_order()` neither checks nor decrements `products.stock`, cancelling / re-opening orders doesn't move stock, the admin stock column / field and the low-stock dashboard card disappear (stored quantities are kept untouched). On = the previous strict behaviour |
+
+Without a site URL the app falls back to `NEXT_PUBLIC_SITE_URL` for absolute URLs (sitemap, canonicals, JSON-LD).
 
 Images: the bucket is created by the migration (public read, admin-only write, 5 MB limit, JPEG/PNG/WebP/GIF/AVIF). Uploaded images are served through `next/image`; `*.supabase.co` and a few stock-photo hosts are allow-listed in `src/lib/image-hosts.ts` – add your own CDN there. Plain-`http` URLs (e.g. a local Supabase on `127.0.0.1`) are rendered unoptimised.
 
@@ -142,11 +155,13 @@ woo-solution/
 │   ├── migrations/20261015000000_google_auth.sql
 │   ├── migrations/20261016000000_admin.sql  # is_admin flag, admin RLS, site_settings, Storage bucket
 │   ├── migrations/20261017000000_category_menu.sql  # categories.show_in_menu
+│   ├── migrations/20261018000000_settings_tabs.sql  # contact/SEO/stock settings, stock_managed(), site-media bucket
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
 │   ├── app/
-│   │   ├── layout.tsx                       # root: fonts, theme + React Aria router providers, toaster
+│   │   ├── layout.tsx                       # root: fonts, theme + React Aria router providers, toaster, SEO metadata
+│   │   ├── robots.ts, sitemap.ts            # /robots.txt + /sitemap.xml from Settings → SEO
 │   │   ├── (store)/                         # storefront route group (header / footer shell in layout.tsx)
 │   │   │   ├── page.tsx                     # home: hero, categories, featured products
 │   │   │   ├── shop/page.tsx                # catalog (?category=slug&q=search)
@@ -171,6 +186,7 @@ woo-solution/
 │   └── lib/
 │       ├── admin/{auth,data,storage,list-params,pagination,constants}.ts
 │       ├── site-settings.ts, menu.ts        # cached store settings / header categories (tag-invalidated)
+│       ├── seo.ts                           # metadata, robots/sitemap entries, JSON-LD built from the SEO tab
 │       ├── image-hosts.ts                   # next/image allow-list
 │       ├── supabase/{server,proxy}.ts       # Supabase clients (server components / actions, proxy)
 │       ├── auth.ts                          # getCurrentUser() – verified via getClaims()
@@ -230,7 +246,9 @@ The project uses Next.js 16's **Cache Components** (`cacheComponents: true`). Ev
 | Store name / currency | `.env.local` → `NEXT_PUBLIC_STORE_NAME`, `NEXT_PUBLIC_CURRENCY` (also update `orders.currency` default in the migration if you change currency) |
 | Shipping rules | `src/lib/config.ts` **and** `calculate_shipping()` in the migration (keep in sync) |
 | Max quantity per line | `src/lib/config.ts` → `MAX_QTY_PER_LINE` |
-| Store name / tagline / support e-mail | `/nemesis/settings` (stored in `site_settings`; `NEXT_PUBLIC_STORE_NAME` is only the fallback) |
+| Store name / tagline / contact links / favicon | `/nemesis/settings` → **General** (stored in `site_settings`; `NEXT_PUBLIC_STORE_NAME` is only the fallback) |
+| Search engine visibility, meta description, share image, verification codes, sitemap | `/nemesis/settings` → **SEO** (`/robots.txt` and `/sitemap.xml` are generated from it) |
+| Stock management on/off | `/nemesis/settings` → **WooCommerce** (global; `public.stock_managed()` in SQL) |
 | Products / categories | `/nemesis/products` and `/nemesis/categories` (or the Supabase Table Editor). *Draft* products are hidden from the shop, *Featured* ones show on the home page |
 | Product images | Upload from the product form (Supabase Storage bucket `product-images`) or paste any public URL – allow-listed hosts live in `src/lib/image-hosts.ts` |
 | Orders | `/nemesis/orders` – change `status` (`pending` → `processing` → `completed` / `cancelled`) and `payment_status` |
@@ -260,6 +278,7 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 
 - [ ] **Online payments** – Stripe Checkout (or SSLCommerz / bKash for Bangladesh) and a webhook that marks `payment_status = 'paid'`
 - [x] **Admin dashboard** – products, categories, orders, users, settings (`/nemesis`)
+- [x] **Settings tabs** – General / SEO / WooCommerce (contact links, favicon, robots + sitemap, global stock switch)
 - [x] **Product images in Supabase Storage** with an upload UI
 - [ ] Admin extras – bulk actions, CSV export, audit log, per-section roles
 - [ ] **Server-side cart** (`cart_items` table) synced across devices, merged on login

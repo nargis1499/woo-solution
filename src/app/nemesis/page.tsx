@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRightIcon, DollarSignIcon, PackageIcon, PlusIcon, ShoppingCartIcon, UsersIcon } from "lucide-react";
 import { adminGetLowStockProducts, adminGetRecentOrders, adminGetStats } from "@/lib/admin/data";
+import { getSiteSettings } from "@/lib/site-settings";
 import { formatDate, formatOrderNumber, formatPrice } from "@/lib/format";
 import { OrderStatusBadge } from "@/components/order-status-badge";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -9,7 +10,12 @@ import { DataGrid } from "@/components/data-grid";
 import { PageHeader, Section, StatCard, Thumb, ToneBadge } from "@/components/admin/ui";
 
 export default async function AdminDashboardPage() {
-  const [stats, recentOrders, lowStock] = await Promise.all([adminGetStats(), adminGetRecentOrders(6), adminGetLowStockProducts(6)]);
+  const { manage_stock: manageStock } = await getSiteSettings();
+  const [stats, recentOrders, lowStock] = await Promise.all([
+    adminGetStats(),
+    adminGetRecentOrders(6),
+    manageStock ? adminGetLowStockProducts(6) : Promise.resolve([]),
+  ]);
 
   return (
     <>
@@ -26,7 +32,7 @@ export default async function AdminDashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Revenue" value={formatPrice(stats.revenue_cents)} hint={`${formatPrice(stats.revenue_30d_cents)} in the last 30 days`} icon={<DollarSignIcon />} />
         <StatCard label="Orders" value={stats.orders_total} hint={`${stats.orders_30d} in the last 30 days · ${stats.orders_pending} pending`} icon={<ShoppingCartIcon />} />
-        <StatCard label="Products" value={stats.products_total} hint={`${stats.products_active} active · ${stats.products_low_stock} low on stock`} icon={<PackageIcon />} />
+        <StatCard label="Products" value={stats.products_total} hint={manageStock ? `${stats.products_active} active · ${stats.products_low_stock} low on stock` : `${stats.products_active} active · stock not tracked`} icon={<PackageIcon />} />
         <StatCard label="Customers" value={stats.customers_total} hint={`${stats.customers_30d} joined in the last 30 days`} icon={<UsersIcon />} />
       </div>
 
@@ -100,7 +106,15 @@ export default async function AdminDashboardPage() {
             </Link>
           }
         >
-          {lowStock.length === 0 ? (
+          {!manageStock ? (
+            <p className="px-6 py-10 text-center text-sm text-muted-foreground">
+              Stock management is off – every product is unlimited.{" "}
+              <Link href="/nemesis/settings?tab=woocommerce" className="text-primary hover:underline">
+                Change in Settings
+              </Link>
+              .
+            </p>
+          ) : lowStock.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">Everything is well stocked. 🎉</p>
           ) : (
             <ul className="divide-y">

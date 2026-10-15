@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { pageCount } from "@/lib/admin/pagination";
-import type { AdminStats, Category, Order, OrderStatus, Product, Profile } from "@/lib/types";
+import { normaliseSiteSettings } from "@/lib/site-settings";
+import type { AdminStats, Category, Order, OrderStatus, Product, Profile, SiteSettingsRow } from "@/lib/types";
 
 /*
  * Admin read models. Every helper calls `requireAdmin()` first (cheap – the
@@ -281,14 +282,21 @@ export async function adminGetUser(id: string): Promise<ProfileWithOrders | null
 
 // ─── Settings ───────────────────────────────────────────────────────────────
 
-export async function adminGetSiteSettings() {
+/**
+ * Settings row for the dashboard. `migrated` is false when the database has not
+ * run `20261018000000_settings_tabs.sql` yet (the newer columns are missing) so
+ * the page can show a hint instead of failing on save.
+ */
+export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migrated: boolean }) | null> {
   await requireAdmin();
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("site_settings")
-    .select("store_name, tagline, support_email, updated_at")
-    .eq("id", 1)
-    .maybeSingle();
+  const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
   if (error) throw new Error(`Failed to load settings: ${error.message}`);
-  return data;
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  return {
+    ...normaliseSiteSettings(row),
+    updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
+    migrated: "manage_stock" in row,
+  };
 }

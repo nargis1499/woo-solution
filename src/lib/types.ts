@@ -99,11 +99,33 @@ export type Profile = {
   updated_at: string;
 };
 
+/** Row `site_settings` (id = 1) as edited in /nemesis/settings – one tab per group. */
 export type SiteSettings = {
+  // General
   store_name: string;
   tagline: string | null;
   support_email: string | null;
+  /** Telegram username without the "@" → https://t.me/<telegram> */
+  telegram: string | null;
+  /** WhatsApp number, digits only incl. country code → https://wa.me/<whatsapp> */
+  whatsapp: string | null;
+  /** Public URL of the uploaded favicon (bucket `site-media`), null = default icon */
+  favicon_url: string | null;
+  // SEO
+  seo_indexing: boolean;
+  seo_site_url: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
+  seo_og_image_url: string | null;
+  seo_google_verification: string | null;
+  seo_bing_verification: string | null;
+  /** X / Twitter handle without the "@" */
+  seo_twitter: string | null;
+  // WooCommerce
+  manage_stock: boolean;
 };
+
+export type SiteSettingsRow = SiteSettings & { updated_at: string | null };
 
 /** Shape returned by the `admin_stats()` SQL function. */
 export type AdminStats = {

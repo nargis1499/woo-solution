@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { getSiteSettings } from "@/lib/site-settings";
 import { cacheLife } from "next/cache";
+import { MailIcon, MessageCircleIcon, SendIcon } from "lucide-react";
+import { getSiteSettings, telegramHref, whatsappHref } from "@/lib/site-settings";
 import { Separator } from "@/components/ui/separator";
 
 /** Current year, cached per day so the static shell can be prerendered (Cache Components forbid bare `new Date()`). */
@@ -11,20 +12,38 @@ async function copyrightYear() {
 }
 
 export async function Footer() {
-  const [{ store_name, tagline, support_email }, year] = await Promise.all([getSiteSettings(), copyrightYear()]);
+  const [{ store_name, tagline, support_email, whatsapp, telegram }, year] = await Promise.all([getSiteSettings(), copyrightYear()]);
+  const contacts = [
+    support_email && { label: support_email, href: `mailto:${support_email}`, icon: MailIcon, title: "E-mail" },
+    whatsappHref(whatsapp) && { label: "WhatsApp", href: whatsappHref(whatsapp)!, icon: MessageCircleIcon, title: `WhatsApp +${whatsapp!.replace(/\D/g, "")}` },
+    telegramHref(telegram) && { label: `@${telegram}`, href: telegramHref(telegram)!, icon: SendIcon, title: "Telegram" },
+  ].filter((c): c is { label: string; href: string; icon: typeof MailIcon; title: string } => Boolean(c));
+
   return (
     <footer className="mt-16 border-t bg-muted/30">
       <div className="container-page flex flex-col gap-6 py-10 text-sm text-muted-foreground sm:flex-row sm:items-start sm:justify-between">
-        <div className="max-w-md space-y-1">
-          <p className="text-base font-semibold text-foreground">{store_name}</p>
-          {tagline && <p>{tagline}</p>}
-          {support_email && (
-            <p>
-              Need help?{" "}
-              <a href={`mailto:${support_email}`} className="font-medium text-foreground underline-offset-4 hover:underline">
-                {support_email}
-              </a>
-            </p>
+        <div className="max-w-md space-y-3">
+          <div className="space-y-1">
+            <p className="text-base font-semibold text-foreground">{store_name}</p>
+            {tagline && <p>{tagline}</p>}
+          </div>
+          {contacts.length > 0 && (
+            <ul className="flex flex-wrap items-center gap-x-5 gap-y-2" aria-label="Contact">
+              {contacts.map((c) => (
+                <li key={c.href}>
+                  <a
+                    href={c.href}
+                    title={c.title}
+                    target={c.href.startsWith("mailto:") ? undefined : "_blank"}
+                    rel={c.href.startsWith("mailto:") ? undefined : "noreferrer"}
+                    className="inline-flex items-center gap-1.5 font-medium text-foreground underline-offset-4 hover:underline"
+                  >
+                    <c.icon className="size-4 text-muted-foreground" aria-hidden />
+                    {c.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
         <nav className="flex gap-6" aria-label="Footer">

@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ArrowRightIcon, SparklesIcon } from "lucide-react";
 import { getCategories, getProducts } from "@/lib/data/products";
 import { FREE_SHIPPING_THRESHOLD_CENTS } from "@/lib/config";
 import { getSiteSettings } from "@/lib/site-settings";
+import { canonicalFor } from "@/lib/seo";
 import { formatPrice } from "@/lib/format";
 import { ProductGrid, ProductGridSkeleton } from "@/components/product-grid";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +13,10 @@ import { buttonVariants } from "@/components/ui/button-variants";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+
+export async function generateMetadata(): Promise<Metadata> {
+  return { alternates: await canonicalFor("/") };
+}
 
 export default async function HomePage() {
   const { store_name } = await getSiteSettings();

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense, cache } from "react";
 import { BanknoteIcon, PackageCheckIcon, TruckIcon } from "lucide-react";
 import { getProductBySlug, getProducts } from "@/lib/data/products";
+import { canonicalFor } from "@/lib/seo";
 import { FREE_SHIPPING_THRESHOLD_CENTS } from "@/lib/config";
 import { formatPrice } from "@/lib/format";
 import { Price } from "@/components/price";
@@ -23,11 +24,12 @@ const loadProduct = cache(getProductBySlug);
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { slug } = await params;
   const product = await loadProduct(slug);
-  if (!product) return { title: "Product not found" };
+  if (!product) return { title: "Product not found", robots: { index: false } };
   return {
     title: product.name,
     description: product.description ?? undefined,
-    openGraph: product.image_url ? { images: [{ url: product.image_url }] } : undefined,
+    alternates: await canonicalFor(`/products/${encodeURIComponent(product.slug)}`),
+    openGraph: { type: "website", title: product.name, description: product.description ?? undefined, images: product.image_url ? [{ url: product.image_url }] : undefined },
   };
 }
 

@@ -6,6 +6,7 @@ import { CheckIcon, ShoppingCartIcon, ZapIcon } from "lucide-react";
 import { useCartStore } from "@/lib/cart-store";
 import type { Product } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { useStoreSettings } from "./store-settings";
 
 type Props = {
   product: Pick<Product, "id" | "slug" | "name" | "price_cents" | "image_url" | "stock">;
@@ -20,7 +21,8 @@ export function AddToCartButton({ product, quantity = 1, size = "default", class
   const addItem = useCartStore((s) => s.addItem);
   const [added, setAdded] = useState(false);
   const router = useRouter();
-  const outOfStock = product.stock <= 0;
+  const { manageStock } = useStoreSettings();
+  const outOfStock = manageStock && product.stock <= 0;
 
   function handlePress() {
     addItem(
@@ -30,7 +32,7 @@ export function AddToCartButton({ product, quantity = 1, size = "default", class
         name: product.name,
         priceCents: product.price_cents,
         imageUrl: product.image_url,
-        stock: product.stock,
+        stock: manageStock ? product.stock : null,
       },
       quantity,
     );

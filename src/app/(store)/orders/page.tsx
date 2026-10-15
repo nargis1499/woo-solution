@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { NOINDEX } from "@/lib/seo";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
@@ -13,7 +14,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataGrid } from "@/components/data-grid";
 
-export const metadata: Metadata = { title: "My orders" };
+export const metadata: Metadata = { title: "My orders", robots: NOINDEX };
 
 export default function OrdersPage() {
   return (

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { adminGetOrder } from "@/lib/admin/data";
+import { getSiteSettings } from "@/lib/site-settings";
 import { formatDate, formatOrderNumber, formatPrice } from "@/lib/format";
 import { deleteOrder } from "@/app/nemesis/actions";
 import { OrderStatusBadge } from "@/components/order-status-badge";
@@ -17,7 +18,7 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
   const [{ id }, { from }] = await Promise.all([params, searchParams]);
   // Back + delete return to the exact list page (page / size / filter) the admin came from.
   const backHref = safeListReturn(from, "/nemesis/orders") ?? "/nemesis/orders";
-  const order = await adminGetOrder(id);
+  const [order, { manage_stock }] = await Promise.all([adminGetOrder(id), getSiteSettings()]);
   if (!order) notFound();
   const items = order.order_items ?? [];
 
@@ -130,7 +131,7 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
 
         <div className="space-y-6">
           <Section title="Update status">
-            <OrderStatusForm order={order} />
+            <OrderStatusForm order={order} manageStock={manage_stock} />
           </Section>
         </div>
       </div>

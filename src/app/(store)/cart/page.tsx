@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import { NOINDEX } from "@/lib/seo";
 import { CartView } from "@/components/cart-view";
 
-export const metadata: Metadata = { title: "Cart" };
+export const metadata: Metadata = { title: "Cart", robots: NOINDEX };
 
 export default function CartPage() {
   return (

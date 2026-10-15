@@ -4,8 +4,19 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { AdminAuthError, assertAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
-import { removeProductImageIfOwned, removeProductImages, storagePathFromUrl, uploadProductImage, validateImageFile } from "@/lib/admin/storage";
+import {
+  removeProductImageIfOwned,
+  removeProductImages,
+  removeSiteMediaIfOwned,
+  storagePathFromUrl,
+  uploadProductImage,
+  uploadSiteMedia,
+  validateFaviconFile,
+  validateImageFile,
+  validateShareImageFile,
+} from "@/lib/admin/storage";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
+import { SITEMAP_TAG } from "@/lib/seo";
 import { MENU_TAG } from "@/lib/menu";
 import { safeListReturn } from "@/lib/admin/pagination";
 import { createClient } from "@/lib/supabase/server";
@@ -76,6 +87,7 @@ async function adminClient() {
 /** Admin writes touch data that the storefront renders dynamically – purge the router cache for everything. */
 function revalidateStore() {
   revalidatePath("/", "layout");
+  updateTag(SITEMAP_TAG); // product / category / settings changes all show up in sitemap.xml
 }
 
 const withFlash = (path: string, key: "notice" | "error", message: string) =>
@@ -487,31 +499,196 @@ export async function deleteUsers(formData: FormData): Promise<void> {
  * Site settings
  * ────────────────────────────────────────────────────────────────────────── */
 
-export async function updateSiteSettings(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
+/* ──────────────────────────────────────────────────────────────────────────
+ * Site settings – one Server Action per tab (General · SEO · WooCommerce)
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const HANDLE_RE = /^[A-Za-z0-9_]+$/;
+
+/** "@shop", "t.me/shop", "https://telegram.me/shop" → "shop" */
+function normaliseTelegram(input: string): string {
+  return input
+    .trim()
+    .replace(/^https?:\/\/(?:www\.)?(?:t|telegram)\.me\//i, "")
+    .replace(/^(?:t|telegram)\.me\//i, "")
+    .replace(/^@/, "")
+    .replace(/[/?#].*$/, "");
+}
+
+/** "@shop", "x.com/shop", "https://twitter.com/shop" → "shop" */
+function normaliseTwitter(input: string): string {
+  return input
+    .trim()
+    .replace(/^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\//i, "")
+    .replace(/^(?:x|twitter)\.com\//i, "")
+    .replace(/^@/, "")
+    .replace(/[/?#].*$/, "");
+}
+
+/** Accepts the bare token *or* the full <meta … content="…"> tag the search consoles hand out. */
+function normaliseVerificationToken(input: string): string {
+  const fromMeta = /content=["']([^"']+)["']/i.exec(input);
+  return (fromMeta ? fromMeta[1] : input).trim();
+}
+
+/** Writes `patch` onto the single settings row and refreshes everything that renders it. */
+async function saveSiteSettings(patch: Record<string, unknown>): Promise<string | null> {
+  const { supabase } = await adminClient();
+  const { data, error } = await supabase.from("site_settings").update(patch).eq("id", 1).select("id").maybeSingle();
+  if (error) {
+    if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
+      return "The database is missing the new settings columns – run supabase/migrations/20261018000000_settings_tabs.sql in the Supabase SQL Editor.";
+    }
+    throw error;
+  }
+  if (!data) return "Settings row is missing – run the admin migration (20261016000000_admin.sql).";
+  updateTag(SITE_SETTINGS_TAG); // header, footer, <title>, robots & sitemap pick the change up immediately
+  revalidateStore();
+  return null;
+}
+
+/** Resolves the upload / remove / keep choice of a branding file field. */
+async function resolveMediaField(
+  formData: FormData,
+  field: "favicon" | "share_image",
+  validate: (file: File) => string | null,
+  fieldErrors: Record<string, string>,
+): Promise<{ mode: "keep" } | { mode: "remove" } | { mode: "upload"; file: File }> {
+  const file = formData.get(`${field}_file`);
+  if (file instanceof File && file.size > 0) {
+    const problem = validate(file);
+    if (problem) fieldErrors[`${field}_file`] = problem;
+    return { mode: "upload", file };
+  }
+  return bool(formData, `${field}_remove`) ? { mode: "remove" } : { mode: "keep" };
+}
+
+export async function updateGeneralSettings(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
   const values = echo(formData);
   const storeName = str(formData, "store_name", 60);
   const tagline = str(formData, "tagline", 160);
   const supportEmail = str(formData, "support_email", 120);
+  const whatsappRaw = str(formData, "whatsapp", 40);
+  const telegramRaw = str(formData, "telegram", 120);
 
   const fieldErrors: Record<string, string> = {};
-  if (!storeName) fieldErrors.store_name = "The store name can't be empty.";
-  if (supportEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportEmail)) fieldErrors.support_email = "Enter a valid e-mail address.";
+  if (!storeName) fieldErrors.store_name = "The site title can't be empty.";
+  if (supportEmail && !EMAIL_RE.test(supportEmail)) fieldErrors.support_email = "Enter a valid e-mail address.";
+
+  const whatsapp = whatsappRaw.replace(/\D/g, "");
+  if (whatsappRaw && (!/^[+\d][\d\s().-]*$/.test(whatsappRaw) || whatsapp.length < 7 || whatsapp.length > 15)) {
+    fieldErrors.whatsapp = "Enter the number in international format, e.g. +880 1700 000000.";
+  }
+
+  const telegram = normaliseTelegram(telegramRaw);
+  if (telegramRaw && (!HANDLE_RE.test(telegram) || telegram.length < 5 || telegram.length > 32)) {
+    fieldErrors.telegram = "Enter a Telegram username (5–32 letters, digits or underscores).";
+  }
+
+  const favicon = await resolveMediaField(formData, "favicon", validateFaviconFile, fieldErrors);
   if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
 
   try {
     const { supabase } = await adminClient();
-    const { data, error } = await supabase
-      .from("site_settings")
-      .update({ store_name: storeName, tagline: tagline || null, support_email: supportEmail || null })
-      .eq("id", 1)
-      .select("id")
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return { error: "Settings row is missing – run the admin migration (20261016000000_admin.sql).", values };
+    const patch: Record<string, unknown> = {
+      store_name: storeName,
+      tagline: tagline || null,
+      support_email: supportEmail || null,
+      whatsapp: whatsapp || null,
+      telegram: telegram || null,
+    };
 
-    updateTag(SITE_SETTINGS_TAG); // header, footer & <title> pick up the new name immediately
-    revalidateStore();
-    return { success: "Settings saved.", values };
+    let previousFavicon: string | null = null;
+    if (favicon.mode !== "keep") {
+      const { data } = await supabase.from("site_settings").select("favicon_url").eq("id", 1).maybeSingle();
+      previousFavicon = (data as { favicon_url?: string | null } | null)?.favicon_url ?? null;
+      patch.favicon_url = favicon.mode === "upload" ? (await uploadSiteMedia(supabase, favicon.file, "favicon")).url : null;
+    }
+
+    const problem = await saveSiteSettings(patch);
+    if (problem) {
+      if (typeof patch.favicon_url === "string") await removeSiteMediaIfOwned(supabase, patch.favicon_url); // don't leave orphans behind
+      return { error: problem, values };
+    }
+    if (favicon.mode !== "keep") await removeSiteMediaIfOwned(supabase, previousFavicon);
+
+    return { success: "General settings saved.", values };
+  } catch (e) {
+    return { error: friendlyError(e), values };
+  }
+}
+
+export async function updateSeoSettings(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
+  const values = echo(formData);
+  const indexing = bool(formData, "seo_indexing");
+  const siteUrlRaw = str(formData, "seo_site_url", 200);
+  const title = str(formData, "seo_title", 100);
+  const description = str(formData, "seo_description", 320);
+  const twitterRaw = str(formData, "seo_twitter", 120);
+  const google = normaliseVerificationToken(str(formData, "seo_google_verification", 300)).slice(0, 200);
+  const bing = normaliseVerificationToken(str(formData, "seo_bing_verification", 300)).slice(0, 200);
+
+  const fieldErrors: Record<string, string> = {};
+
+  let siteUrl: string | null = null;
+  if (siteUrlRaw) {
+    try {
+      const u = new URL(/^https?:\/\//i.test(siteUrlRaw) ? siteUrlRaw : `https://${siteUrlRaw}`);
+      if (!/^https?:$/.test(u.protocol) || !u.hostname.includes(".") && u.hostname !== "localhost") throw new Error("bad");
+      siteUrl = `${u.origin}${u.pathname.replace(/\/+$/, "")}`;
+    } catch {
+      fieldErrors.seo_site_url = "Enter the full address of your store, e.g. https://www.example.com.";
+    }
+  }
+
+  const twitter = normaliseTwitter(twitterRaw);
+  if (twitterRaw && (!HANDLE_RE.test(twitter) || twitter.length > 15)) fieldErrors.seo_twitter = "Enter an X / Twitter handle, e.g. @yourstore.";
+  if (google && !/^[A-Za-z0-9_\-=.:]+$/.test(google)) fieldErrors.seo_google_verification = "Paste only the code from the content=\"…\" attribute.";
+  if (bing && !/^[A-Za-z0-9_\-=.:]+$/.test(bing)) fieldErrors.seo_bing_verification = "Paste only the code from the content=\"…\" attribute.";
+
+  const shareImage = await resolveMediaField(formData, "share_image", validateShareImageFile, fieldErrors);
+  if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
+
+  try {
+    const { supabase } = await adminClient();
+    const patch: Record<string, unknown> = {
+      seo_indexing: indexing,
+      seo_site_url: siteUrl,
+      seo_title: title || null,
+      seo_description: description || null,
+      seo_twitter: twitter || null,
+      seo_google_verification: google || null,
+      seo_bing_verification: bing || null,
+    };
+
+    let previousImage: string | null = null;
+    if (shareImage.mode !== "keep") {
+      const { data } = await supabase.from("site_settings").select("seo_og_image_url").eq("id", 1).maybeSingle();
+      previousImage = (data as { seo_og_image_url?: string | null } | null)?.seo_og_image_url ?? null;
+      patch.seo_og_image_url = shareImage.mode === "upload" ? (await uploadSiteMedia(supabase, shareImage.file, "share-image")).url : null;
+    }
+
+    const problem = await saveSiteSettings(patch);
+    if (problem) {
+      if (typeof patch.seo_og_image_url === "string") await removeSiteMediaIfOwned(supabase, patch.seo_og_image_url);
+      return { error: problem, values };
+    }
+    if (shareImage.mode !== "keep") await removeSiteMediaIfOwned(supabase, previousImage);
+
+    return { success: "SEO settings saved.", values };
+  } catch (e) {
+    return { error: friendlyError(e), values };
+  }
+}
+
+export async function updateShopSettings(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
+  const values = echo(formData);
+  const manageStock = bool(formData, "manage_stock");
+  try {
+    const problem = await saveSiteSettings({ manage_stock: manageStock });
+    if (problem) return { error: problem, values };
+    return { success: manageStock ? "Stock management enabled." : "Stock management disabled – every product is now unlimited.", values };
   } catch (e) {
     return { error: friendlyError(e), values };
   }

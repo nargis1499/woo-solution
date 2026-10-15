@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Suspense, type ReactNode } from "react";
 import { getSiteSettings } from "@/lib/site-settings";
+import { buildSiteMetadata } from "@/lib/seo";
 import { Providers } from "@/components/providers";
 import { TopLoader } from "@/components/top-loader";
 import { AppToaster } from "@/components/app-toaster";
@@ -9,12 +10,9 @@ import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
+/** Title, description, robots, verification codes, Open Graph & favicon – all driven by Settings → SEO / General. */
 export async function generateMetadata(): Promise<Metadata> {
-  const { store_name, tagline } = await getSiteSettings();
-  return {
-    title: { default: store_name, template: `%s · ${store_name}` },
-    description: tagline ?? `${store_name} — a modern storefront built with Next.js and Supabase.`,
-  };
+  return buildSiteMetadata(await getSiteSettings());
 }
 
 /**

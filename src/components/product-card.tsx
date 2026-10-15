@@ -6,7 +6,7 @@ import { AddToCartButton } from "./add-to-cart-button";
 import { Price } from "./price";
 import { ProductImage } from "./product-image";
 
-export function ProductCard({ product, priority }: { product: Product; priority?: boolean }) {
+export function ProductCard({ product, priority, manageStock = true }: { product: Product; priority?: boolean; manageStock?: boolean }) {
   const onSale = product.compare_at_price_cents != null && product.compare_at_price_cents > product.price_cents;
 
   return (
@@ -14,7 +14,7 @@ export function ProductCard({ product, priority }: { product: Product; priority?
       <Link href={`/products/${product.slug}`} className="relative block" aria-label={product.name}>
         <ProductImage src={product.image_url} alt={product.name} priority={priority} className="transition-transform duration-500 group-hover:scale-[1.03]" />
         {onSale && <Badge className="absolute top-3 left-3">Sale</Badge>}
-        {product.stock <= 0 && (
+        {manageStock && product.stock <= 0 && (
           <Badge variant="secondary" className="absolute top-3 right-3">
             Sold out
           </Badge>

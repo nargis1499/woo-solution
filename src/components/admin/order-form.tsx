@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useFormToast } from "./flash-toast";
 import { SubmitButton } from "./form-bits";
 
-export function OrderStatusForm({ order }: { order: Order }) {
+export function OrderStatusForm({ order, manageStock = true }: { order: Order; manageStock?: boolean }) {
   const [state, formAction] = useActionState<AdminFormState, FormData>(updateOrder, null);
   useFormToast(state);
 
@@ -31,7 +31,7 @@ export function OrderStatusForm({ order }: { order: Order }) {
               ))}
             </SelectContent>
           </Select>
-          <FieldDescription>Cancelling restocks the items; re-opening takes them out of stock again.</FieldDescription>
+          {manageStock && <FieldDescription>Cancelling restocks the items; re-opening takes them out of stock again.</FieldDescription>}
         </Field>
         <Field>
           <FieldLabel htmlFor="payment_status">Payment status</FieldLabel>

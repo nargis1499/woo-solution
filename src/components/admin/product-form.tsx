@@ -25,11 +25,14 @@ export function ProductForm({
   product,
   categories,
   returnTo = "/nemesis/products",
+  manageStock = true,
 }: {
   product?: Product | null;
   categories: Category[];
   /** List URL (page / size / filter) to go back to after saving or cancelling. */
   returnTo?: string;
+  /** Settings → WooCommerce → stock management; when off the stock field is hidden and left untouched. */
+  manageStock?: boolean;
 }) {
   const [state, formAction] = useActionState<AdminFormState, FormData>(saveProduct, null);
   useFormToast(state);
@@ -134,11 +137,16 @@ export function ProductForm({
                   <FieldError>{err.compare_at_price}</FieldError>
                   <FieldDescription>Shown struck-through to mark a sale.</FieldDescription>
                 </Field>
-                <Field data-invalid={Boolean(err.stock) || undefined}>
-                  <FieldLabel htmlFor="stock">Stock</FieldLabel>
-                  <Input id="stock" name="stock" type="number" min={0} step={1} required defaultValue={v.stock ?? product?.stock ?? 0} aria-invalid={Boolean(err.stock) || undefined} />
-                  <FieldError>{err.stock}</FieldError>
-                </Field>
+                {manageStock ? (
+                  <Field data-invalid={Boolean(err.stock) || undefined}>
+                    <FieldLabel htmlFor="stock">Stock</FieldLabel>
+                    <Input id="stock" name="stock" type="number" min={0} step={1} required defaultValue={v.stock ?? product?.stock ?? 0} aria-invalid={Boolean(err.stock) || undefined} />
+                    <FieldError>{err.stock}</FieldError>
+                  </Field>
+                ) : (
+                  // stock management is off – keep the stored quantity as-is
+                  <input type="hidden" name="stock" value={product?.stock ?? 0} />
+                )}
               </div>
               <Field data-invalid={Boolean(err.category_id) || undefined}>
                 <FieldLabel htmlFor="category_id">Category</FieldLabel>

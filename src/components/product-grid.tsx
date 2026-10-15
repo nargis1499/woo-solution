@@ -3,9 +3,10 @@ import type { Product } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getSiteSettings } from "@/lib/site-settings";
 import { ProductCard } from "./product-card";
 
-export function ProductGrid({ products, emptyMessage = "No products found." }: { products: Product[]; emptyMessage?: string }) {
+export async function ProductGrid({ products, emptyMessage = "No products found." }: { products: Product[]; emptyMessage?: string }) {
   if (products.length === 0) {
     return (
       <Empty className="border border-dashed">
@@ -20,10 +21,11 @@ export function ProductGrid({ products, emptyMessage = "No products found." }: {
     );
   }
 
+  const { manage_stock } = await getSiteSettings();
   return (
     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {products.map((product, i) => (
-        <ProductCard key={product.id} product={product} priority={i < 4} />
+        <ProductCard key={product.id} product={product} priority={i < 4} manageStock={manage_stock} />
       ))}
     </div>
   );

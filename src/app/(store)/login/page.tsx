@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { NOINDEX } from "@/lib/seo";
 import { Suspense } from "react";
 import { LoginForm } from "@/components/auth-forms";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export const metadata: Metadata = { title: "Sign in" };
+export const metadata: Metadata = { title: "Sign in", robots: NOINDEX };
 
 type SearchParams = Promise<{ next?: string; error?: string; message?: string }>;
 
