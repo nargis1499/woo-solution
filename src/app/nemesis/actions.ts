@@ -4,7 +4,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { AdminAuthError, assertAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
-import { removeProductImageIfOwned, uploadProductImage, validateImageFile } from "@/lib/admin/storage";
+import { removeProductImageIfOwned, removeProductImages, storagePathFromUrl, uploadProductImage, validateImageFile } from "@/lib/admin/storage";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { MENU_TAG } from "@/lib/menu";
 import { safeListReturn } from "@/lib/admin/pagination";
@@ -86,6 +86,18 @@ const failure = (path: string, message: string) => withFlash(path, "error", mess
 /** Where a list action sends the admin afterwards: the exact list page (page / size / filter) they came from. */
 const returnTo = (fd: FormData, listPath: string) => safeListReturn(str(fd, "return_to", 600), listPath) ?? listPath;
 const productsReturn = (fd: FormData) => returnTo(fd, "/nemesis/products");
+
+/** Bulk actions post one `ids` field per selected row; a page never holds more than 100. */
+const MAX_BULK_IDS = 200;
+function idsFrom(fd: FormData): string[] {
+  const ids = fd
+    .getAll("ids")
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter((v) => UUID_RE.test(v));
+  return [...new Set(ids)].slice(0, MAX_BULK_IDS);
+}
+const count = (n: number, singular: string, plural: string) => `${n} ${n === 1 ? singular : plural}`;
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Products
@@ -207,6 +219,28 @@ export async function deleteProduct(formData: FormData): Promise<void> {
 
     revalidateStore();
     redirect(notice(back, `"${product.name}" deleted.`));
+  } catch (e) {
+    if (isRedirectError(e)) throw e;
+    redirect(failure(back, friendlyError(e)));
+  }
+}
+
+/** Deletes every selected product in one statement, then cleans up the images we uploaded for them. */
+export async function deleteProducts(formData: FormData): Promise<void> {
+  const back = productsReturn(formData);
+  const ids = idsFrom(formData);
+  if (ids.length === 0) redirect(failure(back, "Select at least one product first."));
+  try {
+    const { supabase } = await adminClient();
+    const { data, error } = await supabase.from("products").delete().in("id", ids).select("image_url");
+    if (error) throw error;
+    const deleted = data ?? [];
+    if (deleted.length === 0) redirect(failure(back, "Those products no longer exist."));
+
+    await removeProductImages(supabase, deleted.map((p) => storagePathFromUrl(p.image_url)));
+
+    revalidateStore();
+    redirect(notice(back, `${count(deleted.length, "product", "products")} deleted.`));
   } catch (e) {
     if (isRedirectError(e)) throw e;
     redirect(failure(back, friendlyError(e)));
@@ -345,6 +379,26 @@ export async function deleteOrder(formData: FormData): Promise<void> {
   }
 }
 
+/** Deletes every selected order (line items cascade) in one statement. */
+export async function deleteOrders(formData: FormData): Promise<void> {
+  const back = returnTo(formData, "/nemesis/orders");
+  const ids = idsFrom(formData);
+  if (ids.length === 0) redirect(failure(back, "Select at least one order first."));
+  try {
+    const { supabase } = await adminClient();
+    const { data, error } = await supabase.from("orders").delete().in("id", ids).select("id");
+    if (error) throw error;
+    const n = data?.length ?? 0;
+    if (n === 0) redirect(failure(back, "Those orders no longer exist."));
+
+    revalidateStore();
+    redirect(notice(back, `${count(n, "order", "orders")} deleted.`));
+  } catch (e) {
+    if (isRedirectError(e)) throw e;
+    redirect(failure(back, friendlyError(e)));
+  }
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
  * Users
  * ────────────────────────────────────────────────────────────────────────── */
@@ -393,6 +447,36 @@ export async function deleteUser(formData: FormData): Promise<void> {
 
     revalidateStore();
     redirect(notice(back, "User deleted. Their orders were kept for your records."));
+  } catch (e) {
+    if (isRedirectError(e)) throw e;
+    redirect(failure(back, friendlyError(e)));
+  }
+}
+
+/**
+ * Deletes every selected account through `admin_delete_user` (one call each – the function
+ * re-checks the admin role and refuses the caller's own id). Partial failures are reported,
+ * not hidden: the ones that worked stay deleted.
+ */
+export async function deleteUsers(formData: FormData): Promise<void> {
+  const back = returnTo(formData, "/nemesis/users");
+  const requested = idsFrom(formData);
+  if (requested.length === 0) redirect(failure(back, "Select at least one user first."));
+  try {
+    const { user, supabase } = await adminClient();
+    const ids = requested.filter((id) => id !== user.id);
+    if (ids.length === 0) redirect(failure(back, "You cannot delete your own account from the dashboard."));
+
+    const results = await Promise.all(ids.map((id) => supabase.rpc("admin_delete_user", { p_user_id: id })));
+    const failed = results.filter((r) => r.error);
+    const deleted = ids.length - failed.length;
+
+    if (deleted > 0) revalidateStore();
+    const skippedSelf = ids.length < requested.length ? " Your own account was skipped." : "";
+    if (failed.length === 0) redirect(notice(back, `${count(deleted, "user", "users")} deleted. Their orders were kept for your records.${skippedSelf}`));
+    const reason = friendlyError(failed[0].error);
+    if (deleted === 0) redirect(failure(back, `Could not delete the selected ${ids.length === 1 ? "user" : "users"}: ${reason}`));
+    redirect(failure(back, `${count(deleted, "user", "users")} deleted, ${failed.length} could not be deleted: ${reason}${skippedSelf}`));
   } catch (e) {
     if (isRedirectError(e)) throw e;
     redirect(failure(back, friendlyError(e)));

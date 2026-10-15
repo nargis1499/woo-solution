@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DataGrid, type GridColumn, type GridRow } from "@/components/data-grid";
+import { DataGrid, type BulkDelete, type GridColumn, type GridRow } from "@/components/data-grid";
 
 /* Small layout primitives shared by all /nemesis pages. Server-safe (no hooks). */
 
@@ -55,11 +55,29 @@ export function StatCard({ label, value, hint, icon }: { label: string; value: R
   );
 }
 
-/** Card-wrapped React Aria table driven by `columns` + `rows` data (see `components/data-grid.tsx`). */
-export function DataTable({ label, columns, rows, className, tableClassName }: { label: string; columns: GridColumn[]; rows: GridRow[]; className?: string; tableClassName?: string }) {
+/**
+ * Card-wrapped React Aria table driven by `columns` + `rows` data (see `components/data-grid.tsx`).
+ * With `bulkDelete` every row gets a checkbox and a floating "N selected → Delete" bar.
+ */
+export function DataTable({
+  label,
+  columns,
+  rows,
+  className,
+  tableClassName,
+  bulkDelete,
+}: {
+  label: string;
+  columns: GridColumn[];
+  rows: GridRow[];
+  className?: string;
+  tableClassName?: string;
+  bulkDelete?: BulkDelete;
+}) {
   return (
-    <Card className={cn("gap-0 py-0", className)}>
-      <DataGrid label={label} columns={columns} rows={rows} className={cn("min-w-[640px]", tableClassName)} />
+    // overflow-visible: the selection bar inside is `position: sticky` and must not be clipped by the card
+    <Card className={cn("gap-0 overflow-visible py-0", className)}>
+      <DataGrid label={label} columns={columns} rows={rows} className={cn("min-w-[640px]", tableClassName)} bulkDelete={bulkDelete} />
     </Card>
   );
 }

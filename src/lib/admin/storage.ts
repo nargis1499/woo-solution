@@ -65,3 +65,11 @@ export async function removeProductImageIfOwned(supabase: SupabaseClient, url: s
   const { error } = await supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove([path]);
   if (error) console.error(`[storage] could not remove ${path}: ${error.message}`);
 }
+
+/** Batch version of `removeProductImageIfOwned` for bulk deletes – skips nulls, never throws. */
+export async function removeProductImages(supabase: SupabaseClient, paths: Array<string | null>) {
+  const owned = [...new Set(paths.filter((p): p is string => Boolean(p)))];
+  if (owned.length === 0) return;
+  const { error } = await supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove(owned);
+  if (error) console.error(`[storage] could not remove ${owned.length} image(s): ${error.message}`);
+}

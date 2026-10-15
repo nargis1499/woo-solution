@@ -5,7 +5,7 @@ import { adminListCategories, adminListProducts } from "@/lib/admin/data";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatPrice } from "@/lib/format";
-import { deleteProduct } from "@/app/nemesis/actions";
+import { deleteProduct, deleteProducts } from "@/app/nemesis/actions";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { FilterSelect } from "@/components/admin/filter-select";
 import { DeleteButton } from "@/components/admin/form-bits";
@@ -81,8 +81,15 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
             { id: "status", label: "Status" },
             { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
           ]}
+          bulkDelete={{
+            action: deleteProducts,
+            returnTo: listUrl,
+            noun: ["product", "products"],
+            description: "The selected products are removed permanently. Orders that contain them keep their line items. This cannot be undone.",
+          }}
           rows={products.map((p) => ({
             id: p.id,
+            href: editHref(p.id),
             cells: [
               <div key="p" className="flex items-center gap-3">
                 <Thumb src={p.image_url} />

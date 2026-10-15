@@ -6,7 +6,7 @@ import { getAdminStatus } from "@/lib/admin/auth";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatDate, formatPrice } from "@/lib/format";
-import { deleteUser } from "@/app/nemesis/actions";
+import { deleteUser, deleteUsers } from "@/app/nemesis/actions";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { DeleteButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
@@ -53,8 +53,16 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
             { id: "joined", label: "Joined", cellClassName: "text-muted-foreground" },
             { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
           ]}
+          bulkDelete={{
+            action: deleteUsers,
+            returnTo: listUrl,
+            noun: ["user", "users"],
+            description: "The selected accounts are removed permanently; their orders are kept for your records. This cannot be undone.",
+          }}
           rows={users.map((u) => ({
             id: u.id,
+            href: detailHref(u.id),
+            unselectable: me?.id === u.id,
             cells: [
               <div key="u" className="flex items-center gap-3">
                 <UserAvatar name={u.full_name} email={u.email} src={u.avatar_url} />

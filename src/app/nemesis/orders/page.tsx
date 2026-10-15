@@ -6,7 +6,7 @@ import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatDate, formatOrderNumber, formatPrice } from "@/lib/format";
-import { deleteOrder } from "@/app/nemesis/actions";
+import { deleteOrder, deleteOrders } from "@/app/nemesis/actions";
 import { OrderStatusBadge, PaymentStatusBadge } from "@/components/order-status-badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { FilterSelect } from "@/components/admin/filter-select";
@@ -56,10 +56,17 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
             { id: "total", label: "Total", align: "right", cellClassName: "tabular-nums" },
             { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
           ]}
+          bulkDelete={{
+            action: deleteOrders,
+            returnTo: listUrl,
+            noun: ["order", "orders"],
+            description: "The selected orders and their line items are removed permanently (cancel an order instead if you want its stock back). This cannot be undone.",
+          }}
           rows={orders.map((o) => {
             const items = (o.order_items ?? []).reduce((n, i) => n + i.quantity, 0);
             return {
               id: o.id,
+              href: detailHref(o.id),
               cells: [
                 <div key="o">
                   <Link href={detailHref(o.id)} className="font-medium text-primary hover:underline">
