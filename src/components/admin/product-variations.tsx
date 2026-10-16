@@ -195,8 +195,6 @@ function AttributesCard({
           </div>
         ))}
 
-        {attributes.length === 0 && <p className="text-sm text-muted-foreground">No attributes yet – add one (e.g. Color, Size) to build the variations.</p>}
-
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" size="sm" isDisabled={attributes.length >= MAX_ATTRIBUTES} onPress={() => onChange([...attributes, { name: "", options: [] }])}>
             <PlusIcon /> Add attribute
@@ -314,9 +312,11 @@ function VariationsCard({
               <SparklesIcon /> Auto SKUs
             </Button>
           )}
-          <span className="text-xs text-muted-foreground">
-            {combinations.length ? `${combinations.length} possible combination${combinations.length === 1 ? "" : "s"}` : "Add an attribute with values first"}
-          </span>
+          {combinations.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {combinations.length} possible combination{combinations.length === 1 ? "" : "s"}
+            </span>
+          )}
         </div>
 
         {variations.length > 0 && (
@@ -477,12 +477,6 @@ function VariationsCard({
           </div>
         )}
 
-        {variations.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No variations yet – define your attributes above, then hit <span className="font-medium">Generate variations</span> to build every combination.
-          </p>
-        )}
-
         <FieldError>{error}</FieldError>
 
         <AlertDialog isOpen={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -566,10 +560,6 @@ export function VariableProductFields({
         baseSku={baseSku}
         error={errors.variations}
       />
-      <p className="px-1 text-xs text-muted-foreground">
-        A variable product shows “From …” in the shop using its cheapest enabled variation — the storefront price, stock and image
-        follow the combination the customer picks.
-      </p>
     </>
   );
 }

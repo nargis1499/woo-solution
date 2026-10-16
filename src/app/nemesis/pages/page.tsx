@@ -11,7 +11,7 @@ import { deletePage, deletePages, publishPages, unpublishPages } from "@/app/nem
 import { buttonVariants } from "@/components/ui/button-variants";
 import { Badge } from "@/components/ui/badge";
 import { FilterSelect } from "@/components/admin/filter-select";
-import { DeleteButton } from "@/components/admin/form-bits";
+import { DeleteButton, OpenTabButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
 import { ListToolbar, Pagination } from "@/components/admin/pagination";
 import { DataTable, EmptyState, PageHeader, Thumb } from "@/components/admin/ui";
@@ -125,13 +125,13 @@ export default async function AdminPagesPage({ searchParams }: { searchParams: S
                 p.status === "published" && p.published_at ? formatDate(p.published_at) : "—",
                 <div key="actions" className="flex items-center justify-end gap-2">
                   {p.status === "published" ? (
-                    <a href={pageHref(p.slug)} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "sm" })} aria-label={`View "${p.title}" in the store`}>
+                    <OpenTabButton href={pageHref(p.slug)} ariaLabel={`View "${p.title}" in the store`} testId="page-view-link">
                       <EyeIcon /> View
-                    </a>
+                    </OpenTabButton>
                   ) : (
-                    <a href={pagePreviewHref(p.id)} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "sm" })} aria-label={`Preview "${p.title}"`}>
+                    <OpenTabButton href={pagePreviewHref(p.id)} ariaLabel={`Preview "${p.title}"`}>
                       <EyeIcon /> Preview
-                    </a>
+                    </OpenTabButton>
                   )}
                   <Link href={editHref(p.id)} className={buttonVariants({ variant: "outline", size: "sm" })}>
                     Edit

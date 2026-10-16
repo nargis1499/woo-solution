@@ -7,7 +7,7 @@ import type { Category, Product } from "@/lib/types";
 import { useMoney } from "@/components/money-provider";
 import { LinkButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -101,11 +101,6 @@ export function ProductForm({
                     <SelectItem id="variable">Variable product</SelectItem>
                   </SelectContent>
                 </Select>
-                <FieldDescription>
-                  {type === "variable"
-                    ? "Prices, stock and images come from the variations below."
-                    : "One price and one stock count."}
-                </FieldDescription>
                 <FieldError>{err.type}</FieldError>
               </Field>
               <Field data-invalid={Boolean(err.name) || undefined}>
@@ -152,12 +147,7 @@ export function ProductForm({
           </CardHeader>
           <CardContent>
             <FieldGroup className="gap-5">
-              {type === "variable" ? (
-                <p className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-                  A variable product takes its price, stock and image from the <span className="font-medium">variations</span> below – the
-                  shop shows the cheapest enabled one (“From …”).
-                </p>
-              ) : (
+              {type === "variable" ? null : (
               <div className="grid gap-4 sm:grid-cols-3">
                 <Field data-invalid={Boolean(err.regular_price) || undefined}>
                   <FieldLabel htmlFor="regular_price">Regular price ({money.currency})</FieldLabel>
@@ -193,7 +183,6 @@ export function ProductForm({
                     />
                   </InputGroup>
                   <FieldError>{err.sale_price}</FieldError>
-                  <FieldDescription>Optional – must be lower than the regular price. Without a sale price the regular price is what customers pay, shown struck-through here when there is one.</FieldDescription>
                 </Field>
                 {manageStock ? (
                   <Field data-invalid={Boolean(err.stock) || undefined}>

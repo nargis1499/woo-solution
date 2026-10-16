@@ -50,6 +50,35 @@ export function SubmitButton({
 }
 
 /**
+ * Opens `href` in a new tab when pressed.
+ *
+ * A plain `<a target="_blank">` does not work inside a *linked* DataGrid row (the row's own
+ * React Aria press handling swallows the click, so neither the link nor the row navigates).
+ * Doing it from a pressable Button keeps the link alive inside those rows.
+ */
+export function OpenTabButton({
+  href,
+  ariaLabel,
+  children,
+  variant = "ghost",
+  className,
+  testId,
+}: {
+  href: string;
+  ariaLabel: string;
+  children: ReactNode;
+  variant?: "ghost" | "outline" | "secondary";
+  className?: string;
+  testId?: string;
+}) {
+  return (
+    <Button variant={variant} size="sm" className={className} aria-label={ariaLabel} data-testid={testId} onPress={() => window.open(href, "_blank", "noopener,noreferrer")}>
+      {children}
+    </Button>
+  );
+}
+
+/**
  * Delete button that asks for confirmation in an alert dialog, then runs the
  * server action (which redirects back with a toast). Pending state stays
  * visible inside the dialog until the new page arrives.
