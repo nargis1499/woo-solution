@@ -55,6 +55,8 @@ cp .env.example .env.local
    15. [`supabase/migrations/20261028000000_admin_stats_customers.sql`](supabase/migrations/20261028000000_admin_stats_customers.sql) – **Dashboard customer counts**: migration 13 re-created `admin_stats()` for the micro-dollar move and dropped `customers_total` / `customers_30d` on the way, so the dashboard card said *"undefined joined in the last 30 days"*. This re-creates the function with both keys back (nothing else changes). Safe to run on an existing project
    16. [`supabase/migrations/20261029000000_theme.sql`](supabase/migrations/20261029000000_theme.sql) – **Theme customization**: `site_settings.theme_light` / `theme_dark` (per-mode colour overrides), `theme_gradients` (button / loading-bar / hero gradients) and `theme_sync` – all `jsonb` / `boolean` with defaults, so an existing site keeps its exact colours until an admin saves the Extra tab. Safe to run on an existing project
    17. [`supabase/migrations/20261030000000_order_messages.sql`](supabase/migrations/20261030000000_order_messages.sql) – **Order inquiries**: `order_messages` (the turn-based chat thread of an order – `sender_type`, an author snapshot, a 200-character check) with RLS for the order's owner and every admin, select + insert only (messages are immutable). Safe to run on an existing project – without it the order pages simply don't render the thread
+   18. [`supabase/migrations/20261031000000_presence.sql`](supabase/migrations/20261031000000_presence.sql) – **Presence & receipts**: `profiles.last_active_at` (the heartbeat stamp), the admin-only `profiles.presence_visibility` switch (`online` / `last_seen_only` / `offline`), `presence_status()` (online = active within 45 s), the `store_presence()` helper that applies an admin's privacy mode *inside the database* before a customer ever sees it, and `order_messages.delivered_at` / `seen_at` for the ✓ / ✓✓ receipts. Safe to run on an existing project
+   19. [`supabase/migrations/20261032000000_order_message_receipts.sql`](supabase/migrations/20261032000000_order_message_receipts.sql) – **Receipt writes**: migration 17 made the thread immutable (SELECT + INSERT only), which also blocked the receipts added in 18. This adds one narrow UPDATE policy – the *recipient* may stamp `delivered_at` / `seen_at` on the other side's messages – plus the `order_messages_receipts_only` trigger that rejects every other change, so messages stay otherwise untouchable
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -251,15 +253,20 @@ Both the customer's order page (`/orders/[id]`) and the admin's (`/nemesis/order
 | Turn rule | a customer holds the pen until they post, then waits for an admin reply; admins can send as many messages back to back as they want. Enforced by the POST route, not just in the UI |
 | Length | 200 characters, counted live under the field (`145 / 200`, red and Send disabled over the limit); the same limit is a `CHECK` constraint in the database |
 | Author | customers show their profile picture (initials as fallback), admins show the store's shield badge. Admin messages sit left, customer messages right – in both views |
+| Presence | the chat header shows the counterpart's avatar, a green dot and **Online**, or **Last seen 10:42 AM** / **Offline**. The heartbeat (`POST /api/presence/ping`, every 25 s) stamps `profiles.last_active_at`; "online" simply means that stamp is younger than 45 s |
+| Privacy | the admin's own dropdown in the chat header switches what customers may see: **Online** (default), **Last seen only** (never shows "Online", keeps the time) or **Offline** (no time at all). The filter runs inside `store_presence()`, so a hidden stamp never leaves the database – the SSE stream carries the filtered value too |
+| Receipts | every bubble carries its timestamp; your own messages show ✓ sent, ✓✓ delivered (grey) and ✓✓ seen (green) – stamped by the other side, pushed over SSE as a `receipt` event the moment they open the thread, and only "seen" when that tab is actually visible |
 | Look | the thread stays **256 px tall** however long it gets (it scrolls, it never grows), the scrollbar is invisible in every engine (`.scrollbar-hidden`) while the wheel / touch still work, and it scrolls to the newest message smoothly on open and on every message that arrives. Bubbles ease in, the live dot breathes – both fall back to no motion under `prefers-reduced-motion` |
 
 | Endpoint | What it does |
 | --- | --- |
 | `GET /api/orders/[id]/chat` | the thread, oldest first (`?since=<ISO>` for the delta only) |
 | `POST /api/orders/[id]/chat` | validates session + ownership (RLS), status, turn rule and length – then stores the message and pushes it to every open stream |
-| `GET /api/orders/[id]/chat/stream` | `text/event-stream`: replays what the page missed on connect, then pushes each stored message (`retry: 3000`, comment pings). The POST route publishes over an in-process bus, and a 2 s database poll behind it catches missed broadcasts |
+| `POST /api/orders/[id]/chat/receipt` | the recipient stamps `delivered` / `seen` and the sender's open tabs hear about it |
+| `POST /api/presence/ping` | the heartbeat: stamps the signed-in user's `last_active_at` (201; a 401 stops the background pinger) |
+| `GET /api/orders/[id]/chat/stream` | `text/event-stream`: replays what the page missed on connect, then pushes `message`, `receipt` and `presence` events (`retry: 3000`, comment pings). The POST routes publish over an in-process bus, a 2 s database poll catches missed broadcasts and presence is re-read every 8 s |
 
-The thread is one row per message in `order_messages` with a snapshot of the author's name / avatar, so it keeps rendering after a profile edit or a deleted account. There is no update or delete policy – messages are immutable, and deleting an order deletes its thread (cascade) – which the dashboard's *Delete order* button (and bulk delete) both use. Sign in as the customer and the admin in two windows to see a message cross over in about a second.
+The thread is one row per message in `order_messages` with a snapshot of the author's name / avatar, so it keeps rendering after a profile edit or a deleted account. There is no update or delete policy – messages are immutable, and deleting an order deletes its thread (cascade) – which the dashboard's *Delete order* button (and bulk delete) both use. Sign in as the customer and the admin in two windows to see a message cross over in about a second – as do the ✓ / ✓✓ receipts and the "Online" / "Last seen" state.
 
 #
 ### Pages
@@ -317,6 +324,8 @@ woo-solution/
 │   ├── migrations/20261028000000_admin_stats_customers.sql  # dashboard customer counts (dropped by the money rewrite)
 │   ├── migrations/20261029000000_theme.sql        # theme customization: palettes + gradients (Extra → Theme Customization)
 │   ├── migrations/20261030000000_order_messages.sql  # order inquiries: the per-order chat thread (order_messages)
+│   ├── migrations/20261031000000_presence.sql      # presence (heartbeat + admin visibility) and read receipts
+│   ├── migrations/20261032000000_order_message_receipts.sql  # the narrow UPDATE policy + trigger behind ✓/✓✓
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
@@ -336,7 +345,8 @@ woo-solution/
 │   │   │   └── error.tsx, not-found.tsx, template.tsx (page-enter animation)
 │   │   ├── auth/actions.ts                  # signIn / signUp / signOut / signInWithGoogle server actions
 │   │   ├── auth/callback/route.ts           # e-mail confirmation + OAuth (PKCE code exchange)
-│   │   ├── api/orders/[id]/chat/            # order inquiries: GET / POST the thread, stream/ = SSE feed
+│   │   ├── api/orders/[id]/chat/            # order inquiries: GET / POST the thread, stream/ = SSE feed, receipt/ = ✓/✓✓
+│   │   ├── api/presence/ping/route.ts       # the 25 s heartbeat behind "Online" / "Last seen …"
 │   │   ├── nemesis/                         # admin: layout (sidebar shell + requireAdmin), actions.ts,
 │   │   │                                    #   dashboard, pages/ (+ actions.ts), products/, categories/, orders/, users/, media/, settings/,
 │   │   │                                    #   template.tsx (content-only page-enter animation – keeps the fixed sidebar out of it)
@@ -362,7 +372,8 @@ woo-solution/
 │       ├── media/{shared,server}.ts         # media URLs / renditions, upload validation
 │       ├── site-settings.ts, menu.ts        # cached store settings / header + footer menus (tag-invalidated)
 │       ├── home-sections.ts                 # home-page section ids, labels and the filter-title limit (shared by admin + storefront)
-│       ├── order-chat.ts, order-chat-bus.ts, order-messages.ts  # chat rules (statuses, turn, 200 chars), SSE fan-out, queries
+│       ├── order-chat.ts, order-chat-bus.ts, order-messages.ts  # chat rules (statuses, turn, 200 chars), SSE fan-out, queries + receipts
+│       ├── presence.ts, presence.server.ts  # online window / visibility modes (shared) and store_presence() / profile reads
 │       ├── catalog.ts, pagination.ts        # PRODUCTS_PER_PAGE, /shop URL builder, count label / page arithmetic shared with the admin
 │       ├── menu-config.ts                   # menu locations, URL rules, href resolution (shared by storefront, admin and actions)
 │       ├── seo.ts                           # metadata, robots/sitemap entries, JSON-LD built from the SEO tab
@@ -471,7 +482,7 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 - [x] **Media Library** – uploads, folders, trash, optimisation / WebP, image editor, alt text, usage tracking, reusable picker
 - [x] **Single `media` bucket** – favicon / share image picked from the library, one-click import of the legacy `product-images` / `site-media` buckets
 - [x] **Pages** – rich-text content pages at `/<slug>` with drafts, preview, tags, featured image and per-page SEO
-- [x] **Order inquiries** – turn-based customer ⇄ admin chat on the order pages, live over Server-Sent Events (pending & cancelled orders)
+- [x] **Order inquiries** – turn-based customer ⇄ admin chat on the order pages, live over Server-Sent Events (pending & cancelled orders), with **presence** (Online / Last seen / Offline + the admin's privacy switch) and **read receipts** (✓ / ✓✓)
 - [ ] Admin extras – CSV export, audit log, per-section roles
 - [ ] **Server-side cart** (`cart_items` table) synced across devices, merged on login
 - [ ] **Coupons & discounts**, tax rules, multiple shipping methods

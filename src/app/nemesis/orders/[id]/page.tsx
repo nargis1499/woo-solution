@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { adminGetOrder } from "@/lib/admin/data";
+import { requireAdmin } from "@/lib/admin/auth";
 import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { listOrderMessagesOrNull } from "@/lib/order-messages";
+import { getPersonPresence, getPresenceVisibility } from "@/lib/presence.server";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
 import { deleteOrder } from "@/app/nemesis/actions";
@@ -21,10 +23,14 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
   const [{ id }, { from }] = await Promise.all([params, searchParams]);
   // Back + delete return to the exact list page (page / size / filter) the admin came from.
   const backHref = safeListReturn(from, "/nemesis/orders") ?? "/nemesis/orders";
-  const [order, { manage_stock }] = await Promise.all([adminGetOrder(id), getSiteSettingsFresh()]);
+  const [order, { manage_stock }, user] = await Promise.all([adminGetOrder(id), getSiteSettingsFresh(), requireAdmin(`/nemesis/orders/${id}`)]);
   if (!order) notFound();
   // `null` = migration 17 not run yet → the thread is simply not shown.
-  const messages = await listOrderMessagesOrNull(order.id);
+  const [messages, buyer, visibility] = await Promise.all([
+    listOrderMessagesOrNull(order.id),
+    order.user_id ? getPersonPresence(order.user_id) : Promise.resolve({ online: false, lastActiveAt: null, name: null, avatarUrl: null }),
+    getPresenceVisibility(user.id),
+  ]);
   const items = order.order_items ?? [];
 
   return (
@@ -147,7 +153,19 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
       {/* `mt-6` keeps the thread clear of the two cards above it – it sits outside the grid. */}
       {messages && (
         <div className="mt-6">
-          <OrderChat orderId={order.id} status={order.status} viewer="admin" initialMessages={messages} customerName={order.shipping_name} />
+          <OrderChat
+            orderId={order.id}
+            status={order.status}
+            viewer="admin"
+            initialMessages={messages}
+            customerName={order.shipping_name}
+            visibility={visibility}
+            counterpart={{
+              name: buyer.name ?? order.shipping_name ?? "Customer",
+              avatarUrl: buyer.avatarUrl,
+              presence: { online: buyer.online, lastActiveAt: buyer.lastActiveAt },
+            }}
+          />
         </div>
       )}
     </>

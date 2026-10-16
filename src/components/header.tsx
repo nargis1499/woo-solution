@@ -5,6 +5,7 @@ import { getSiteSettings } from "@/lib/site-settings";
 import { getMenu } from "@/lib/menu";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { CartBadge } from "./cart-badge";
+import { PresenceGate } from "./presence-gate";
 import { MobileNav } from "./mobile-nav";
 import { NavLink } from "./nav-link";
 import { ThemeToggle } from "./theme-toggle";
@@ -38,6 +39,10 @@ export async function Header() {
           {/* Reads the auth cookie → streams in behind Suspense */}
           <Suspense fallback={<UserMenuSkeleton />}>
             <UserMenu />
+          </Suspense>
+          {/* presence heartbeat for signed-in visitors (same request-scoped user lookup) */}
+          <Suspense fallback={null}>
+            <PresenceGate />
           </Suspense>
           <ThemeToggle />
           <CartBadge />

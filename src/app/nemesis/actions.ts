@@ -9,6 +9,7 @@ import { HOME_FILTER_TITLE_MAX } from "@/lib/home-sections";
 import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradients } from "@/lib/theme";
 import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, formatExchangeRate, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
 import { MENU_TAG } from "@/lib/menu";
+import { PRESENCE_VISIBILITIES, type PresenceVisibility } from "@/lib/presence";
 import {
   MAX_ATTRIBUTES,
   MAX_ATTRIBUTE_OPTIONS,
@@ -55,6 +56,30 @@ function formMoney(formData: FormData): Money {
 }
 
 const productsReturn = (fd: FormData) => returnTo(fd, "/nemesis/products");
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Presence (Order inquiries) – the admin's own privacy switch
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Changes the **admin's own** visibility to customers. Only the row of the caller is
+ * touched, and only the admin area can call it (`adminClient()` = assertAdmin).
+ */
+export async function updatePresenceVisibility(visibility: string): Promise<{ ok: boolean; error?: string }> {
+  const next = PRESENCE_VISIBILITIES.find((v) => v === visibility);
+  if (!next) return { ok: false, error: "Unknown visibility." };
+
+  try {
+    const { user, supabase } = await adminClient();
+    const { error } = await supabase.from("profiles").update({ presence_visibility: next satisfies PresenceVisibility }).eq("id", user.id);
+    if (error) throw error;
+    // the storefront reads the filtered value through store_presence(); refresh the shell
+    revalidateStore();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Products

@@ -339,6 +339,9 @@ export type OrderMessage = {
   /** 1–200 characters, enforced by the DB and by the POST route */
   message: string;
   created_at: string;
+  /** Read receipts (migration 18): stamped by the *recipient*, null until then */
+  delivered_at?: string | null;
+  seen_at?: string | null;
 };
 
 /** Shape returned by the `admin_stats()` SQL function. */

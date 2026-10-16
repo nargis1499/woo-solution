@@ -86,7 +86,7 @@ export async function POST(request: Request, { params }: Params) {
       message,
     });
 
-    publishOrderChat(order.id, saved);
+    publishOrderChat(order.id, { type: "message", message: saved });
     return json({ message: saved }, 201);
   } catch (e) {
     if (isMissingOrderMessagesError(e)) return json({ error: MISSING_TABLE }, 503);
