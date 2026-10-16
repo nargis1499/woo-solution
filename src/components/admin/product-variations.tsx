@@ -16,7 +16,7 @@ import {
 } from "@/lib/variations";
 import { CURRENCIES, inputFromMicros, parseMoneyInput, type Money } from "@/lib/money";
 import { mediaPreviewUrl, mediaUrl } from "@/lib/media/shared";
-import type { MediaItem, Product } from "@/lib/types";
+import type { MediaItem, Product, ProductVariation } from "@/lib/types";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,13 +41,17 @@ export function initialAttributes(product?: Product | null): DraftAttribute[] {
   return (product?.attributes ?? []).map((a) => ({ name: a.name, options: [...a.options] }));
 }
 
+/** A saved variation is on sale when its regular price (compare_at) is above what it charges. */
+const onSale = (v: ProductVariation) => v.compare_at_price_micros != null && v.compare_at_price_micros > v.price_micros;
+
 export function initialVariations(product: Product | null | undefined, money: Money): DraftVariation[] {
   return (product?.variations ?? []).map((v) => ({
     key: v.id,
     id: v.id,
     sku: v.sku ?? "",
-    price: inputFromMicros(v.price_micros, money),
-    compareAtPrice: v.compare_at_price_micros != null ? inputFromMicros(v.compare_at_price_micros, money) : "",
+    // stored: price_micros = what the customer pays, compare_at = the regular price it discounts
+    regularPrice: inputFromMicros(onSale(v) ? (v.compare_at_price_micros as number) : v.price_micros, money),
+    salePrice: onSale(v) ? inputFromMicros(v.price_micros, money) : "",
     stock: String(v.stock),
     is_active: v.is_active,
     image_media_id: v.image_media_id ?? "",
@@ -60,8 +64,8 @@ export function initialVariations(product: Product | null | undefined, money: Mo
 const newRow = (combination: Record<string, string>, money: Money, priceMicros: number, sku: string): DraftVariation => ({
   key: crypto.randomUUID(),
   sku,
-  price: priceMicros > 0 ? inputFromMicros(priceMicros, money) : "",
-  compareAtPrice: "",
+  regularPrice: priceMicros > 0 ? inputFromMicros(priceMicros, money) : "",
+  salePrice: "",
   stock: "0",
   is_active: true,
   image_media_id: "",
@@ -233,15 +237,15 @@ function VariationsCard({
   const combinations = useMemo(() => generateCombinations(attributes), [attributes]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pickerFor, setPickerFor] = useState<string | null>(null);
-  const [bulkPrice, setBulkPrice] = useState("");
-  const [bulkCompareAt, setBulkCompareAt] = useState("");
+  const [bulkRegular, setBulkRegular] = useState("");
+  const [bulkSale, setBulkSale] = useState("");
   const [bulkStock, setBulkStock] = useState("");
 
   const setRow = (key: string, patch: Partial<DraftVariation>) =>
     onChange(variations.map((row) => (row.key === key ? { ...row, ...patch } : row)));
 
   const enabled = variations.filter((row) => row.is_active).length;
-  const priced = variations.filter((row) => row.is_active && (parseMoneyInput(row.price) ?? 0) > 0).length;
+  const priced = variations.filter((row) => row.is_active && (parseMoneyInput(row.regularPrice) ?? 0) > 0).length;
 
   function generate() {
     // Rows whose combination still exists keep their price / stock / image.
@@ -257,15 +261,15 @@ function VariationsCard({
 
   const askGenerate = () => (variations.length ? setConfirmOpen(true) : generate());
 
-  const applyPrice = () => {
-    const value = bulkPrice.trim();
+  const applyRegular = () => {
+    const value = bulkRegular.trim();
     if (!value) return;
-    onChange(variations.map((row) => ({ ...row, price: value })));
+    onChange(variations.map((row) => ({ ...row, regularPrice: value })));
   };
-  const applyCompareAt = () => {
-    const value = bulkCompareAt.trim();
+  const applySale = () => {
+    const value = bulkSale.trim();
     if (!value) return;
-    onChange(variations.map((row) => ({ ...row, compareAtPrice: value })));
+    onChange(variations.map((row) => ({ ...row, salePrice: value })));
   };
   const applyStock = () => {
     const value = bulkStock.trim();
@@ -295,7 +299,7 @@ function VariationsCard({
           </Badge>
           {variations.length > 0 && priced < enabled && (
             <Badge variant="destructive" data-testid="variation-unpriced">
-              {enabled - priced} without a price
+              {enabled - priced} without a regular price
             </Badge>
           )}
         </CardTitle>
@@ -318,24 +322,24 @@ function VariationsCard({
         {variations.length > 0 && (
           <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2 xl:grid-cols-4">
             <span className="text-xs font-medium sm:col-span-2 xl:col-span-4">Bulk edit – applies to every variation</span>
-            <InputGroup data-testid="bulk-price">
+            <InputGroup data-testid="bulk-regular-price">
               <InputGroupAddon>
                 <InputGroupText>{symbol}</InputGroupText>
               </InputGroupAddon>
-              <InputGroupInput value={bulkPrice} inputMode="decimal" aria-label="Price for all variations" placeholder="Set price…" onChange={(e) => setBulkPrice(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), applyPrice())} />
+              <InputGroupInput value={bulkRegular} inputMode="decimal" aria-label="Regular price for all variations" placeholder="Set regular price…" onChange={(e) => setBulkRegular(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), applyRegular())} />
               <InputGroupAddon align="inline-end">
-                <Button type="button" variant="ghost" size="sm" onPress={applyPrice} isDisabled={!bulkPrice.trim()}>
+                <Button type="button" variant="ghost" size="sm" onPress={applyRegular} isDisabled={!bulkRegular.trim()}>
                   Apply
                 </Button>
               </InputGroupAddon>
             </InputGroup>
-            <InputGroup data-testid="bulk-compare-at">
+            <InputGroup data-testid="bulk-sale-price">
               <InputGroupAddon>
                 <InputGroupText>{symbol}</InputGroupText>
               </InputGroupAddon>
-              <InputGroupInput value={bulkCompareAt} inputMode="decimal" aria-label="Compare-at price for all variations" placeholder="Set compare-at…" onChange={(e) => setBulkCompareAt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), applyCompareAt())} />
+              <InputGroupInput value={bulkSale} inputMode="decimal" aria-label="Sale price for all variations" placeholder="Set sale price…" onChange={(e) => setBulkSale(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), applySale())} />
               <InputGroupAddon align="inline-end">
-                <Button type="button" variant="ghost" size="sm" onPress={applyCompareAt} isDisabled={!bulkCompareAt.trim()}>
+                <Button type="button" variant="ghost" size="sm" onPress={applySale} isDisabled={!bulkSale.trim()}>
                   Apply
                 </Button>
               </InputGroupAddon>
@@ -371,8 +375,8 @@ function VariationsCard({
                 <tr>
                   <th className="px-2 font-medium">Combination</th>
                   <th className="px-2 font-medium">SKU</th>
-                  <th className="px-2 font-medium">Price</th>
-                  <th className="px-2 font-medium">Compare-at</th>
+                  <th className="px-2 font-medium">Regular price</th>
+                  <th className="px-2 font-medium">Sale price</th>
                   {manageStock && <th className="px-2 font-medium">Stock</th>}
                   <th className="px-2 font-medium">Image</th>
                   <th className="px-2 font-medium">Enabled</th>
@@ -398,19 +402,19 @@ function VariationsCard({
                         <Input value={row.sku} aria-label={`SKU for ${label}`} placeholder="SKU" title={row.sku || undefined} className="h-8 w-52 font-mono text-xs" onChange={(e) => setRow(row.key, { sku: e.target.value })} />
                       </td>
                       <td className="border-y px-2 py-2">
-                        <InputGroup className="w-28">
+                        <InputGroup className="w-32">
                           <InputGroupAddon>
                             <InputGroupText>{symbol}</InputGroupText>
                           </InputGroupAddon>
-                          <InputGroupInput value={row.price} inputMode="decimal" aria-label={`Price for ${label}`} placeholder="0.00" className="h-8" onChange={(e) => setRow(row.key, { price: e.target.value })} />
+                          <InputGroupInput value={row.regularPrice} inputMode="decimal" aria-label={`Regular price for ${label}`} placeholder="0.00" className="h-8" onChange={(e) => setRow(row.key, { regularPrice: e.target.value })} />
                         </InputGroup>
                       </td>
                       <td className="border-y px-2 py-2">
-                        <InputGroup className="w-28">
+                        <InputGroup className="w-32">
                           <InputGroupAddon>
                             <InputGroupText>{symbol}</InputGroupText>
                           </InputGroupAddon>
-                          <InputGroupInput value={row.compareAtPrice} inputMode="decimal" aria-label={`Compare-at price for ${label}`} placeholder="—" className="h-8" onChange={(e) => setRow(row.key, { compareAtPrice: e.target.value })} />
+                          <InputGroupInput value={row.salePrice} inputMode="decimal" aria-label={`Sale price for ${label}`} placeholder="Optional" className="h-8" onChange={(e) => setRow(row.key, { salePrice: e.target.value })} />
                         </InputGroup>
                       </td>
                       {manageStock && (
@@ -486,7 +490,7 @@ function VariationsCard({
               <AlertDialogTitle>Replace the current variations?</AlertDialogTitle>
               <AlertDialogDescription>
                 Generating rebuilds the list from the attributes above. The {variations.length} existing {variations.length === 1 ? "variation" : "variations"} that still match a combination keep
-                their price, stock and image; the others are dropped.
+                their regular price, sale price, stock and image; the others are dropped.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

@@ -51,7 +51,7 @@ export function ProductPurchasePanel({ product, manageStock }: { product: Produc
   const stock = selected ? selected.stock : product.stock;
   const inStock = !manageStock || stock > 0;
   const priceMicros = selected ? selected.price_micros : product.price_micros;
-  const compareAtMicros = selected ? selected.compare_at_price_micros : product.compare_at_price_micros;
+  const regularMicros = selected ? selected.compare_at_price_micros : product.compare_at_price_micros;
   const buyable = isVariable ? Boolean(selected) : true;
   const image = selected?.image_url ?? null;
 
@@ -95,7 +95,7 @@ export function ProductPurchasePanel({ product, manageStock }: { product: Produc
         {isVariable && (
           <span className="text-xl" data-testid="selected-price">
             {selected ? (
-              <Price micros={priceMicros} compareAtMicros={compareAtMicros} />
+              <Price micros={priceMicros} regularMicros={regularMicros} />
             ) : range ? (
               <span className="text-base text-muted-foreground">
                 {range.min === range.max

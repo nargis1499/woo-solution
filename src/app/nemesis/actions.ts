@@ -90,10 +90,10 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   const { attributes, attributeError } = parseAttributes(jsonField("attributes_json", 20000));
   const { variations, variationError } = parseVariations(jsonField("variations_json", 400000));
 
-  const priceInput = str(formData, "price", 20);
-  const compareAtInput = str(formData, "compare_at_price", 20);
-  const priceDisplayMicros = parseMoneyInput(priceInput);
-  const compareAtDisplayMicros = parseMoneyInput(compareAtInput);
+  const regularInput = str(formData, "regular_price", 20);
+  const saleInput = str(formData, "sale_price", 20);
+  const regularDisplayMicros = parseMoneyInput(regularInput);
+  const saleDisplayMicros = parseMoneyInput(saleInput);
   const stock = Number(str(formData, "stock", 10) || "0");
   const isActive = bool(formData, "is_active");
   const isFeatured = bool(formData, "is_featured");
@@ -121,21 +121,39 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       fieldErrors.variations = "A variation uses a value that is not in its attribute – regenerate the variations.";
     }
     if (!fieldErrors.variations && variations.length === 0) fieldErrors.variations = "Generate at least one variation before saving.";
-    if (!fieldErrors.variations && variations.some((v) => v.priceDisplay === null || Number.isNaN(v.priceDisplay))) {
-      fieldErrors.variations = "Set a price for every variation.";
+    if (!fieldErrors.variations && variations.some((v) => v.salePrice !== "" && v.regularPrice === "")) {
+      fieldErrors.variations = "A sale price needs a regular price on the same variation.";
     }
-    if (!fieldErrors.variations && variations.some((v) => Number.isNaN(v.compareAtDisplay))) {
-      fieldErrors.variations = "Enter a valid compare-at price or leave it empty.";
+    if (!fieldErrors.variations && variations.some((v) => v.regularPrice === "")) {
+      fieldErrors.variations = "Set a regular price for every variation.";
+    }
+    if (!fieldErrors.variations && variations.some((v) => Number.isNaN(v.regularDisplay as number))) {
+      fieldErrors.variations = "Enter a valid regular price for every variation.";
+    }
+    if (!fieldErrors.variations && variations.some((v) => v.saleDisplay !== null && Number.isNaN(v.saleDisplay))) {
+      fieldErrors.variations = "Enter a valid sale price or leave it empty.";
+    }
+    if (!fieldErrors.variations && variations.some((v) => v.saleDisplay !== null && !Number.isNaN(v.saleDisplay) && v.saleDisplay >= (v.regularDisplay as number))) {
+      fieldErrors.variations = "A sale price must be lower than the regular price.";
     }
     if (!fieldErrors.variations && variations.some((v) => !Number.isInteger(v.stockValue) || v.stockValue < 0)) {
       fieldErrors.variations = "Stock must be a whole number ≥ 0 for every variation.";
     }
-    if (!fieldErrors.variations && !variations.some((v) => v.is_active && (v.priceDisplay ?? 0) > 0)) {
-      fieldErrors.variations = "At least one enabled variation needs a price above 0.";
+    if (!fieldErrors.variations && !variations.some((v) => v.is_active && (v.regularDisplay ?? 0) > 0)) {
+      fieldErrors.variations = "At least one enabled variation needs a regular price above 0.";
     }
   } else {
-    if (priceDisplayMicros === null || Number.isNaN(priceDisplayMicros)) fieldErrors.price = `Enter a valid price, e.g. ${inputFromMicros(DEFAULT_PRICE_MICROS, money)}.`;
-    if (Number.isNaN(compareAtDisplayMicros)) fieldErrors.compare_at_price = "Enter a valid price or leave empty.";
+    if (!regularInput) {
+      fieldErrors.regular_price = saleInput
+        ? "A sale price needs a regular price – enter the regular price it discounts."
+        : "Enter a regular price.";
+    } else if (regularDisplayMicros === null || Number.isNaN(regularDisplayMicros)) {
+      fieldErrors.regular_price = `Enter a valid regular price, e.g. ${inputFromMicros(DEFAULT_PRICE_MICROS, money)}.`;
+    }
+    if (Number.isNaN(saleDisplayMicros)) fieldErrors.sale_price = "Enter a valid sale price or leave it empty.";
+    else if (saleDisplayMicros !== null && regularDisplayMicros !== null && !Number.isNaN(regularDisplayMicros) && saleDisplayMicros >= regularDisplayMicros) {
+      fieldErrors.sale_price = "The sale price must be lower than the regular price.";
+    }
     if (!Number.isInteger(stock) || stock < 0) fieldErrors.stock = "Stock must be a whole number ≥ 0.";
   }
   if (categoryId && !UUID_RE.test(categoryId)) fieldErrors.category_id = "Invalid category.";
@@ -152,16 +170,24 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
     // Prices the admin did not touch keep their stored USD micros exactly; edited ones are
     // converted back with the same rate the form displayed (a whole ৳ amount survives that
     // round trip because the base unit is a ten-thousandth of a cent).
-    let priceMicros = toBaseMicros(priceDisplayMicros as number, money);
-    let compareAtMicros = compareAtDisplayMicros === null ? null : toBaseMicros(compareAtDisplayMicros, money);
+    //
+    // Stored shape: `price_micros` is what the customer pays, `compare_at_price_micros` the
+    // regular price it discounts. Without a sale price the regular price is what you pay, so
+    // the two are the same and nothing is struck through on the storefront.
+    let regularMicros = toBaseMicros(regularDisplayMicros as number, money);
+    let saleMicros = saleDisplayMicros === null ? null : toBaseMicros(saleDisplayMicros, money);
     if (isEdit) {
       const { data: current, error } = await supabase.from("products").select("id, price_micros, compare_at_price_micros").eq("id", id).maybeSingle();
       if (error) throw error;
       if (!current) return { error: "This product no longer exists.", values };
-      const shown = { price: str(formData, "price_shown", 20), compareAt: str(formData, "compare_at_price_shown", 20) };
-      if (shown.price && priceInput === shown.price) priceMicros = current.price_micros as number;
-      if (compareAtInput === shown.compareAt) compareAtMicros = (current.compare_at_price_micros as number | null) ?? compareAtMicros;
+      const currentRegular = (current.compare_at_price_micros as number | null) ?? (current.price_micros as number);
+      const currentSale = current.compare_at_price_micros != null && (current.compare_at_price_micros as number) > (current.price_micros as number) ? (current.price_micros as number) : null;
+      const shown = { regular: str(formData, "regular_price_shown", 20), sale: str(formData, "sale_price_shown", 20) };
+      if (shown.regular && regularInput === shown.regular) regularMicros = currentRegular;
+      if (saleInput === shown.sale) saleMicros = currentSale;
     }
+    const priceMicros = saleMicros ?? regularMicros;
+    const compareAtMicros = saleMicros !== null ? regularMicros : null;
 
     // ── resolve media-library references (must exist, be images, not trashed) ──
     const wanted = [
@@ -258,7 +284,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
  * ────────────────────────────────────────────────────────────────────────── */
 
 type ParsedAttribute = { name: string; options: string[] };
-type ParsedVariation = SubmittedVariation & { priceDisplay: number | null; compareAtDisplay: number; stockValue: number };
+type ParsedVariation = SubmittedVariation & { regularDisplay: number | null; saleDisplay: number | null; stockValue: number };
 
 /** Attribute list from the hidden `attributes_json` field. */
 function parseAttributes(raw: unknown[] | null): { attributes: ParsedAttribute[]; attributeError?: string } {
@@ -299,20 +325,20 @@ function parseVariations(raw: unknown[] | null): { variations: ParsedVariation[]
     const signature = JSON.stringify(Object.entries(combination).sort(([a], [b]) => a.localeCompare(b)));
     if (seen.has(signature)) continue; // duplicates cannot be stored (unique index) – drop them quietly
     seen.add(signature);
-    const price = String(row.price ?? "").trim();
-    const compareAtPrice = String(row.compareAtPrice ?? "").trim();
+    const regularPrice = String(row.regularPrice ?? "").trim();
+    const salePrice = String(row.salePrice ?? "").trim();
     variations.push({
       id: row.id && UUID_RE.test(row.id) ? row.id : undefined,
       sku: String(row.sku ?? "").trim().slice(0, 64) || null,
-      price,
-      compareAtPrice,
+      regularPrice,
+      salePrice,
       stock: String(row.stock ?? "0").trim(),
       is_active: row.is_active !== false,
       image_media_id: row.image_media_id && UUID_RE.test(row.image_media_id) ? row.image_media_id : "",
       image_url: String(row.image_url ?? "").trim().slice(0, 2000),
       combination,
-      priceDisplay: parseMoneyInput(price),
-      compareAtDisplay: Number(parseMoneyInput(compareAtPrice)),
+      regularDisplay: regularPrice === "" ? null : parseMoneyInput(regularPrice),
+      saleDisplay: salePrice === "" ? null : parseMoneyInput(salePrice),
       stockValue: Number(String(row.stock ?? "0").trim() || "0"),
     });
   }
@@ -348,8 +374,9 @@ async function saveVariableProductSets(
     ...(v.id ? { id: v.id } : {}),
     product_id: productId,
     sku: v.sku,
-    price_micros: toBaseMicros(v.priceDisplay as number, money),
-    compare_at_price_micros: v.compareAtPrice ? toBaseMicros(v.compareAtDisplay, money) : null,
+    // the sale price is what the customer pays; the regular price is the struck-through one
+    price_micros: v.saleDisplay !== null ? toBaseMicros(v.saleDisplay, money) : toBaseMicros(v.regularDisplay as number, money),
+    compare_at_price_micros: v.saleDisplay !== null ? toBaseMicros(v.regularDisplay as number, money) : null,
     stock: Number.isInteger(v.stockValue) && v.stockValue >= 0 ? v.stockValue : 0,
     is_active: v.is_active,
     image_media_id: v.image_media_id || null,

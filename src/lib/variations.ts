@@ -13,6 +13,9 @@ export type DraftAttribute = { name: string; options: string[] };
 /**
  * The slice of a variation the admin form edits. Prices are the strings the admin sees
  * (display currency) – the server action converts them to USD micros.
+ *
+ * `regularPrice` is the variation's normal price, `salePrice` the optional discounted one:
+ * empty means "no sale", the regular price is what the customer pays.
  */
 export type DraftVariation = {
   /** Client-only stable React key (never submitted). */
@@ -20,9 +23,10 @@ export type DraftVariation = {
   /** Existing row id, kept so the save updates it instead of re-inserting. */
   id?: string;
   sku: string;
-  /** Value in the store's display currency, e.g. "2398.80" */
-  price: string;
-  compareAtPrice: string;
+  /** Regular price in the store's display currency, e.g. "2398.80" */
+  regularPrice: string;
+  /** Sale price in the store's display currency – "" when the variation is not on sale. */
+  salePrice: string;
   stock: string;
   is_active: boolean;
   /** Media Library file chosen for this variation ("" when none). */

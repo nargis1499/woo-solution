@@ -60,8 +60,10 @@ export function ProductForm({
 
   const gallery = (product?.gallery ?? []).flatMap((g) => (g.media ? [g.media] : []));
 
-  const priceShown = product ? inputFromMicros(product.price_micros, money) : "";
-  const compareAtShown = product?.compare_at_price_micros != null ? inputFromMicros(product.compare_at_price_micros, money) : "";
+  // A saved product is on sale when its regular price (compare_at) sits above what it charges.
+  const hasSale = product?.compare_at_price_micros != null && (product.compare_at_price_micros as number) > product.price_micros;
+  const regularShown = product ? inputFromMicros(hasSale ? (product.compare_at_price_micros as number) : product.price_micros, money) : "";
+  const saleShown = hasSale ? inputFromMicros(product!.price_micros, money) : "";
 
   return (
     <form action={formAction} className="grid gap-6 lg:grid-cols-[1fr_340px]" noValidate>
@@ -69,8 +71,8 @@ export function ProductForm({
       <input type="hidden" name="return_to" value={returnTo} />
       <input type="hidden" name="money_currency" value={money.currency} />
       <input type="hidden" name="money_rate" value={String(money.rate)} />
-      <input type="hidden" name="price_shown" value={priceShown} />
-      <input type="hidden" name="compare_at_price_shown" value={compareAtShown} />
+      <input type="hidden" name="regular_price_shown" value={regularShown} />
+      <input type="hidden" name="sale_price_shown" value={saleShown} />
       <input type="hidden" name="type" value={type} />
       <input type="hidden" name="attributes_json" value={JSON.stringify(attributes)} data-testid="attributes-json" />
       <input type="hidden" name="variations_json" value={JSON.stringify(submittedVariations(variations))} data-testid="variations-json" />
@@ -157,41 +159,41 @@ export function ProductForm({
                 </p>
               ) : (
               <div className="grid gap-4 sm:grid-cols-3">
-                <Field data-invalid={Boolean(err.price) || undefined}>
-                  <FieldLabel htmlFor="price">Price ({money.currency})</FieldLabel>
+                <Field data-invalid={Boolean(err.regular_price) || undefined}>
+                  <FieldLabel htmlFor="regular_price">Regular price ({money.currency})</FieldLabel>
                   <InputGroup>
                     <InputGroupAddon>
-                      <InputGroupText data-testid="price-currency">{symbol}</InputGroupText>
+                      <InputGroupText data-testid="regular-price-currency">{symbol}</InputGroupText>
                     </InputGroupAddon>
                     <InputGroupInput
-                      id="price"
-                      name="price"
+                      id="regular_price"
+                      name="regular_price"
                       inputMode="decimal"
                       placeholder={inputFromMicros(DEFAULT_PRICE_MICROS, money)}
                       required
-                      defaultValue={v.price ?? priceShown}
-                      aria-invalid={Boolean(err.price) || undefined}
+                      defaultValue={v.regular_price ?? regularShown}
+                      aria-invalid={Boolean(err.regular_price) || undefined}
                     />
                   </InputGroup>
-                  <FieldError>{err.price}</FieldError>
+                  <FieldError>{err.regular_price}</FieldError>
                 </Field>
-                <Field data-invalid={Boolean(err.compare_at_price) || undefined}>
-                  <FieldLabel htmlFor="compare_at_price">Compare-at price ({money.currency})</FieldLabel>
+                <Field data-invalid={Boolean(err.sale_price) || undefined}>
+                  <FieldLabel htmlFor="sale_price">Sale price ({money.currency})</FieldLabel>
                   <InputGroup>
                     <InputGroupAddon>
-                      <InputGroupText data-testid="compare-at-currency">{symbol}</InputGroupText>
+                      <InputGroupText data-testid="sale-price-currency">{symbol}</InputGroupText>
                     </InputGroupAddon>
                     <InputGroupInput
-                      id="compare_at_price"
-                      name="compare_at_price"
+                      id="sale_price"
+                      name="sale_price"
                       inputMode="decimal"
                       placeholder="Optional"
-                      defaultValue={v.compare_at_price ?? compareAtShown}
-                      aria-invalid={Boolean(err.compare_at_price) || undefined}
+                      defaultValue={v.sale_price ?? saleShown}
+                      aria-invalid={Boolean(err.sale_price) || undefined}
                     />
                   </InputGroup>
-                  <FieldError>{err.compare_at_price}</FieldError>
-                  <FieldDescription>Shown struck-through to mark a sale.</FieldDescription>
+                  <FieldError>{err.sale_price}</FieldError>
+                  <FieldDescription>Optional – must be lower than the regular price. Without a sale price the regular price is what customers pay, shown struck-through here when there is one.</FieldDescription>
                 </Field>
                 {manageStock ? (
                   <Field data-invalid={Boolean(err.stock) || undefined}>

@@ -80,7 +80,7 @@ async function ProductDetails({ params }: { params: Params }) {
               </Link>
             )}
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{product.name}</h1>
-            <Price micros={product.price_micros} compareAtMicros={product.compare_at_price_micros} from={isVariable} className="mt-3 text-2xl" />
+            <Price micros={product.price_micros} regularMicros={product.compare_at_price_micros} from={isVariable} className="mt-3 text-2xl" />
           </div>
           {product.description && <p className="leading-relaxed text-muted-foreground">{product.description}</p>}
           <ProductPurchasePanel product={product} manageStock={manage_stock} />

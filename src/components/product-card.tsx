@@ -32,7 +32,7 @@ export function ProductCard({ product, priority, manageStock = true }: { product
             {product.name}
           </Link>
         </h3>
-        <Price micros={product.price_micros} compareAtMicros={product.compare_at_price_micros} from={product.type === "variable"} className="mt-auto" />
+        <Price micros={product.price_micros} regularMicros={product.compare_at_price_micros} from={product.type === "variable"} className="mt-auto" />
         {product.type === "variable" ? (
           // A variable product needs its options first – send the shopper to the product page.
           <LinkButton href={`/products/${product.slug}`} variant="outline" size="sm" className="mt-2 w-full">

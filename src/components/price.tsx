@@ -5,19 +5,21 @@ import { cn } from "@/lib/utils";
 import { useMoney } from "./money-provider";
 
 /**
- * A base (USD-micro) amount in the store currency, with the optional struck-through
- * compare-at price. Pass `money` to format with a specific currency/rate (orders keep the
- * one they were placed with); otherwise the store setting applies.
+ * What a customer pays (base USD micros) in the store currency, with the optional regular
+ * price struck through next to it while the product is on sale. Pass `money` to format with a
+ * specific currency/rate (orders keep the one they were placed with); otherwise the store
+ * setting applies.
  */
 export function Price({
   micros,
-  compareAtMicros,
+  regularMicros,
   money,
   className,
   from = false,
 }: {
   micros: number;
-  compareAtMicros?: number | null;
+  /** The regular price – drawn struck-through when it is higher than `micros`. */
+  regularMicros?: number | null;
   money?: Money;
   className?: string;
   /** Variable products: the amount is the cheapest enabled variation ("From ৳…"). */
@@ -25,14 +27,14 @@ export function Price({
 }) {
   const current = useMoney();
   const m = money ?? current;
-  const onSale = compareAtMicros != null && compareAtMicros > micros;
+  const onSale = regularMicros != null && regularMicros > micros;
   return (
     <span className={cn("inline-flex items-baseline gap-2", className)}>
       <span className={cn("font-semibold tabular-nums", onSale && "text-primary")}>
         {from && <span className="mr-1 text-sm font-normal text-muted-foreground">From</span>}
         {formatMoney(micros, m)}
       </span>
-      {onSale && <span className="text-sm text-muted-foreground line-through">{formatMoney(compareAtMicros, m)}</span>}
+      {onSale && <span className="text-sm text-muted-foreground line-through">{formatMoney(regularMicros as number, m)}</span>}
     </span>
   );
 }
