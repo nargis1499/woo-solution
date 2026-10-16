@@ -213,7 +213,7 @@ The settings live in `site_settings` (migration 11); the storefront reads them t
 | **Button hover / active** | The shade a primary button turns under the pointer or while its menu is open (`--button-hover`). Left empty it behaves like before (80 % of the button colour) |
 | **Loading bar** | The progress bar at the very top of the page (`--loader`) |
 | **Use the same colors for both Light & Dark modes** | Copies the light palette into dark and keeps the two in step while it is on |
-| **Presets** | Four ready-made palettes – *Modern Indigo*, *Emerald Tech*, *Sunset Coral*, *Ocean Cyan* – each with its own light **and** dark colours (plus a matching hero gradient for Indigo / Coral / Cyan) |
+| **Presets** | Twelve ready-made palettes – *Modern Indigo*, *Emerald Tech*, *Sunset Coral*, *Ocean Cyan*, *Violet Dusk*, *Rose Quartz*, *Amber Sunrise*, *Forest Pine*, *Teal Lagoon*, *Sky Breeze*, *Crimson Ember*, *Graphite* – each with its own light **and** dark colours plus a matching hero gradient; one click fills every colour field in both modes |
 | **Gradients** | *Button*, *Loading bar* and *Hero* can each carry a **linear** (with an angle slider) or **radial** gradient, two or three stops, with a preview strip |
 | **Reset to defaults** | Asks first, then clears both palettes and every gradient back to the template colours – save to publish it |
 

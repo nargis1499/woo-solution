@@ -406,6 +406,62 @@ export const THEME_PRESETS: ThemePreset[] = [
     dark: { primary: "#67e8f9", secondary: "#183038", button: "#06b6d4", button_hover: "#22d3ee", loader: "#22d3ee" },
     hero: { from: "#0369a1", to: "#06b6d4", angle: 125 },
   },
+  {
+    id: "violet",
+    name: "Violet Dusk",
+    light: { primary: "#7c3aed", secondary: "#f5f3ff", button: "#8b5cf6", button_hover: "#7c3aed", loader: "#a78bfa" },
+    dark: { primary: "#c4b5fd", secondary: "#241f37", button: "#8b5cf6", button_hover: "#a78bfa", loader: "#a78bfa" },
+    hero: { from: "#4c1d95", to: "#a855f7", angle: 130 },
+  },
+  {
+    id: "rose",
+    name: "Rose Quartz",
+    light: { primary: "#db2777", secondary: "#fdf2f8", button: "#ec4899", button_hover: "#db2777", loader: "#f472b6" },
+    dark: { primary: "#f9a8d4", secondary: "#2b1c25", button: "#ec4899", button_hover: "#f472b6", loader: "#f472b6" },
+    hero: { from: "#9d174d", to: "#f472b6", angle: 120 },
+  },
+  {
+    id: "amber",
+    name: "Amber Sunrise",
+    light: { primary: "#b45309", secondary: "#fffbeb", button: "#f59e0b", button_hover: "#d97706", loader: "#fbbf24" },
+    dark: { primary: "#fcd34d", secondary: "#2e2416", button: "#f59e0b", button_hover: "#fbbf24", loader: "#fbbf24" },
+    hero: { from: "#d97706", to: "#fbbf24", angle: 110 },
+  },
+  {
+    id: "forest",
+    name: "Forest Pine",
+    light: { primary: "#15803d", secondary: "#f0fdf4", button: "#16a34a", button_hover: "#15803d", loader: "#4ade80" },
+    dark: { primary: "#86efac", secondary: "#16241c", button: "#22c55e", button_hover: "#4ade80", loader: "#4ade80" },
+    hero: { from: "#166534", to: "#22c55e", angle: 140 },
+  },
+  {
+    id: "teal",
+    name: "Teal Lagoon",
+    light: { primary: "#0f766e", secondary: "#f0fdfa", button: "#14b8a6", button_hover: "#0f766e", loader: "#2dd4bf" },
+    dark: { primary: "#5eead4", secondary: "#152a2a", button: "#14b8a6", button_hover: "#2dd4bf", loader: "#2dd4bf" },
+    hero: { from: "#134e4a", to: "#2dd4bf", angle: 135 },
+  },
+  {
+    id: "sky",
+    name: "Sky Breeze",
+    light: { primary: "#0369a1", secondary: "#f0f9ff", button: "#0ea5e9", button_hover: "#0284c7", loader: "#38bdf8" },
+    dark: { primary: "#7dd3fc", secondary: "#14252f", button: "#0ea5e9", button_hover: "#38bdf8", loader: "#38bdf8" },
+    hero: { from: "#075985", to: "#38bdf8", angle: 125 },
+  },
+  {
+    id: "crimson",
+    name: "Crimson Ember",
+    light: { primary: "#b91c1c", secondary: "#fef2f2", button: "#dc2626", button_hover: "#991b1b", loader: "#ef4444" },
+    dark: { primary: "#fca5a5", secondary: "#2b1a1a", button: "#dc2626", button_hover: "#ef4444", loader: "#f87171" },
+    hero: { from: "#7f1d1d", to: "#ef4444", angle: 115 },
+  },
+  {
+    id: "graphite",
+    name: "Graphite",
+    light: { primary: "#334155", secondary: "#f1f5f9", button: "#334155", button_hover: "#1e293b", loader: "#64748b" },
+    dark: { primary: "#cbd5e1", secondary: "#1e293b", button: "#475569", button_hover: "#94a3b8", loader: "#94a3b8" },
+    hero: { from: "#0f172a", to: "#475569", angle: 120 },
+  },
 ];
 
 /** The palette a preset applies when "sync modes" is on: the light set, in both modes. */
