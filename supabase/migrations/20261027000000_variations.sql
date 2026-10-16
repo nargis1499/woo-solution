@@ -405,7 +405,20 @@ as $$
   union all
   select s.seo_og_image_media_id, null::uuid, null::text, null::text, 'share_image'::text
     from public.site_settings s
-   where s.seo_og_image_media_id = any (p_ids);
+   where s.seo_og_image_media_id = any (p_ids)
+  union all
+  select pg.featured_image_id, pg.id, pg.title, pg.slug, 'page_image'::text
+    from public.pages pg
+   where pg.featured_image_id = any (p_ids)
+  union all
+  select pg.og_image_id, pg.id, pg.title, pg.slug, 'page_share_image'::text
+    from public.pages pg
+   where pg.og_image_id = any (p_ids)
+  union all
+  select pm.media_id, pg.id, pg.title, pg.slug, 'page_content'::text
+    from public.page_media pm
+    join public.pages pg on pg.id = pm.page_id
+   where pm.media_id = any (p_ids);
 $$;
 
 grant execute on function public.media_usage(uuid[]) to authenticated;

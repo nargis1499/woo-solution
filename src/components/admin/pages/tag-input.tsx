@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useMemo, useState, type KeyboardEvent } from "react";
+import { useContext, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ComboBoxStateContext, Input as InputPrimitive } from "react-aria-components";
 import { PlusIcon, TagIcon } from "lucide-react";
 import { MAX_PAGE_TAGS, normaliseTagName, tagKey } from "@/lib/pages/shared";
@@ -36,6 +36,16 @@ export function TagInput({
 }) {
   const [selected, setSelected] = useState<string[]>(() => dedupe(defaultValue));
   const [input, setInput] = useState("");
+  // Enter is handled straight from the DOM value, so the chips must not be added on top of a
+  // stale render of `selected` (type + Enter in quick succession adds two tags, not one).
+  const selectedRef = useRef(selected);
+  // same for the text: React Aria's own Enter handler quotes the state, which lags a keystroke
+  // behind when tagging quickly, so a copy of the live value is kept here
+  const inputRef = useRef(input);
+  // React Aria focuses the first option as soon as the menu opens. Enter must still create the
+  // typed tag (not swap the whole selection for that one option), so its own handling only kicks
+  // in when the user actually moved the highlight with ↑/↓.
+  const highlightMovedRef = useRef(false);
   const anchor = useComboboxAnchor();
 
   const known = useMemo(() => {
@@ -57,15 +67,23 @@ export function TagInput({
 
   function commit(next: string[]) {
     const clean = dedupe(next).slice(0, max);
+    selectedRef.current = clean;
     setSelected(clean);
     onChange?.(clean);
   }
 
-  /** Adds the typed text as a tag (existing spelling wins when it already exists). */
-  function addTyped(): boolean {
-    if (!typed) return false;
-    const existing = known.get(tagKey(typed));
-    commit([...selected, existing ?? typed]);
+  /**
+   * Adds the typed text as a tag (existing spelling wins when it already exists).
+   * `raw` is the live input value – the React state can still be one keystroke behind when
+   * Enter is pressed immediately after typing.
+   */
+  function addTyped(raw?: string): boolean {
+    const clean = normaliseTagName(raw ?? inputRef.current);
+    if (!clean) return false;
+    const existing = known.get(tagKey(clean));
+    commit([...selectedRef.current, existing ?? clean]);
+    inputRef.current = "";
+    highlightMovedRef.current = false;
     setInput("");
     return true;
   }
@@ -82,13 +100,18 @@ export function TagInput({
           return;
         }
         // keep the existing order, append new picks at the end
-        const kept = selected.filter((s) => list.includes(tagKey(s)));
-        const added = list.filter((k) => !selected.some((s) => tagKey(s) === k)).map((k) => known.get(k) ?? k);
+        const current = selectedRef.current;
+        const kept = current.filter((s) => list.includes(tagKey(s)));
+        const added = list.filter((k) => !current.some((s) => tagKey(s) === k)).map((k) => known.get(k) ?? k);
         commit([...kept, ...added]);
         setInput("");
       }}
       inputValue={input}
-      onInputChange={setInput}
+      onInputChange={(value) => {
+        inputRef.current = value;
+        highlightMovedRef.current = false;
+        setInput(value);
+      }}
       allowsEmptyCollection={Boolean(typed)}
       menuTrigger="input"
       aria-label="Tags"
@@ -104,7 +127,14 @@ export function TagInput({
             </ComboboxChip>
           )}
         </ComboboxChipList>
-        <ChipsInput id={id} placeholder={selected.length ? "Add another tag…" : "Add a tag…"} disabled={selected.length >= max} onCommit={addTyped} onRemoveLast={() => commit(selected.slice(0, -1))} />
+        <ChipsInput
+          id={id}
+          highlightMovedRef={highlightMovedRef}
+          placeholder={selected.length ? "Add another tag…" : "Add a tag…"}
+          disabled={selected.length >= max}
+          onCommit={addTyped}
+          onRemoveLast={() => commit(selectedRef.current.slice(0, -1))}
+        />
       </ComboboxChips>
       <ComboboxContent anchor={anchor}>
         <ComboboxList<Option>>
@@ -128,26 +158,53 @@ export function TagInput({
 }
 
 /** The text input inside the chips: Enter / comma create, Backspace on empty removes the last chip. */
-function ChipsInput({ onCommit, onRemoveLast, ...props }: React.ComponentProps<typeof InputPrimitive> & { onCommit: () => boolean; onRemoveLast: () => void }) {
+function ChipsInput({
+  onCommit,
+  onRemoveLast,
+  highlightMovedRef,
+  ...props
+}: React.ComponentProps<typeof InputPrimitive> & {
+  onCommit: (value?: string) => boolean;
+  onRemoveLast: () => void;
+  highlightMovedRef: React.RefObject<boolean>;
+}) {
   const state = useContext(ComboBoxStateContext);
-  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+
+  /**
+   * Enter is handled in the **capture** phase and the event is not passed on: React Aria keeps
+   * the first suggestion focused while the menu is open, and its own Enter would replace the
+   * whole selection with that one option (it also reads its state, which lags a keystroke behind
+   * when tagging quickly). Only ↑/↓ – a deliberate pick – hands Enter back to the ComboBox.
+   */
+  function onKeyDownCapture(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") highlightMovedRef.current = true;
+    if (e.key !== "Enter") return;
     const value = e.currentTarget.value;
-    if ((e.key === "Enter" || e.key === ",") && value.trim()) {
-      // Enter on a highlighted suggestion is handled by the ComboBox itself
-      const focused = e.key === "Enter" && state?.isOpen && state.selectionManager.focusedKey != null;
-      if (!focused) {
-        e.preventDefault();
-        onCommit();
-      }
+    const picked = Boolean(state?.isOpen && state.selectionManager.focusedKey != null && highlightMovedRef.current);
+    if (value.trim() && !picked) {
+      e.preventDefault();
+      e.stopPropagation();
+      onCommit(value);   // the live input value, not the possibly stale state
       return;
     }
-    if (e.key === "Enter") e.preventDefault(); // never submit the surrounding form from here
+    e.preventDefault(); // never submit the surrounding form from here
+    if (!value.trim()) e.stopPropagation();
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    const value = e.currentTarget.value;
+    if (e.key === "," && value.trim()) {
+      e.preventDefault();
+      e.stopPropagation();
+      onCommit(value);
+      return;
+    }
     if (e.key === "Backspace" && value === "" && Array.isArray(state?.value) && state.value.length > 0) {
       e.preventDefault();
       onRemoveLast();
     }
   }
-  return <InputPrimitive data-slot="combobox-chip-input" className="min-w-24 flex-1 bg-transparent outline-none placeholder:text-muted-foreground" onKeyDown={onKeyDown} {...props} />;
+  return <InputPrimitive data-slot="combobox-chip-input" className="min-w-24 flex-1 bg-transparent outline-none placeholder:text-muted-foreground" onKeyDownCapture={onKeyDownCapture} onKeyDown={onKeyDown} {...props} />;
 }
 
 function dedupe(names: string[]): string[] {
