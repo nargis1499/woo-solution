@@ -6,8 +6,10 @@ import { Suspense } from "react";
 import { CircleCheckIcon } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyOrder } from "@/lib/data/orders";
+import { listOrderMessagesOrNull } from "@/lib/order-messages";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
+import { OrderChat } from "@/components/order-chat/order-chat";
 import { OrderStatusBadge } from "@/components/order-status-badge";
 import { ProductImage } from "@/components/product-image";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -38,6 +40,8 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
   const order = await getMyOrder(id);
   if (!order) notFound();
   const items = order.order_items ?? [];
+  // `null` = migration 17 not run yet → the thread is simply not shown.
+  const messages = await listOrderMessagesOrNull(order.id);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -150,6 +154,8 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
           </CardContent>
         </Card>
       </div>
+
+      {messages && <OrderChat orderId={order.id} status={order.status} viewer="customer" initialMessages={messages} customerName={user.name ?? order.shipping_name} />}
 
       <div className="flex gap-3">
         <Link href="/shop" className={buttonVariants({ variant: "outline" })}>

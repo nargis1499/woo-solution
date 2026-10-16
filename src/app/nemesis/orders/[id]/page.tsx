@@ -3,12 +3,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { adminGetOrder } from "@/lib/admin/data";
 import { getSiteSettingsFresh } from "@/lib/site-settings";
+import { listOrderMessagesOrNull } from "@/lib/order-messages";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
 import { deleteOrder } from "@/app/nemesis/actions";
 import { OrderStatusBadge } from "@/components/order-status-badge";
 import { OrderStatusForm } from "@/components/admin/order-form";
 import { DeleteButton } from "@/components/admin/form-bits";
+import { OrderChat } from "@/components/order-chat/order-chat";
 import { DescriptionList, PageHeader, Section, Thumb, ToneBadge } from "@/components/admin/ui";
 import { Separator } from "@/components/ui/separator";
 import { safeListReturn } from "@/lib/admin/pagination";
@@ -21,6 +23,8 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
   const backHref = safeListReturn(from, "/nemesis/orders") ?? "/nemesis/orders";
   const [order, { manage_stock }] = await Promise.all([adminGetOrder(id), getSiteSettingsFresh()]);
   if (!order) notFound();
+  // `null` = migration 17 not run yet → the thread is simply not shown.
+  const messages = await listOrderMessagesOrNull(order.id);
   const items = order.order_items ?? [];
 
   return (
@@ -139,6 +143,8 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
           </Section>
         </div>
       </div>
+
+      {messages && <OrderChat orderId={order.id} status={order.status} viewer="admin" initialMessages={messages} customerName={order.shipping_name} />}
     </>
   );
 }

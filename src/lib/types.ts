@@ -322,6 +322,25 @@ export type SiteSettingsRow = SiteSettings & { updated_at: string | null };
 /** Media Library files behind the branding URLs of the settings row. */
 export type SettingsMedia = { favicon: MediaRef | null; share_image: MediaRef | null };
 
+/** Who wrote an inquiry message – the two sides of the order chat. */
+export type OrderMessageSender = "customer" | "admin";
+
+/**
+ * One message of the per-order inquiry thread (`order_messages`, migration 17).
+ * The author is snapshotted so a renamed or deleted account still renders.
+ */
+export type OrderMessage = {
+  id: string;
+  order_id: string;
+  sender_type: OrderMessageSender;
+  sender_id: string | null;
+  sender_name: string | null;
+  sender_avatar_url: string | null;
+  /** 1–200 characters, enforced by the DB and by the POST route */
+  message: string;
+  created_at: string;
+};
+
 /** Shape returned by the `admin_stats()` SQL function. */
 export type AdminStats = {
   revenue_micros: number;

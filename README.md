@@ -54,6 +54,7 @@ cp .env.example .env.local
    14. [`supabase/migrations/20261027000000_variations.sql`](supabase/migrations/20261027000000_variations.sql) – **Variable products**: `products.type` (`simple` / `variable`) + `products.sku`, `product_attributes` (name + option values per product), `product_variations` (SKU, regular / sale price, stock, image, enabled flag – one row per combination) with RLS, the `product_variations_sync_parent` trigger that keeps the parent's price / stock in step, `order_items.variation_id` / `variation_label`, a `place_order()` that checks and decrements the *variation* that was bought, and restocking on cancellation. Products without attributes stay exactly as they are – safe to run on an existing project
    15. [`supabase/migrations/20261028000000_admin_stats_customers.sql`](supabase/migrations/20261028000000_admin_stats_customers.sql) – **Dashboard customer counts**: migration 13 re-created `admin_stats()` for the micro-dollar move and dropped `customers_total` / `customers_30d` on the way, so the dashboard card said *"undefined joined in the last 30 days"*. This re-creates the function with both keys back (nothing else changes). Safe to run on an existing project
    16. [`supabase/migrations/20261029000000_theme.sql`](supabase/migrations/20261029000000_theme.sql) – **Theme customization**: `site_settings.theme_light` / `theme_dark` (per-mode colour overrides), `theme_gradients` (button / loading-bar / hero gradients) and `theme_sync` – all `jsonb` / `boolean` with defaults, so an existing site keeps its exact colours until an admin saves the Extra tab. Safe to run on an existing project
+   17. [`supabase/migrations/20261030000000_order_messages.sql`](supabase/migrations/20261030000000_order_messages.sql) – **Order inquiries**: `order_messages` (the turn-based chat thread of an order – `sender_type`, an author snapshot, a 200-character check) with RLS for the order's owner and every admin, select + insert only (messages are immutable). Safe to run on an existing project – without it the order pages simply don't render the thread
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -147,7 +148,7 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Pages | Static content pages (About, Contact, Privacy policy, FAQ …) with a rich-text editor, featured image, tags, draft / published workflow, preview and per-page SEO – see [Pages](#pages) below. Each published page is live at `/<slug>` |
 | Products | Create, edit, delete; search & filter; draft/active, featured, stock, **regular price** (+ optional **sale price**); **main image** + **gallery** picked from the Media Library (upload a new file or select an existing one – see [Media](#media)), or paste any image URL. Each product is **Simple** or **Variable** – see [Variable products](#variable-products) |
 | Categories | Create, rename, delete (products become uncategorised); **drag the handle** (mouse, touch long-press, or ↑/↓ on a focused handle) to reorder – the shop's category filter and the sitemap follow the saved order. Which categories appear in the storefront navigation is decided under **UI → Menu** |
-| Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
+| Orders | Filter by status, view items & shipping address, reply in the **order inquiry thread** (see [Order inquiries](#order-inquiries)), change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
 | Media | The Media Library – see [Media](#media) below: uploads, grid / list browsing, search, filters, folders, trash, bulk actions, image optimisation / WebP conversion / editing, alt text, usage tracking and the reusable **media picker** |
 | Extra | Three tabs. **Menu** – see [Menus](#menus) below: build the storefront **header** and **footer** navigation from pages, categories and custom links, drag to reorder, edit link text, open in a new tab. **Home page** – see [Home page](#home-page) below: switch the home-page sections on and off, including a filtered product list with its own title. **Extra** – see [Theme customization](#theme-customization) below: colours and gradients for light **and** dark mode, presets, reset |
@@ -239,6 +240,26 @@ Without a site URL the app falls back to `NEXT_PUBLIC_SITE_URL` for absolute URL
 
 Branding images (favicon, share image) are served through `next/image`; `*.supabase.co` and a few stock-photo hosts are allow-listed in `src/lib/image-hosts.ts` – add your own CDN there. Plain-`http` URLs (e.g. a local Supabase on `127.0.0.1`) are rendered unoptimised.
 
+#### Order inquiries
+
+Both the customer's order page (`/orders/[id]`) and the admin's (`/nemesis/orders/[id]`) carry the same **Order inquiries** thread – a turn-based chat that updates in real time over **Server-Sent Events**, so a reply appears in the other tab without a reload.
+
+| Rule | Behaviour |
+| --- | --- |
+| Open statuses | **Pending** and **Cancelled** – post-cancellation questions and refund follow-ups stay possible |
+| Closed statuses | **Processing** and **Completed** – the composer is replaced by *"Inquiries are closed for this order status."* and the API refuses the post as well |
+| Turn rule | a customer holds the pen until they post, then waits for an admin reply; admins can send as many messages back to back as they want. Enforced by the POST route, not just in the UI |
+| Length | 200 characters, counted live under the field (`145 / 200`, red and Send disabled over the limit); the same limit is a `CHECK` constraint in the database |
+| Author | customers show their profile picture (initials as fallback), admins show the store's shield badge. Admin messages sit left, customer messages right – in both views |
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /api/orders/[id]/chat` | the thread, oldest first (`?since=<ISO>` for the delta only) |
+| `POST /api/orders/[id]/chat` | validates session + ownership (RLS), status, turn rule and length – then stores the message and pushes it to every open stream |
+| `GET /api/orders/[id]/chat/stream` | `text/event-stream`: replays what the page missed on connect, then pushes each stored message (`retry: 3000`, comment pings). The POST route publishes over an in-process bus, and a 2 s database poll behind it catches missed broadcasts |
+
+The thread is one row per message in `order_messages` with a snapshot of the author's name / avatar, so it keeps rendering after a profile edit or a deleted account. There is no update or delete policy – messages are immutable, and deleting an order deletes its thread (cascade). Sign in as the customer and the admin in two windows to see a message cross over in about a second.
+
 #
 ### Pages
 
@@ -294,6 +315,7 @@ woo-solution/
 │   ├── migrations/20261027000000_variations.sql   # variable products: type/sku, attributes, variations, place_order()
 │   ├── migrations/20261028000000_admin_stats_customers.sql  # dashboard customer counts (dropped by the money rewrite)
 │   ├── migrations/20261029000000_theme.sql        # theme customization: palettes + gradients (Extra → Theme Customization)
+│   ├── migrations/20261030000000_order_messages.sql  # order inquiries: the per-order chat thread (order_messages)
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
@@ -313,6 +335,7 @@ woo-solution/
 │   │   │   └── error.tsx, not-found.tsx, template.tsx (page-enter animation)
 │   │   ├── auth/actions.ts                  # signIn / signUp / signOut / signInWithGoogle server actions
 │   │   ├── auth/callback/route.ts           # e-mail confirmation + OAuth (PKCE code exchange)
+│   │   ├── api/orders/[id]/chat/            # order inquiries: GET / POST the thread, stream/ = SSE feed
 │   │   ├── nemesis/                         # admin: layout (sidebar shell + requireAdmin), actions.ts,
 │   │   │                                    #   dashboard, pages/ (+ actions.ts), products/, categories/, orders/, users/, media/, settings/,
 │   │   │                                    #   template.tsx (content-only page-enter animation – keeps the fixed sidebar out of it)
@@ -325,6 +348,7 @@ woo-solution/
 │   │   │   ├── menu/                        # Extra → Menu: location switch, add panel, item table, edit dialog
 │   │   │   ├── home/                        # Extra → Home page: section switches + filter title form
 │   │   │   └── extra/                       # Extra → Theme Customization: colour fields (HEX/RGB/HSL), gradients, presets
+│   │   ├── order-chat/order-chat.tsx        # the inquiry thread (same component on the customer + admin order page)
 │   │   ├── page-article.tsx                 # storefront template for CMS pages (also used by the admin preview)
 │   │   ├── data-grid.tsx, page-breadcrumbs.tsx  # client wrappers around the React Aria Table (selection, bulk bar, dnd-kit row reordering) / Breadcrumbs
 │   │   ├── home-product-filter.tsx          # home page: client-side category pills + product grid + pager (UI → Home page)
@@ -337,6 +361,7 @@ woo-solution/
 │       ├── media/{shared,server}.ts         # media URLs / renditions, upload validation
 │       ├── site-settings.ts, menu.ts        # cached store settings / header + footer menus (tag-invalidated)
 │       ├── home-sections.ts                 # home-page section ids, labels and the filter-title limit (shared by admin + storefront)
+│       ├── order-chat.ts, order-chat-bus.ts, order-messages.ts  # chat rules (statuses, turn, 200 chars), SSE fan-out, queries
 │       ├── catalog.ts, pagination.ts        # PRODUCTS_PER_PAGE, /shop URL builder, count label / page arithmetic shared with the admin
 │       ├── menu-config.ts                   # menu locations, URL rules, href resolution (shared by storefront, admin and actions)
 │       ├── seo.ts                           # metadata, robots/sitemap entries, JSON-LD built from the SEO tab
@@ -359,6 +384,7 @@ Google sign-in lives in `src/app/auth/actions.ts` (`signInWithGoogle`), `src/com
 auth.users ──1:1──▶ profiles (auto-created by trigger)
 categories ──1:N──▶ products
 auth.users ──1:N──▶ orders ──1:N──▶ order_items (price & name snapshotted at purchase)
+                       └──1:N──▶ order_messages (inquiry thread: customer ⇄ admin, immutable)
 media_folders ──1:N──▶ media ◀──N:M──▶ products (product_media = gallery, products.image_media_id = main image)
 profiles ──1:N──▶ pages ◀──N:M──▶ tags (page_tags)   pages ◀──N:M──▶ media (page_media = images in the content; featured_image_id / og_image_id)
 ```
@@ -444,6 +470,7 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 - [x] **Media Library** – uploads, folders, trash, optimisation / WebP, image editor, alt text, usage tracking, reusable picker
 - [x] **Single `media` bucket** – favicon / share image picked from the library, one-click import of the legacy `product-images` / `site-media` buckets
 - [x] **Pages** – rich-text content pages at `/<slug>` with drafts, preview, tags, featured image and per-page SEO
+- [x] **Order inquiries** – turn-based customer ⇄ admin chat on the order pages, live over Server-Sent Events (pending & cancelled orders)
 - [ ] Admin extras – CSV export, audit log, per-section roles
 - [ ] **Server-side cart** (`cart_items` table) synced across devices, merged on login
 - [ ] **Coupons & discounts**, tax rules, multiple shipping methods
