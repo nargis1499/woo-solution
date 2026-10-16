@@ -366,7 +366,7 @@ function VariationsCard({
 
         {variations.length > 0 && (
           <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-            <table className="w-full min-w-[720px] border-separate border-spacing-y-2 text-sm" data-testid="variations-table">
+            <table className="w-full min-w-[900px] border-separate border-spacing-y-2 text-sm" data-testid="variations-table">
               <thead className="text-left text-xs text-muted-foreground">
                 <tr>
                   <th className="px-2 font-medium">Combination</th>
@@ -395,7 +395,7 @@ function VariationsCard({
                         )}
                       </td>
                       <td className="border-y px-2 py-2">
-                        <Input value={row.sku} aria-label={`SKU for ${label}`} placeholder="SKU" className="h-8 w-32" onChange={(e) => setRow(row.key, { sku: e.target.value })} />
+                        <Input value={row.sku} aria-label={`SKU for ${label}`} placeholder="SKU" title={row.sku || undefined} className="h-8 w-52 font-mono text-xs" onChange={(e) => setRow(row.key, { sku: e.target.value })} />
                       </td>
                       <td className="border-y px-2 py-2">
                         <InputGroup className="w-28">

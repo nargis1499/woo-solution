@@ -92,9 +92,11 @@ async function ProductDetails({ params }: { params: Params }) {
             <li className="flex items-center gap-2">
               <BanknoteIcon className="size-4" aria-hidden /> Cash on delivery available.
             </li>
-            <li className="flex items-center gap-2">
-              <PackageCheckIcon className="size-4" aria-hidden /> SKU: {product.sku ?? product.id.slice(0, 8).toUpperCase()}
-            </li>
+            {(product.sku || !isVariable) && (
+              <li className="flex items-center gap-2">
+                <PackageCheckIcon className="size-4" aria-hidden /> SKU: {product.sku ?? product.id.slice(0, 8).toUpperCase()}
+              </li>
+            )}
           </ul>
         </div>
       </div>
