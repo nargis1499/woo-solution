@@ -36,7 +36,7 @@ export default async function AdminDashboardPage() {
         <StatCard label="Revenue" value={formatMoney(stats.revenue_micros, money)} hint={`${formatMoney(stats.revenue_30d_micros, money)} in the last 30 days`} icon={money.currency === "USD" ? <DollarSignIcon /> : <BanknoteIcon />} />
         <StatCard label="Orders" value={stats.orders_total} hint={`${stats.orders_30d} in the last 30 days · ${stats.orders_pending} pending`} icon={<ShoppingCartIcon />} />
         <StatCard label="Products" value={stats.products_total} hint={manageStock ? `${stats.products_active} active · ${stats.products_low_stock} low on stock` : `${stats.products_active} active · stock not tracked`} icon={<PackageIcon />} />
-        <StatCard label="Customers" value={stats.customers_total} hint={`${stats.customers_30d} joined in the last 30 days`} icon={<UsersIcon />} />
+        <StatCard label="Customers" value={stats.customers_total ?? 0} hint={`${stats.customers_30d ?? 0} joined in the last 30 days`} icon={<UsersIcon />} />
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-4">
