@@ -1,6 +1,10 @@
 -- =============================================================================
 --  Woo Solution — demo catalog
---  Run AFTER the migration. Safe to re-run (upserts by slug).
+--  Run AFTER the migrations. Safe to re-run (upserts by slug).
+--
+--  Prices are base amounts in micro-dollars (1 USD = 1,000,000, the unit every money
+--  column uses – see src/lib/money.ts), so they are written as `<US dollars> * 1000000`.
+--  They are displayed as dollars or taka according to Settings → WooCommerce → Currency.
 -- =============================================================================
 
 insert into public.categories (name, slug, sort_order) values
@@ -19,73 +23,73 @@ where c.slug in ('apparel', 'accessories', 'home', 'electronics')
   and not exists (select 1 from public.menu_items m where m.location = 'header' and m.category_id = c.id);
 
 insert into public.products
-  (category_id, name, slug, description, price_cents, compare_at_price_cents, image_url, stock, is_featured)
+  (category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, stock, is_featured)
 values
   ((select id from public.categories where slug = 'apparel'),
    'Classic Cotton Tee', 'classic-cotton-tee',
    'A soft, breathable 100% organic cotton t-shirt with a relaxed fit. Pre-shrunk and made to last.',
-   1999, 2499, 'https://picsum.photos/seed/classic-cotton-tee/800/800', 50, true),
+   19.99 * 1000000, 24.99 * 1000000, 'https://picsum.photos/seed/classic-cotton-tee/800/800', 50, true),
 
   ((select id from public.categories where slug = 'apparel'),
    'Everyday Hoodie', 'everyday-hoodie',
    'Mid-weight fleece hoodie with a brushed interior, kangaroo pocket and ribbed cuffs.',
-   4999, null, 'https://picsum.photos/seed/everyday-hoodie/800/800', 30, true),
+   49.99 * 1000000, null, 'https://picsum.photos/seed/everyday-hoodie/800/800', 30, true),
 
   ((select id from public.categories where slug = 'apparel'),
    'Slim Chino Pants', 'slim-chino-pants',
    'Stretch-cotton chinos in a modern slim cut. Available in a flattering mid-rise.',
-   5499, 6999, 'https://picsum.photos/seed/slim-chino-pants/800/800', 25, false),
+   54.99 * 1000000, 69.99 * 1000000, 'https://picsum.photos/seed/slim-chino-pants/800/800', 25, false),
 
   ((select id from public.categories where slug = 'accessories'),
    'Leather Card Wallet', 'leather-card-wallet',
    'Full-grain leather wallet with four card slots and a centre pocket for folded notes.',
-   2999, null, 'https://picsum.photos/seed/leather-card-wallet/800/800', 40, true),
+   29.99 * 1000000, null, 'https://picsum.photos/seed/leather-card-wallet/800/800', 40, true),
 
   ((select id from public.categories where slug = 'accessories'),
    'Canvas Tote Bag', 'canvas-tote-bag',
    'Heavy-duty 16oz canvas tote with reinforced handles. Perfect for groceries or the beach.',
-   1899, null, 'https://picsum.photos/seed/canvas-tote-bag/800/800', 60, false),
+   18.99 * 1000000, null, 'https://picsum.photos/seed/canvas-tote-bag/800/800', 60, false),
 
   ((select id from public.categories where slug = 'accessories'),
    'Minimal Steel Watch', 'minimal-steel-watch',
    'Brushed stainless steel case, sapphire glass and a Japanese quartz movement. 5 ATM water resistant.',
-   12900, 15900, 'https://picsum.photos/seed/minimal-steel-watch/800/800', 12, true),
+   129 * 1000000, 159 * 1000000, 'https://picsum.photos/seed/minimal-steel-watch/800/800', 12, true),
 
   ((select id from public.categories where slug = 'home'),
    'Ceramic Pour-Over Set', 'ceramic-pour-over-set',
    'Hand-glazed ceramic dripper and carafe for a cleaner, brighter cup of coffee.',
-   3899, null, 'https://picsum.photos/seed/ceramic-pour-over-set/800/800', 20, false),
+   38.99 * 1000000, null, 'https://picsum.photos/seed/ceramic-pour-over-set/800/800', 20, false),
 
   ((select id from public.categories where slug = 'home'),
    'Linen Throw Blanket', 'linen-throw-blanket',
    'Stone-washed European linen throw. Gets softer with every wash.',
-   7499, 8999, 'https://picsum.photos/seed/linen-throw-blanket/800/800', 15, true),
+   74.99 * 1000000, 89.99 * 1000000, 'https://picsum.photos/seed/linen-throw-blanket/800/800', 15, true),
 
   ((select id from public.categories where slug = 'home'),
    'Soy Wax Candle', 'soy-wax-candle',
    'Hand-poured soy candle with notes of cedar, bergamot and amber. 45-hour burn time.',
-   2400, null, 'https://picsum.photos/seed/soy-wax-candle/800/800', 80, false),
+   24 * 1000000, null, 'https://picsum.photos/seed/soy-wax-candle/800/800', 80, false),
 
   ((select id from public.categories where slug = 'electronics'),
    'Wireless Earbuds', 'wireless-earbuds',
    'Active noise cancelling earbuds with 30 hours of total battery life and wireless charging.',
-   8999, 11999, 'https://picsum.photos/seed/wireless-earbuds/800/800', 35, true),
+   89.99 * 1000000, 119.99 * 1000000, 'https://picsum.photos/seed/wireless-earbuds/800/800', 35, true),
 
   ((select id from public.categories where slug = 'electronics'),
    'Mechanical Keyboard', 'mechanical-keyboard',
    'Compact 75% layout with hot-swappable switches, PBT keycaps and south-facing RGB.',
-   10900, null, 'https://picsum.photos/seed/mechanical-keyboard/800/800', 18, false),
+   109 * 1000000, null, 'https://picsum.photos/seed/mechanical-keyboard/800/800', 18, false),
 
   ((select id from public.categories where slug = 'electronics'),
    'USB-C Charging Hub', 'usb-c-charging-hub',
    '100W GaN charger with two USB-C and one USB-A port. Charges a laptop, phone and earbuds at once.',
-   4599, null, 'https://picsum.photos/seed/usb-c-charging-hub/800/800', 0, false)
+   45.99 * 1000000, null, 'https://picsum.photos/seed/usb-c-charging-hub/800/800', 0, false)
 on conflict (slug) do update set
   category_id            = excluded.category_id,
   name                   = excluded.name,
   description            = excluded.description,
-  price_cents            = excluded.price_cents,
-  compare_at_price_cents = excluded.compare_at_price_cents,
+  price_micros            = excluded.price_micros,
+  compare_at_price_micros = excluded.compare_at_price_micros,
   image_url              = excluded.image_url,
   stock                  = excluded.stock,
   is_featured            = excluded.is_featured;

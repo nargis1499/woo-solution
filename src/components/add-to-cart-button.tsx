@@ -8,7 +8,7 @@ import type { Product } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 
 type Props = {
-  product: Pick<Product, "id" | "slug" | "name" | "price_cents" | "image_url" | "stock">;
+  product: Pick<Product, "id" | "slug" | "name" | "price_micros" | "image_url" | "stock">;
   quantity?: number;
   size?: "sm" | "default" | "lg";
   className?: string;
@@ -34,7 +34,7 @@ export function AddToCartButton({ product, quantity = 1, size = "default", class
         productId: product.id,
         slug: product.slug,
         name: product.name,
-        priceCents: product.price_cents,
+        priceMicros: product.price_micros,
         imageUrl: product.image_url,
         stock: manageStock ? product.stock : null,
       },

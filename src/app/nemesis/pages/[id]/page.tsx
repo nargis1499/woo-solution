@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { adminGetPage, adminListTags } from "@/lib/admin/data";
-import { getSiteSettings, resolveSiteUrl } from "@/lib/site-settings";
+import { getSiteSettingsFresh, resolveSiteUrl } from "@/lib/site-settings";
 import { safeListReturn } from "@/lib/admin/pagination";
 import { deletePage } from "@/app/nemesis/pages/actions";
 import { PageForm } from "@/components/admin/pages/page-form";
@@ -14,7 +14,7 @@ export default async function EditPagePage({ params, searchParams }: { params: P
   const [{ id }, { from }] = await Promise.all([params, searchParams]);
   // Back / Cancel return to the exact list page the admin came from.
   const backHref = safeListReturn(from, "/nemesis/pages") ?? "/nemesis/pages";
-  const [page, tags, settings] = await Promise.all([adminGetPage(id), adminListTags(), getSiteSettings()]);
+  const [page, tags, settings] = await Promise.all([adminGetPage(id), adminListTags(), getSiteSettingsFresh()]);
   if (!page) notFound();
 
   return (

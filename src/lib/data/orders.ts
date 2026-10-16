@@ -22,7 +22,7 @@ export async function getMyOrder(id: string): Promise<Order | null> {
   const { data, error } = await withOrderColumns((columns) =>
     supabase
       .from("orders")
-      .select(`${columns}, order_items(id, order_id, product_id, product_name, product_slug, image_url, unit_price_cents, quantity, line_total_cents)`)
+      .select(`${columns}, order_items(id, order_id, product_id, product_name, product_slug, image_url, unit_price_micros, quantity, line_total_micros)`)
       .eq("id", id)
       .maybeSingle(),
   );

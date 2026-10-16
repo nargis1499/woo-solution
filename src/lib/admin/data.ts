@@ -17,7 +17,7 @@ import type { AdminStats, Category, MediaRef, MenuItem, MenuLocation, Order, Ord
  */
 
 const PRODUCT_COLUMNS =
-  "id, category_id, name, slug, description, price_cents, compare_at_price_cents, image_url, stock, is_active, is_featured, created_at, updated_at, category:categories(id, name, slug)";
+  "id, category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, stock, is_active, is_featured, created_at, updated_at, category:categories(id, name, slug)";
 
 /** Media-library embeds (main image + ordered gallery). Only used where the form needs them. */
 const PRODUCT_MEDIA_COLUMNS = `${PRODUCT_COLUMNS}, image_media_id, image_media:media!products_image_media_id_fkey(${MEDIA_REF_COLUMNS}), gallery:product_media(media_id, position, media(${MEDIA_REF_COLUMNS}))`;
@@ -270,7 +270,7 @@ export async function adminGetOrder(id: string): Promise<Order | null> {
   const { data, error } = await withOrderColumns((columns) =>
     supabase
       .from("orders")
-      .select(`${columns}, order_items(id, order_id, product_id, product_name, product_slug, image_url, unit_price_cents, quantity, line_total_cents)`)
+      .select(`${columns}, order_items(id, order_id, product_id, product_name, product_slug, image_url, unit_price_micros, quantity, line_total_micros)`)
       .eq("id", id)
       .maybeSingle(),
   );
@@ -281,7 +281,7 @@ export async function adminGetOrder(id: string): Promise<Order | null> {
 
 // ─── Users ──────────────────────────────────────────────────────────────────
 
-export type ProfileWithOrders = Profile & { order_count: number; total_spent_cents: number; orders?: Order[] };
+export type ProfileWithOrders = Profile & { order_count: number; total_spent_micros: number; orders?: Order[] };
 
 export type UserListOptions = PageRequest & { q?: string };
 
@@ -314,19 +314,19 @@ export async function adminListUsers(options: UserListOptions = {}): Promise<Lis
   if (profiles.length) {
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
-      .select("user_id, total_cents, status")
+      .select("user_id, total_micros, status")
       .in("user_id", profiles.map((p) => p.id));
     if (ordersError) throw new Error(`Failed to load users: ${ordersError.message}`);
-    for (const o of (orders ?? []) as { user_id: string; total_cents: number; status: OrderStatus }[]) {
+    for (const o of (orders ?? []) as { user_id: string; total_micros: number; status: OrderStatus }[]) {
       const t = totals.get(o.user_id) ?? { count: 0, spent: 0 };
       t.count += 1;
-      if (o.status !== "cancelled") t.spent += o.total_cents;
+      if (o.status !== "cancelled") t.spent += o.total_micros;
       totals.set(o.user_id, t);
     }
   }
 
   return {
-    items: profiles.map((p) => ({ ...p, order_count: totals.get(p.id)?.count ?? 0, total_spent_cents: totals.get(p.id)?.spent ?? 0 })),
+    items: profiles.map((p) => ({ ...p, order_count: totals.get(p.id)?.count ?? 0, total_spent_micros: totals.get(p.id)?.spent ?? 0 })),
     total,
     page,
     perPage,
@@ -350,7 +350,7 @@ export async function adminGetUser(id: string): Promise<ProfileWithOrders | null
     ...(data as Profile),
     orders,
     order_count: orders.length,
-    total_spent_cents: orders.filter((o) => o.status !== "cancelled").reduce((n, o) => n + o.total_cents, 0),
+    total_spent_micros: orders.filter((o) => o.status !== "cancelled").reduce((n, o) => n + o.total_micros, 0),
   };
 }
 

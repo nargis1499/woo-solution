@@ -6,7 +6,7 @@ import { pageCount } from "@/lib/pagination";
 import type { Category, Product } from "@/lib/types";
 
 const PRODUCT_COLUMNS =
-  "id, category_id, name, slug, description, price_cents, compare_at_price_cents, image_url, stock, is_active, is_featured, created_at, category:categories(id, name, slug)";
+  "id, category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, stock, is_active, is_featured, created_at, category:categories(id, name, slug)";
 
 /** Product page: main image alt text + the ordered gallery from the media library. */
 const PRODUCT_DETAIL_COLUMNS = `${PRODUCT_COLUMNS}, image_media_id, image_media:media!products_image_media_id_fkey(${MEDIA_REF_COLUMNS}), gallery:product_media(media_id, position, media(${MEDIA_REF_COLUMNS}))`;

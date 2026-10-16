@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PackageIcon, PlusIcon } from "lucide-react";
 import { adminListCategories, adminListProducts } from "@/lib/admin/data";
-import { getSiteSettings } from "@/lib/site-settings";
+import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatMoney, moneyFromSettings } from "@/lib/money";
@@ -27,7 +27,7 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
   const [{ items: products, total, page }, categories, settings] = await Promise.all([
     adminListProducts({ ...filters, page: requestedPage, perPage }),
     adminListCategories(),
-    getSiteSettings(),
+    getSiteSettingsFresh(),
   ]);
   const manageStock = settings.manage_stock;
   const money = moneyFromSettings(settings);
@@ -107,9 +107,9 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
               </div>,
               p.category?.name ?? "—",
               <span key="price">
-                {formatMoney(p.price_cents, money)}
-                {p.compare_at_price_cents != null && p.compare_at_price_cents > p.price_cents && (
-                  <span className="ml-1 text-xs text-muted-foreground line-through">{formatMoney(p.compare_at_price_cents, money)}</span>
+                {formatMoney(p.price_micros, money)}
+                {p.compare_at_price_micros != null && p.compare_at_price_micros > p.price_micros && (
+                  <span className="ml-1 text-xs text-muted-foreground line-through">{formatMoney(p.compare_at_price_micros, money)}</span>
                 )}
               </span>,
               ...(manageStock

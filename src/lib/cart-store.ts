@@ -9,7 +9,7 @@ export type CartItem = {
   productId: string;
   slug: string;
   name: string;
-  priceCents: number;
+  priceMicros: number;
   imageUrl: string | null;
   /** Units available when stock is managed; null = unlimited (Settings → WooCommerce → stock management off) */
   stock: number | null;
@@ -71,8 +71,17 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: "woo-solution-cart",
+      // v1 stored `priceCents`; v2 stores `priceMicros` (1 USD = 1,000,000) – a cart saved by
+      // an older release is scaled up here instead of being read as a fraction of the price.
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ items: state.items }),
+      migrate: (persisted) => {
+        const old = persisted as { items?: (Omit<CartItem, "priceMicros"> & { priceMicros?: number; priceCents?: number })[] } | undefined;
+        return {
+          items: (old?.items ?? []).map((item) => ({ ...item, priceMicros: item.priceMicros ?? (item.priceCents ?? 0) * 10_000 })) as CartItem[],
+        } as CartState;
+      },
     },
   ),
 );
@@ -81,7 +90,7 @@ export const selectCartCount = (state: CartState) =>
   state.items.reduce((n, i) => n + i.quantity, 0);
 
 export const selectCartSubtotal = (state: CartState) =>
-  state.items.reduce((n, i) => n + i.quantity * i.priceCents, 0);
+  state.items.reduce((n, i) => n + i.quantity * i.priceMicros, 0);
 
 const noopSubscribe = () => () => {};
 

@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { saveProduct, type AdminFormState } from "@/app/nemesis/actions";
-import { CURRENCIES, centsToInput, toDisplayCents } from "@/lib/money";
+import { CURRENCIES, DEFAULT_PRICE_MICROS, inputFromMicros } from "@/lib/money";
 import type { Category, Product } from "@/lib/types";
 import { useMoney } from "@/components/money-provider";
 import { LinkButton } from "@/components/ui/button";
@@ -45,13 +45,13 @@ export function ProductForm({
 
   const gallery = (product?.gallery ?? []).flatMap((g) => (g.media ? [g.media] : []));
 
-  // Prices are stored in USD cents and shown in the store currency (Settings → WooCommerce).
+  // Prices are stored in USD micros and shown in the store currency (Settings → WooCommerce).
   // The form tells the action which currency/rate it displayed, and what it displayed, so
   // untouched prices are stored back exactly and edited ones are converted with the same rate.
   const money = useMoney();
   const symbol = CURRENCIES[money.currency].symbol;
-  const priceShown = product ? centsToInput(toDisplayCents(product.price_cents, money)) : "";
-  const compareAtShown = product?.compare_at_price_cents != null ? centsToInput(toDisplayCents(product.compare_at_price_cents, money)) : "";
+  const priceShown = product ? inputFromMicros(product.price_micros, money) : "";
+  const compareAtShown = product?.compare_at_price_micros != null ? inputFromMicros(product.compare_at_price_micros, money) : "";
 
   return (
     <form action={formAction} className="grid gap-6 lg:grid-cols-[1fr_340px]" noValidate>
@@ -124,7 +124,7 @@ export function ProductForm({
                       id="price"
                       name="price"
                       inputMode="decimal"
-                      placeholder={centsToInput(toDisplayCents(1999, money))}
+                      placeholder={inputFromMicros(DEFAULT_PRICE_MICROS, money)}
                       required
                       defaultValue={v.price ?? priceShown}
                       aria-invalid={Boolean(err.price) || undefined}

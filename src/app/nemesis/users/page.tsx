@@ -81,7 +81,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
               </div>,
               u.is_admin ? <ToneBadge key="r" tone="brand">Admin</ToneBadge> : <ToneBadge key="r">Customer</ToneBadge>,
               u.order_count,
-              formatMoney(u.total_spent_cents, money),
+              formatMoney(u.total_spent_micros, money),
               formatDate(u.created_at),
               <div key="a" className="flex items-center justify-end gap-2">
                 <Link href={detailHref(u.id)} className={buttonVariants({ variant: "outline", size: "sm" })}>

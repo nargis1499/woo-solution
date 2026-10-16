@@ -6,7 +6,7 @@ import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { HOME_FILTER_TITLE_MAX } from "@/lib/home-sections";
-import { MAX_EXCHANGE_RATE, USD_MONEY, centsToInput, formatExchangeRate, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseCents, toDisplayCents, type Money } from "@/lib/money";
+import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, formatExchangeRate, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
 import { MENU_TAG } from "@/lib/menu";
 import type { OrderStatus, PaymentStatus } from "@/lib/types";
 import {
@@ -66,8 +66,8 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   const money = formMoney(formData);
   const priceInput = str(formData, "price", 20);
   const compareAtInput = str(formData, "compare_at_price", 20);
-  const priceDisplayCents = parseMoneyInput(priceInput);
-  const compareAtDisplayCents = parseMoneyInput(compareAtInput);
+  const priceDisplayMicros = parseMoneyInput(priceInput);
+  const compareAtDisplayMicros = parseMoneyInput(compareAtInput);
   const stock = Number(str(formData, "stock", 10) || "0");
   const isActive = bool(formData, "is_active");
   const isFeatured = bool(formData, "is_featured");
@@ -78,8 +78,8 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
 
   if (!name) fieldErrors.name = "Name is required.";
   if (!SLUG_RE.test(slug)) fieldErrors.slug = "Use lowercase letters, numbers and dashes only.";
-  if (priceDisplayCents === null || Number.isNaN(priceDisplayCents)) fieldErrors.price = `Enter a valid price, e.g. ${centsToInput(toDisplayCents(1999, money))}.`;
-  if (Number.isNaN(compareAtDisplayCents)) fieldErrors.compare_at_price = "Enter a valid price or leave empty.";
+  if (priceDisplayMicros === null || Number.isNaN(priceDisplayMicros)) fieldErrors.price = `Enter a valid price, e.g. ${inputFromMicros(DEFAULT_PRICE_MICROS, money)}.`;
+  if (Number.isNaN(compareAtDisplayMicros)) fieldErrors.compare_at_price = "Enter a valid price or leave empty.";
   if (!Number.isInteger(stock) || stock < 0) fieldErrors.stock = "Stock must be a whole number ≥ 0.";
   if (categoryId && !UUID_RE.test(categoryId)) fieldErrors.category_id = "Invalid category.";
   if (!["keep", "media", "url", "remove"].includes(imageMode)) fieldErrors.image_media_id = "Invalid image selection.";
@@ -92,17 +92,18 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   try {
     const { supabase } = await adminClient();
 
-    // Prices the admin did not touch keep their stored USD cents exactly – converting the
-    // displayed BDT amount back could otherwise drift by a cent. Edited ones are converted.
-    let priceCents = toBaseCents(priceDisplayCents as number, money);
-    let compareAtCents = compareAtDisplayCents === null ? null : toBaseCents(compareAtDisplayCents, money);
+    // Prices the admin did not touch keep their stored USD micros exactly; edited ones are
+    // converted back with the same rate the form displayed (a whole ৳ amount survives that
+    // round trip because the base unit is a ten-thousandth of a cent).
+    let priceMicros = toBaseMicros(priceDisplayMicros as number, money);
+    let compareAtMicros = compareAtDisplayMicros === null ? null : toBaseMicros(compareAtDisplayMicros, money);
     if (isEdit) {
-      const { data: current, error } = await supabase.from("products").select("id, price_cents, compare_at_price_cents").eq("id", id).maybeSingle();
+      const { data: current, error } = await supabase.from("products").select("id, price_micros, compare_at_price_micros").eq("id", id).maybeSingle();
       if (error) throw error;
       if (!current) return { error: "This product no longer exists.", values };
       const shown = { price: str(formData, "price_shown", 20), compareAt: str(formData, "compare_at_price_shown", 20) };
-      if (shown.price && priceInput === shown.price) priceCents = current.price_cents as number;
-      if (compareAtInput === shown.compareAt) compareAtCents = (current.compare_at_price_cents as number | null) ?? compareAtCents;
+      if (shown.price && priceInput === shown.price) priceMicros = current.price_micros as number;
+      if (compareAtInput === shown.compareAt) compareAtMicros = (current.compare_at_price_micros as number | null) ?? compareAtMicros;
     }
 
     // ── resolve media-library references (must exist, be images, not trashed) ──
@@ -141,8 +142,8 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       slug,
       description: description || null,
       category_id: categoryId || null,
-      price_cents: priceCents,
-      compare_at_price_cents: compareAtCents,
+      price_micros: priceMicros,
+      compare_at_price_micros: compareAtMicros,
       stock,
       is_active: isActive,
       is_featured: isFeatured,

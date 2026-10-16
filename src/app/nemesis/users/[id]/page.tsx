@@ -48,7 +48,7 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <StatCard label="Orders" value={profile.order_count} />
-            <StatCard label="Total spent" value={formatMoney(profile.total_spent_cents, money)} hint="Excluding cancelled orders" />
+            <StatCard label="Total spent" value={formatMoney(profile.total_spent_micros, money)} hint="Excluding cancelled orders" />
           </div>
           <Section title="Orders" flush>
             {profile.orders && profile.orders.length > 0 ? (
@@ -60,7 +60,7 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
                     </Link>
                     <span className="text-muted-foreground">{formatDate(o.created_at)}</span>
                     <OrderStatusBadge status={o.status} />
-                    <span className="ml-auto font-medium tabular-nums">{formatMoney(o.total_cents, orderMoney(o))}</span>
+                    <span className="ml-auto font-medium tabular-nums">{formatMoney(o.total_micros, orderMoney(o))}</span>
                   </li>
                 ))}
               </ul>

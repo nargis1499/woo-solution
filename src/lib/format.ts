@@ -1,4 +1,4 @@
-// Money formatting lives in src/lib/money.ts (formatMoney / formatCents) – it depends on
+// Money formatting lives in src/lib/money.ts (formatMoney / formatMinor) – it depends on
 // the store currency chosen in Settings → WooCommerce.
 
 export function formatDate(iso: string): string {

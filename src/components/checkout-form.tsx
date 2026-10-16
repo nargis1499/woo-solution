@@ -176,12 +176,12 @@ export function CheckoutForm({ user }: { user: CurrentUser }) {
                   <p className="truncate leading-snug font-medium">{item.name}</p>
                   <p className="text-muted-foreground">× {item.quantity}</p>
                 </div>
-                <p className="font-medium tabular-nums">{formatPrice(item.priceCents * item.quantity)}</p>
+                <p className="font-medium tabular-nums">{formatPrice(item.priceMicros * item.quantity)}</p>
               </li>
             ))}
           </ul>
           <Separator className="my-4" />
-          <CartTotals subtotalCents={subtotal} note={false} />
+          <CartTotals subtotalMicros={subtotal} note={false} />
         </CardContent>
         <CardFooter className="flex-col gap-3">
           {error && (

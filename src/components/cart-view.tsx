@@ -60,9 +60,9 @@ export function CartView({ manageStock = true }: { manageStock?: boolean }) {
                     <Link href={`/products/${item.slug}`} className="font-medium hover:text-primary">
                       {item.name}
                     </Link>
-                    <p className="text-sm text-muted-foreground">{formatPrice(item.priceCents)} each</p>
+                    <p className="text-sm text-muted-foreground">{formatPrice(item.priceMicros)} each</p>
                   </div>
-                  <p className="font-semibold tabular-nums">{formatPrice(item.priceCents * item.quantity)}</p>
+                  <p className="font-semibold tabular-nums">{formatPrice(item.priceMicros * item.quantity)}</p>
                 </div>
                 <div className="mt-auto flex items-center justify-between gap-4">
                   <QuantityInput size="sm" value={item.quantity} max={manageStock ? (item.stock ?? undefined) : undefined} onChange={(q) => setQuantity(item.productId, q)} />
@@ -90,7 +90,7 @@ export function CartView({ manageStock = true }: { manageStock?: boolean }) {
           <CardTitle>Cart totals</CardTitle>
         </CardHeader>
         <CardContent>
-          <CartTotals subtotalCents={subtotal} />
+          <CartTotals subtotalMicros={subtotal} />
         </CardContent>
         <CardFooter className="flex-col gap-3">
           <LinkButton href="/checkout" size="lg" className="w-full">

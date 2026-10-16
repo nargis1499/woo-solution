@@ -109,6 +109,23 @@ export async function getSiteSettings(): Promise<SiteSettings> {
   }
 }
 
+/**
+ * The same row, read on **every request** – the admin area uses this so a currency or
+ * stock-management switch is visible the moment it is saved: `getSiteSettings()` is tagged
+ * and its prerendered shells are refreshed in the background, which can serve the previous
+ * revision for a few seconds (stale-while-revalidate). Admin pages are dynamic anyway.
+ */
+export async function getSiteSettingsFresh(): Promise<SiteSettings> {
+  try {
+    const supabase = createPublicClient();
+    const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
+    if (error || !data) return DEFAULT_SITE_SETTINGS;
+    return normaliseSiteSettings(data as Record<string, unknown>);
+  } catch {
+    return DEFAULT_SITE_SETTINGS;
+  }
+}
+
 /** The display currency + rate for server components (`<MoneyProvider>` covers the client side). */
 export async function getMoney(): Promise<Money> {
   return moneyFromSettings(await getSiteSettings());

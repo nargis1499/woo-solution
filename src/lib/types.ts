@@ -40,8 +40,8 @@ export type Product = {
   name: string;
   slug: string;
   description: string | null;
-  price_cents: number;
-  compare_at_price_cents: number | null;
+  price_micros: number;
+  compare_at_price_micros: number | null;
   image_url: string | null;
   /** Media-library file behind `image_url` (null for external URLs / legacy uploads). */
   image_media_id?: string | null;
@@ -166,9 +166,9 @@ export type OrderItem = {
   product_name: string;
   product_slug: string | null;
   image_url: string | null;
-  unit_price_cents: number;
+  unit_price_micros: number;
   quantity: number;
-  line_total_cents: number;
+  line_total_micros: number;
 };
 
 export type Order = {
@@ -178,13 +178,13 @@ export type Order = {
   status: OrderStatus;
   payment_method: string;
   payment_status: "unpaid" | "paid" | "refunded";
-  /** Currency the customer saw at checkout; amounts below are USD cents × `exchange_rate` for display */
+  /** Currency the customer saw at checkout; amounts below are USD micros × `exchange_rate` for display */
   currency: string;
   /** USD → `currency` rate stamped at checkout (1 for USD; missing before migration 12) */
   exchange_rate?: number | string | null;
-  subtotal_cents: number;
-  shipping_cents: number;
-  total_cents: number;
+  subtotal_micros: number;
+  shipping_micros: number;
+  total_micros: number;
   customer_email: string | null;
   shipping_name: string;
   shipping_phone: string | null;
@@ -257,7 +257,7 @@ export type SiteSettings = {
   seo_twitter: string | null;
   // WooCommerce
   manage_stock: boolean;
-  /** Display currency (prices are stored in USD cents – see src/lib/money.ts) */
+  /** Display currency (prices are stored in USD micros – see src/lib/money.ts) */
   currency: CurrencyCode;
   /** 1 USD = this many BDT; required while currency = BDT */
   usd_to_bdt_rate: number | null;
@@ -276,8 +276,8 @@ export type SettingsMedia = { favicon: MediaRef | null; share_image: MediaRef | 
 
 /** Shape returned by the `admin_stats()` SQL function. */
 export type AdminStats = {
-  revenue_cents: number;
-  revenue_30d_cents: number;
+  revenue_micros: number;
+  revenue_30d_micros: number;
   orders_total: number;
   orders_30d: number;
   orders_pending: number;

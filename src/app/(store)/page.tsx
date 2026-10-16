@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ArrowRightIcon, SparklesIcon } from "lucide-react";
 import { getCategories, getProducts } from "@/lib/data/products";
-import { FREE_SHIPPING_THRESHOLD_CENTS } from "@/lib/config";
+import { FREE_SHIPPING_THRESHOLD_MICROS } from "@/lib/config";
 import { getSiteSettings } from "@/lib/site-settings";
 import { canonicalFor } from "@/lib/seo";
 import { formatMoney, moneyFromSettings } from "@/lib/money";
@@ -39,7 +39,7 @@ export default async function HomePage() {
         </Badge>
         <h1 className="max-w-2xl text-4xl font-bold tracking-tight sm:text-5xl">Everything you love about {store_name}, now faster.</h1>
         <p className="mt-4 max-w-xl text-lg text-primary-foreground/80">
-          Browse the catalog, add to your cart and check out in seconds. Free shipping on orders over {formatMoney(FREE_SHIPPING_THRESHOLD_CENTS, moneyFromSettings(settings))}.
+          Browse the catalog, add to your cart and check out in seconds. Free shipping on orders over {formatMoney(FREE_SHIPPING_THRESHOLD_MICROS, moneyFromSettings(settings))}.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link href="/shop" className={cn(buttonVariants({ size: "lg" }), "bg-background text-foreground hover:bg-background/90")}>

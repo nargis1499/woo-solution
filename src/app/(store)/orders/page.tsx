@@ -76,7 +76,7 @@ async function OrdersList() {
               </span>,
               <OrderStatusBadge key="s" status={order.status} />,
               <span key="t">
-                <span className="font-medium tabular-nums">{formatMoney(order.total_cents, orderMoney(order))}</span>
+                <span className="font-medium tabular-nums">{formatMoney(order.total_micros, orderMoney(order))}</span>
                 <span className="text-muted-foreground">
                   {" "}
                   for {itemCount} {itemCount === 1 ? "item" : "items"}

@@ -1,11 +1,18 @@
 /**
- * Money: one base currency in the database, one display currency for people.
+ * Money: one base unit in the database, one currency for people.
  *
- * Every amount in `products`, `orders` and the cart is a **USD cent** (the base
- * currency). Settings → WooCommerce → Currency picks what customers and admins see:
- * USD shows the base amounts, BDT shows base × the USD→BDT rate. Prices typed into
- * the admin while BDT is selected are converted back to USD cents before they are
- * stored, so switching the currency never rewrites the catalogue.
+ * Every amount in `products`, `orders`, `order_items` and the cart is an integer number of
+ * **micro-dollars** – the base unit: 1 USD = 1,000,000 micros, so 1 cent = 10,000 micros and
+ * a micro is a ten-thousandth of a cent. Settings → WooCommerce → Currency decides what people
+ * see: USD shows the base amount in cents, BDT shows base × the USD→BDT rate in poisha. Prices
+ * typed into the admin while BDT is selected are converted back to micros before they are
+ * stored, so switching currency never rewrites the catalogue – and the taka amount the admin
+ * typed is still the exact amount that comes back.
+ *
+ * A whole *cent* is too coarse for that. At a rate of 120 one cent is 1.20 ৳, so 100 ৳ would
+ * have to be stored as 83 ¢ and would read back as 99.60 ৳ (and 1 ৳ as 1.20 ৳). A micro-dollar
+ * is 0.00012 ৳ at the same rate, so any amount an admin can type round-trips exactly while it
+ * stays a safe JavaScript integer (Postgres columns are `bigint`, good for ~$9,000,000).
  *
  * Pure helpers – shared by server components, actions and client components.
  */
@@ -14,6 +21,12 @@ import type { SiteSettings } from "@/lib/types";
 export type CurrencyCode = "USD" | "BDT";
 
 export const BASE_CURRENCY: CurrencyCode = "USD";
+
+/** Base unit: 1 USD = 1,000,000 micros (1 cent = 10,000 micros). */
+export const MICROS_PER_USD = 1_000_000;
+export const MICROS_PER_CENT = 10_000;
+/** Every base ↔ display conversion divides by this: micros × rate ÷ 10,000 = cents/poisha. */
+const DISPLAY_DIVISOR = MICROS_PER_CENT;
 
 export const CURRENCIES: Record<CurrencyCode, { code: CurrencyCode; symbol: string; name: string; label: string }> = {
   USD: { code: "USD", symbol: "$", name: "US dollar", label: "USD ($)" },
@@ -30,8 +43,16 @@ export type Money = { currency: CurrencyCode; rate: number };
 
 export const USD_MONEY: Money = { currency: "USD", rate: 1 };
 
+/** The price the admin forms show as a placeholder/example: $19.99 in base micros. */
+export const DEFAULT_PRICE_MICROS = usdMicros(19.99);
+
 export function isCurrencyCode(value: unknown): value is CurrencyCode {
   return typeof value === "string" && value in CURRENCIES;
+}
+
+/** Whole dollars → base micros, for constants and seeds ("$5.00" → 5000000). */
+export function usdMicros(usd: number): number {
+  return Math.round(usd * MICROS_PER_USD);
 }
 
 /**
@@ -51,37 +72,43 @@ export function orderMoney(order: { currency: string; exchange_rate?: number | s
   return USD_MONEY;
 }
 
-/** Base (USD) cents → cents of the display currency. */
-export function toDisplayCents(baseCents: number, money: Money): number {
-  return money.currency === BASE_CURRENCY ? baseCents : Math.round(baseCents * money.rate);
+/** Base micros → minor units of the display currency (cents for USD, poisha for BDT). */
+export function toDisplayMinor(micros: number, money: Money): number {
+  return Math.round((Number(micros) * money.rate) / DISPLAY_DIVISOR);
 }
 
-/** Cents of the display currency → base (USD) cents. */
-export function toBaseCents(displayCents: number, money: Money): number {
-  return money.currency === BASE_CURRENCY ? displayCents : Math.round(displayCents / money.rate);
+/** Minor units of the display currency → base micros (the inverse of `toDisplayMinor`). */
+export function toBaseMicros(minor: number, money: Money): number {
+  const micros = money.currency === BASE_CURRENCY ? minor * DISPLAY_DIVISOR : Math.round((minor * DISPLAY_DIVISOR) / money.rate);
+  return Number(micros);
 }
 
 /**
- * "$1,234.56" / "৳1,234.56" / "-$5.00" – fixed en-US digit grouping with the currency's
- * own symbol, identical on the server and in the browser (no locale-dependent output).
+ * "1,234.56" / "-5.00" – fixed en-US digit grouping, identical on the server and in the
+ * browser (no locale-dependent output). `minor` is in the currency's minor unit.
  */
-export function formatCents(displayCents: number, currency: CurrencyCode): string {
-  const sign = displayCents < 0 ? "-" : "";
-  const amount = (Math.abs(displayCents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export function formatMinor(minor: number, currency: CurrencyCode): string {
+  const sign = minor < 0 ? "-" : "";
+  const amount = (Math.abs(minor) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${sign}${CURRENCIES[currency].symbol}${amount}`;
 }
 
-/** Base (USD) cents → formatted amount in the display currency. */
-export function formatMoney(baseCents: number, money: Money = USD_MONEY): string {
-  return formatCents(toDisplayCents(baseCents, money), money.currency);
+/** Base micros → "$1,234.56" / "৳148,147.20" in the given display currency. */
+export function formatMoney(micros: number, money: Money = USD_MONEY): string {
+  return formatMinor(toDisplayMinor(micros, money), money.currency);
 }
 
-/** Cents → the plain number an `<input>` holds ("19.99"). */
-export function centsToInput(cents: number): string {
-  return (cents / 100).toFixed(2);
+/** Minor units → the plain number an `<input>` holds ("19.99"). */
+export function minorToInput(minor: number): string {
+  return (minor / 100).toFixed(2);
 }
 
-/** "19.99" / "1,299" → cents; null when empty, NaN when not a non-negative number. */
+/** Base micros → the string the admin price inputs hold ("2398.80" with BDT at 120). */
+export function inputFromMicros(micros: number, money: Money): string {
+  return minorToInput(toDisplayMinor(micros, money));
+}
+
+/** "19.99" / "1,299" → minor units; null when empty, NaN when not a non-negative number. */
 export function parseMoneyInput(value: string): number | null {
   if (!value.trim()) return null;
   const cleaned = value.replace(/[^0-9.,-]/g, "").replace(/,(?=\d{3}(\D|$))/g, "").replace(",", ".");

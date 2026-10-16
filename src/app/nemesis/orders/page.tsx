@@ -85,7 +85,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
                   <p className="mt-1 text-xs text-muted-foreground uppercase">{o.payment_method}</p>
                 </div>,
                 <div key="t">
-                  <span className="font-medium">{formatMoney(o.total_cents, orderMoney(o))}</span>
+                  <span className="font-medium">{formatMoney(o.total_micros, orderMoney(o))}</span>
                   <p className="text-xs text-muted-foreground">
                     {items} {items === 1 ? "item" : "items"}
                   </p>

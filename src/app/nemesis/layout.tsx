@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { Suspense, type ReactNode } from "react";
 import { requireAdmin } from "@/lib/admin/auth";
-import { getSiteSettings } from "@/lib/site-settings";
+import { getSiteSettingsFresh } from "@/lib/site-settings";
+import { moneyFromSettings } from "@/lib/money";
+import { MoneyProvider } from "@/components/money-provider";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminSidebar } from "@/components/admin/app-sidebar";
 import { FlashToast } from "@/components/admin/flash-toast";
@@ -41,18 +43,24 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 }
 
 async function AdminGate({ children }: { children: ReactNode }) {
-  const [user, cookieStore, { store_name }] = await Promise.all([requireAdmin(), cookies(), getSiteSettings()]);
+  const [user, cookieStore, settings] = await Promise.all([requireAdmin(), cookies(), getSiteSettingsFresh()]);
+  const { store_name } = settings;
+  const money = moneyFromSettings(settings);
   // The sidebar component persists its open/collapsed state in this cookie.
   const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
 
   return (
-    <SidebarProvider defaultOpen={defaultOpen}>
-      <AdminSidebar user={user} storeName={store_name} />
-      <SidebarInset>
-        <AdminHeader />
-        <div className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">{children}</div>
-      </SidebarInset>
-    </SidebarProvider>
+    // Fresh per-request currency for the client components below (the admin price fields read it),
+    // overriding the cached value the root layout provides for the storefront.
+    <MoneyProvider money={money}>
+      <SidebarProvider defaultOpen={defaultOpen}>
+        <AdminSidebar user={user} storeName={store_name} />
+        <SidebarInset>
+          <AdminHeader />
+          <div className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">{children}</div>
+        </SidebarInset>
+      </SidebarProvider>
+    </MoneyProvider>
   );
 }
 

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { adminGetProduct, adminListCategories } from "@/lib/admin/data";
-import { getSiteSettings } from "@/lib/site-settings";
+import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { moneyFromSettings } from "@/lib/money";
 import { formatDate } from "@/lib/format";
 import { deleteProduct } from "@/app/nemesis/actions";
@@ -16,7 +16,7 @@ export default async function EditProductPage({ params, searchParams }: { params
   const [{ id }, { from }] = await Promise.all([params, searchParams]);
   // Back / Cancel / after-save all return to the exact list page the admin came from.
   const backHref = safeListReturn(from, "/nemesis/products") ?? "/nemesis/products";
-  const [product, categories, settings] = await Promise.all([adminGetProduct(id), adminListCategories(), getSiteSettings()]);
+  const [product, categories, settings] = await Promise.all([adminGetProduct(id), adminListCategories(), getSiteSettingsFresh()]);
   if (!product) notFound();
   const money = moneyFromSettings(settings);
   // The router keeps visited pages mounted; a changed product (or currency) must remount the

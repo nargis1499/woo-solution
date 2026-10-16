@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { adminGetOrder } from "@/lib/admin/data";
-import { getSiteSettings } from "@/lib/site-settings";
+import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
 import { deleteOrder } from "@/app/nemesis/actions";
@@ -19,7 +19,7 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
   const [{ id }, { from }] = await Promise.all([params, searchParams]);
   // Back + delete return to the exact list page (page / size / filter) the admin came from.
   const backHref = safeListReturn(from, "/nemesis/orders") ?? "/nemesis/orders";
-  const [order, { manage_stock }] = await Promise.all([adminGetOrder(id), getSiteSettings()]);
+  const [order, { manage_stock }] = await Promise.all([adminGetOrder(id), getSiteSettingsFresh()]);
   if (!order) notFound();
   const items = order.order_items ?? [];
 
@@ -49,7 +49,7 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{item.product_name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatMoney(item.unit_price_cents, orderMoney(order))} × {item.quantity}
+                      {formatMoney(item.unit_price_micros, orderMoney(order))} × {item.quantity}
                       {item.product_slug && (
                         <>
                           {" "}
@@ -61,7 +61,7 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
                       )}
                     </p>
                   </div>
-                  <p className="font-medium tabular-nums">{formatMoney(item.line_total_cents, orderMoney(order))}</p>
+                  <p className="font-medium tabular-nums">{formatMoney(item.line_total_micros, orderMoney(order))}</p>
                 </li>
               ))}
             </ul>
@@ -69,15 +69,15 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
             <dl className="space-y-1 px-6 py-4 text-sm">
               <div className="flex justify-between text-muted-foreground">
                 <dt>Subtotal</dt>
-                <dd className="tabular-nums">{formatMoney(order.subtotal_cents, orderMoney(order))}</dd>
+                <dd className="tabular-nums">{formatMoney(order.subtotal_micros, orderMoney(order))}</dd>
               </div>
               <div className="flex justify-between text-muted-foreground">
                 <dt>Shipping</dt>
-                <dd className="tabular-nums">{order.shipping_cents === 0 ? "Free" : formatMoney(order.shipping_cents, orderMoney(order))}</dd>
+                <dd className="tabular-nums">{order.shipping_micros === 0 ? "Free" : formatMoney(order.shipping_micros, orderMoney(order))}</dd>
               </div>
               <div className="flex justify-between border-t pt-2 text-base font-semibold">
                 <dt>Total</dt>
-                <dd className="tabular-nums">{formatMoney(order.total_cents, orderMoney(order))}</dd>
+                <dd className="tabular-nums">{formatMoney(order.total_micros, orderMoney(order))}</dd>
               </div>
             </dl>
           </Section>

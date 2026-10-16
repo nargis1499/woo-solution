@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRightIcon, BanknoteIcon, DollarSignIcon, PackageIcon, PlusIcon, ShoppingCartIcon, UsersIcon } from "lucide-react";
 import { adminGetLowStockProducts, adminGetRecentOrders, adminGetStats } from "@/lib/admin/data";
-import { getSiteSettings } from "@/lib/site-settings";
+import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, moneyFromSettings, orderMoney } from "@/lib/money";
 import { OrderStatusBadge } from "@/components/order-status-badge";
@@ -11,7 +11,7 @@ import { DataGrid } from "@/components/data-grid";
 import { PageHeader, Section, StatCard, Thumb, ToneBadge } from "@/components/admin/ui";
 
 export default async function AdminDashboardPage() {
-  const settings = await getSiteSettings();
+  const settings = await getSiteSettingsFresh();
   const manageStock = settings.manage_stock;
   const money = moneyFromSettings(settings); // base-currency totals shown in the store currency at today's rate
   const [stats, recentOrders, lowStock] = await Promise.all([
@@ -33,7 +33,7 @@ export default async function AdminDashboardPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Revenue" value={formatMoney(stats.revenue_cents, money)} hint={`${formatMoney(stats.revenue_30d_cents, money)} in the last 30 days`} icon={money.currency === "USD" ? <DollarSignIcon /> : <BanknoteIcon />} />
+        <StatCard label="Revenue" value={formatMoney(stats.revenue_micros, money)} hint={`${formatMoney(stats.revenue_30d_micros, money)} in the last 30 days`} icon={money.currency === "USD" ? <DollarSignIcon /> : <BanknoteIcon />} />
         <StatCard label="Orders" value={stats.orders_total} hint={`${stats.orders_30d} in the last 30 days · ${stats.orders_pending} pending`} icon={<ShoppingCartIcon />} />
         <StatCard label="Products" value={stats.products_total} hint={manageStock ? `${stats.products_active} active · ${stats.products_low_stock} low on stock` : `${stats.products_active} active · stock not tracked`} icon={<PackageIcon />} />
         <StatCard label="Customers" value={stats.customers_total} hint={`${stats.customers_30d} joined in the last 30 days`} icon={<UsersIcon />} />
@@ -93,7 +93,7 @@ export default async function AdminDashboardPage() {
                     <p className="truncate text-xs text-muted-foreground">{o.customer_email}</p>
                   </div>,
                   <OrderStatusBadge key="s" status={o.status} />,
-                  formatMoney(o.total_cents, orderMoney(o)),
+                  formatMoney(o.total_micros, orderMoney(o)),
                 ],
               }))}
             />
@@ -128,7 +128,7 @@ export default async function AdminDashboardPage() {
                     <Link href={`/nemesis/products/${p.id}`} className="block truncate text-sm font-medium hover:underline">
                       {p.name}
                     </Link>
-                    <p className="text-xs text-muted-foreground">{formatMoney(p.price_cents, money)}</p>
+                    <p className="text-xs text-muted-foreground">{formatMoney(p.price_micros, money)}</p>
                   </div>
                   <ToneBadge tone={p.stock === 0 ? "red" : "amber"}>{p.stock === 0 ? "Sold out" : `${p.stock} left`}</ToneBadge>
                 </li>

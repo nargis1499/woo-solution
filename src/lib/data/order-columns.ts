@@ -4,7 +4,7 @@
  * column fails, so `withOrderColumns` retries without it and such orders display as USD.
  */
 const BASE_ORDER_COLUMNS =
-  "id, order_number, user_id, status, payment_method, payment_status, currency, subtotal_cents, shipping_cents, total_cents, customer_email, shipping_name, shipping_phone, shipping_address_line1, shipping_address_line2, shipping_city, shipping_postal_code, shipping_country, notes, created_at";
+  "id, order_number, user_id, status, payment_method, payment_status, currency, subtotal_micros, shipping_micros, total_micros, customer_email, shipping_name, shipping_phone, shipping_address_line1, shipping_address_line2, shipping_city, shipping_postal_code, shipping_country, notes, created_at";
 
 export const ORDER_COLUMNS = `${BASE_ORDER_COLUMNS}, exchange_rate`;
 

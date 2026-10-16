@@ -7,7 +7,7 @@ import { Price } from "./price";
 import { ProductImage } from "./product-image";
 
 export function ProductCard({ product, priority, manageStock = true }: { product: Product; priority?: boolean; manageStock?: boolean }) {
-  const onSale = product.compare_at_price_cents != null && product.compare_at_price_cents > product.price_cents;
+  const onSale = product.compare_at_price_micros != null && product.compare_at_price_micros > product.price_micros;
 
   return (
     <Card className="group gap-0 overflow-hidden py-0 transition-[box-shadow,transform] duration-300 hover:-translate-y-0.5 hover:shadow-md">
@@ -31,7 +31,7 @@ export function ProductCard({ product, priority, manageStock = true }: { product
             {product.name}
           </Link>
         </h3>
-        <Price cents={product.price_cents} compareAtCents={product.compare_at_price_cents} className="mt-auto" />
+        <Price micros={product.price_micros} compareAtMicros={product.compare_at_price_micros} className="mt-auto" />
         <AddToCartButton product={product} size="sm" className="mt-2 w-full" manageStock={manageStock} />
       </CardContent>
     </Card>
