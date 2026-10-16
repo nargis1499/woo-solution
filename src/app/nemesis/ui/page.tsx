@@ -3,12 +3,14 @@ import { adminGetSiteSettings, adminListCategories, adminListMenuItems, adminLis
 import { isMenuLocation } from "@/lib/menu-config";
 import type { Category, MenuItem } from "@/lib/types";
 import { HomeSectionsForm } from "@/components/admin/home/home-sections-form";
+import { ThemeEditor } from "@/components/admin/extra/theme-editor";
 import { MenuEditor } from "@/components/admin/menu/menu-editor";
 import { PageHeader } from "@/components/admin/ui";
 import { UiTabs } from "@/components/admin/ui-tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { DEFAULT_THEME } from "@/lib/theme";
 
-export const metadata: Metadata = { title: "UI" };
+export const metadata: Metadata = { title: "Extra" };
 
 type SearchParams = Promise<{ tab?: string; location?: string }>;
 
@@ -30,9 +32,15 @@ export default async function AdminUiPage({ searchParams }: { searchParams: Sear
   if (menuData) [items, pages, categories] = menuData;
   else missingSchema = true;
 
+  // Extra → Theme Customization: the palette lives on the settings row; without the row
+  // (settings migration not run) the editor still opens on the template defaults.
+  const theme = settings
+    ? { light: settings.theme_light, dark: settings.theme_dark, gradients: settings.theme_gradients, sync: settings.theme_sync }
+    : DEFAULT_THEME;
+
   return (
     <>
-      <PageHeader title="UI" description="How the storefront looks and navigates. Changes go live immediately." />
+      <PageHeader title="Extra" description="How the storefront looks and navigates. Changes go live immediately." />
       <UiTabs
         panels={{
           menu: missingSchema ? (
@@ -61,6 +69,7 @@ export default async function AdminUiPage({ searchParams }: { searchParams: Sear
               )}
             </div>
           ),
+          extra: <ThemeEditor saved={theme} />,
         }}
       />
     </>

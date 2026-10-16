@@ -6,6 +6,7 @@ import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { HOME_FILTER_TITLE_MAX } from "@/lib/home-sections";
+import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradients } from "@/lib/theme";
 import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, formatExchangeRate, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
 import { MENU_TAG } from "@/lib/menu";
 import {
@@ -940,6 +941,52 @@ export async function updateHomeSections(_prev: AdminFormState, formData: FormDa
     });
     if (problem) return { error: problem, values };
     return { success: "Home page sections saved.", values };
+  } catch (e) {
+    return { error: friendlyError(e), values };
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Extra → Theme Customization
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Reads one of the theme JSON fields. Anything the colour helpers do not accept is dropped
+ * (the field simply keeps its template value), so a bad payload can never break the CSS.
+ */
+function parseThemeJson(raw: string): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Theme Customization (Extra tab): both palettes, the gradients and the sync switch
+ * in one save. Colours are validated here before they reach the database, and the
+ * whole page is refreshed with the new look.
+ */
+export async function updateTheme(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
+  const values = echo(formData);
+  try {
+    const light: ThemeColors = normaliseColors(parseThemeJson(str(formData, "theme_light", 20000)));
+    const darkInput: ThemeColors = normaliseColors(parseThemeJson(str(formData, "theme_dark", 20000)));
+    const gradients: ThemeGradients = normaliseGradients(parseThemeJson(str(formData, "theme_gradients", 20000)));
+    const sync = bool(formData, "theme_sync");
+
+    const problem = await saveSiteSettings({
+      theme_light: light,
+      // With "use the same colors for both modes" on, the dark palette mirrors the light one
+      // (stored, not just rendered, so switching the option off later keeps them in step).
+      theme_dark: sync ? light : darkInput,
+      theme_gradients: gradients,
+      theme_sync: sync,
+    });
+    if (problem) return { error: problem, values };
+    return { success: sync ? "Theme saved – both modes use the same colors." : "Theme saved.", values };
   } catch (e) {
     return { error: friendlyError(e), values };
   }

@@ -7,7 +7,7 @@ import {
   ExternalLinkIcon,
   FileTextIcon,
   GaugeIcon,
-  LayoutTemplateIcon,
+  PaintbrushIcon,
   LogOutIcon,
   PackageIcon,
   SettingsIcon,
@@ -44,7 +44,8 @@ export const ADMIN_NAV = [
   { href: "/nemesis/orders", label: "Orders", icon: ShoppingCartIcon },
   { href: "/nemesis/users", label: "Users", icon: UsersIcon },
   { href: "/nemesis/media", label: "Media", icon: ImagesIcon },
-  { href: "/nemesis/ui", label: "UI", icon: LayoutTemplateIcon },
+  // Extra (the UI page: Menu · Home page · Extra) – the navigation entry opens its own tab
+  { href: "/nemesis/ui?tab=extra", label: "Extra", icon: PaintbrushIcon },
   { href: "/nemesis/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -78,7 +79,9 @@ export function AdminSidebar({ user, storeName }: { user: CurrentUser; storeName
           <SidebarGroupContent>
             <SidebarMenu>
               {ADMIN_NAV.map(({ href, label, icon: Icon, exact }) => {
-                const active = exact ? pathname === href : pathname.startsWith(href);
+                // Hrefs carrying a query (?tab=extra) still highlight their own section
+                const path = href.split("?")[0];
+                const active = exact ? pathname === path : pathname.startsWith(path);
                 return (
                   <SidebarMenuItem key={href}>
                     <SidebarMenuButton href={href} isActive={active} tooltip={label} aria-current={active ? "page" : undefined} onPress={() => isMobile && setOpenMobile(false)}>

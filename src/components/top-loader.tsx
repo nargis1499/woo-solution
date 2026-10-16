@@ -2,6 +2,7 @@
 
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useThemeCustomization } from "@/components/theme/theme-customization";
 
 /**
  * Slim progress bar at the very top of the page while navigating between
@@ -11,6 +12,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *  - completes as soon as the pathname/search params change.
  */
 export function TopLoader() {
+  const { gradients } = useThemeCustomization();
+  const gradientBar = gradients.loader.enabled;
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [progress, setProgress] = useState(0);
@@ -75,9 +78,11 @@ export function TopLoader() {
 
   return (
     <div data-top-loader className="pointer-events-none fixed inset-x-0 top-0 z-[100] h-0.5" aria-hidden>
+      {/* colour / gradient come from Extra → Theme Customization */}
       <div
-        className="h-full bg-primary shadow-[0_0_8px_var(--color-primary)] transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none"
-        style={{ width: `${progress}%`, opacity: visible ? 1 : 0 }}
+        className="theme-loader h-full bg-[var(--loader)] shadow-[0_0_8px_var(--loader)] transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none"
+        style={{ width: `${progress}%`, opacity: visible ? 1 : 0, backgroundImage: gradientBar ? "var(--loader-image)" : undefined }}
+        data-gradient={gradientBar ? "1" : undefined}
       />
     </div>
   );

@@ -31,7 +31,7 @@ export default async function HomePage() {
   return (
     <div className="container-page space-y-14 py-10">
       {/* Hero – fully static, part of the prerendered shell */}
-      <section className="relative overflow-hidden rounded-2xl bg-primary px-6 py-16 text-primary-foreground sm:px-12 sm:py-24">
+      <section className="theme-hero relative overflow-hidden rounded-2xl px-6 py-16 sm:px-12 sm:py-24" data-testid="home-hero">
         <div className="pointer-events-none absolute -top-24 -right-24 size-96 rounded-full bg-white/10 blur-3xl" aria-hidden />
         <div className="pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-black/10 blur-3xl" aria-hidden />
         <Badge variant="secondary" className="mb-4 bg-white/15 text-primary-foreground hover:bg-white/15">

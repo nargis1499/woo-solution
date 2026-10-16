@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Suspense, type ReactNode } from "react";
 import { getMoney, getSiteSettings } from "@/lib/site-settings";
+import { ThemeCustomizationProvider } from "@/components/theme/theme-customization";
 import { buildSiteMetadata } from "@/lib/seo";
 import { MoneyProvider } from "@/components/money-provider";
 import { Providers } from "@/components/providers";
@@ -24,11 +25,20 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Cached + tagged like the metadata above: the store currency is part of the static shell
   // and flips the moment Settings → WooCommerce is saved.
-  const money = await getMoney();
+  const [money, settings] = await Promise.all([getMoney(), getSiteSettings()]);
+  // Extra → Theme Customization (light/dark palette + gradients) rides along in the same
+  // tagged settings row, so a save restyles the storefront on the next request.
+  const theme = {
+    light: settings.theme_light,
+    dark: settings.theme_dark,
+    gradients: settings.theme_gradients,
+    sync: settings.theme_sync,
+  };
   return (
     // suppressHydrationWarning: next-themes sets the `class`/`style` on <html> before React hydrates
     <html lang="en" className={`${inter.variable} h-full font-sans`} suppressHydrationWarning>
       <body className="flex min-h-full flex-col">
+        <ThemeCustomizationProvider theme={theme}>
         <Providers>
           <MoneyProvider money={money}>
             <Suspense fallback={null}>
@@ -39,6 +49,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <AppToaster />
           </MoneyProvider>
         </Providers>
+        </ThemeCustomizationProvider>
       </body>
     </html>
   );

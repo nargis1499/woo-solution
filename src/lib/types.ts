@@ -1,3 +1,4 @@
+import type { ThemeColors, ThemeGradients } from "@/lib/theme";
 import type { CurrencyCode } from "@/lib/money";
 // Hand-written row types that mirror `supabase/migrations/*_init.sql`.
 // Tip: once your schema grows, generate them instead:
@@ -308,6 +309,12 @@ export type SiteSettings = {
   home_show_filter: boolean;
   /** Heading above the filtered-products section; null = no heading */
   home_filter_title: string | null;
+  // Extra → Theme Customization (see src/lib/theme.ts)
+  theme_light: ThemeColors;
+  theme_dark: ThemeColors;
+  theme_gradients: ThemeGradients;
+  /** true = dark mode reuses the light palette */
+  theme_sync: boolean;
 };
 
 export type SiteSettingsRow = SiteSettings & { updated_at: string | null };

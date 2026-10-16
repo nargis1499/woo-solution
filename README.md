@@ -52,6 +52,8 @@ cp .env.example .env.local
    12. [`supabase/migrations/20261025000000_currency.sql`](supabase/migrations/20261025000000_currency.sql) – **Currency**: `site_settings.currency` (`USD` / `BDT`, default USD) + `site_settings.usd_to_bdt_rate`, and `orders.exchange_rate` so every order remembers the currency and rate it was placed with (`place_order()` stamps them). Amounts stay in the base unit (USD) – nothing in `products` or `orders` is rewritten; migration 13 below makes that unit a micro-dollar. Safe to run on an existing project
    13. [`supabase/migrations/20261026000000_money_micros.sql`](supabase/migrations/20261026000000_money_micros.sql) – **Price precision**: every money column becomes an integer number of **USD micro-dollars** (`1 USD = 1,000,000`, so a cent is 10,000) and is renamed `*_cents` → `*_micros` (`bigint`); existing amounts are multiplied by 10,000, so no price changes value. A whole cent is 1.20 ৳ at a rate of 120, which is why a taka price used to come back as 99.60 ৳ when you typed 100 ৳. Run it **together with the matching app release** – the two are not compatible with each other
    14. [`supabase/migrations/20261027000000_variations.sql`](supabase/migrations/20261027000000_variations.sql) – **Variable products**: `products.type` (`simple` / `variable`) + `products.sku`, `product_attributes` (name + option values per product), `product_variations` (SKU, regular / sale price, stock, image, enabled flag – one row per combination) with RLS, the `product_variations_sync_parent` trigger that keeps the parent's price / stock in step, `order_items.variation_id` / `variation_label`, a `place_order()` that checks and decrements the *variation* that was bought, and restocking on cancellation. Products without attributes stay exactly as they are – safe to run on an existing project
+   15. [`supabase/migrations/20261028000000_admin_stats_customers.sql`](supabase/migrations/20261028000000_admin_stats_customers.sql) – **Dashboard customer counts**: migration 13 re-created `admin_stats()` for the micro-dollar move and dropped `customers_total` / `customers_30d` on the way, so the dashboard card said *"undefined joined in the last 30 days"*. This re-creates the function with both keys back (nothing else changes). Safe to run on an existing project
+   16. [`supabase/migrations/20261029000000_theme.sql`](supabase/migrations/20261029000000_theme.sql) – **Theme customization**: `site_settings.theme_light` / `theme_dark` (per-mode colour overrides), `theme_gradients` (button / loading-bar / hero gradients) and `theme_sync` – all `jsonb` / `boolean` with defaults, so an existing site keeps its exact colours until an admin saves the Extra tab. Safe to run on an existing project
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -148,7 +150,7 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
 | Media | The Media Library – see [Media](#media) below: uploads, grid / list browsing, search, filters, folders, trash, bulk actions, image optimisation / WebP conversion / editing, alt text, usage tracking and the reusable **media picker** |
-| UI | **Menu** tab – see [Menus](#menus) below: build the storefront **header** and **footer** navigation from pages, categories and custom links, drag to reorder, edit link text, open in a new tab. **Home page** tab – see [Home page](#home-page) below: switch the home-page sections on and off, including a filtered product list with its own title |
+| Extra | Three tabs. **Menu** – see [Menus](#menus) below: build the storefront **header** and **footer** navigation from pages, categories and custom links, drag to reorder, edit link text, open in a new tab. **Home page** – see [Home page](#home-page) below: switch the home-page sections on and off, including a filtered product list with its own title. **Extra** – see [Theme customization](#theme-customization) below: colours and gradients for light **and** dark mode, presets, reset |
 | Settings | Three tabs – see [Settings](#settings) below: **General** (site title, tagline, support e-mail, WhatsApp, Telegram, favicon), **SEO** (search-engine visibility, site URL, title / meta description, share image, verification codes, X handle) and **WooCommerce** (global stock management switch, store currency USD / BDT + exchange rate) |
 
 The **Pages, Products, Orders and Users** lists are paginated: `?page=` + a **per-page** selector (10 / 20 / 50 / 100, top right of the table, `?per=`, remembered per admin in a cookie). Changing the size keeps the first visible row on screen, a new filter starts on page 1, a page that no longer exists redirects to the last one, and view / edit / delete bring you back to the exact page, size and filter you came from.
@@ -180,7 +182,7 @@ What the database does behind the form (migration 14):
 On the storefront the page of a variable product shows one dropdown per attribute instead of the plain price; the charged price (the sale price when the chosen variation has one, with its regular price struck through), the *Only N left in stock* / *Sold out* badge, the summary and the image follow the chosen combination, combinations that don't exist are marked *— unavailable* and disabled, and **Add to cart** stays disabled until a real, in-stock combination is picked. The shop card shows *Choose options* instead of *Add to cart* and lists *From <cheapest price>*. Every variation is its own cart line (`Blue / S` and `Red / S` sit next to each other with their own price and stock), cancelling an order restocks the variation that was bought, and both the storefront order page and the admin order page name the variation – `order_items` keeps `variation_id` *and* a copy of the label, so deleting a variation later never rewrites the history of an order.
 #### Menus
 
-`/nemesis/ui` → **Menu** manages the storefront navigation – **UI** sits directly above **Settings** in the sidebar and opens on its first tab, *Menu*.
+`/nemesis/ui` → **Menu** manages the storefront navigation – **Extra** sits directly above **Settings** in the sidebar (its own entry: `/nemesis/ui?tab=extra`) and the page opens on its first tab, *Menu*.
 
 - **Location** – switch between the **Header menu** (top of every page, also the mobile hamburger sheet) and the **Footer menu** (`?location=footer`). Each location is its own list.
 - **Add to menu** – pick a **page** (drafts are listed too, but stay hidden in the storefront until published), a **category**, or enter a **custom link** (link text + URL; a path on this site such as `/about`, a full `https://` address, `mailto:` or `tel:`; `javascript:` and friends are rejected) with an optional *open in a new tab*. Pages and categories already in the menu are left out of the pickers. New items join the end of the list.
@@ -197,6 +199,27 @@ On the storefront the page of a variable product shows one dropdown per attribut
 - **Filtered products** – the shop's category filter on the home page (off by default): a row of pills (*All* + every category in the admin's category order), a product count and the product grid. Switching a pill filters the grid instantly in the browser – no page change, no URL change. More than 12 products in the selected category → a pager (Previous · 1 2 3 · Next) under the grid that swaps the 12 cards in place and scrolls back to the top of the section; switching a pill starts again on page 1. **Section title** is the heading above the pills (optional, up to 80 characters, e.g. *Browse our products*); leave it empty for no heading.
 
 The settings live in `site_settings` (migration 11); the storefront reads them through the same tag-cached `getSiteSettings()` as the rest of the site, so a save invalidates the home page straight away. Switching every section off leaves only the hero.
+
+#### Theme customization
+
+`/nemesis/ui?tab=extra` → **Extra** restyles the whole store – storefront *and* dashboard – without touching code. The sidebar entry **Extra** (`/nemesis/ui?tab=extra`, directly above *Settings*) opens it.
+
+| Control | What it does |
+| --- | --- |
+| **Light / Dark toggle** | Edit either mode. *Editing Light mode* / *Editing Dark mode* tells you which one you are looking at, and the preview card follows it |
+| **Primary** | Links, badges, active states, focus rings – `--primary`, `--ring`, `--accent`, the sidebar accents and `--chart-1` follow it, and the readable text colour is derived from it |
+| **Secondary** | Secondary buttons, chips and muted surfaces (`--secondary` + its foreground) |
+| **Button** | Every primary button – *Add to cart*, *Buy now*, *Save changes*, *Checkout* (`--button`) |
+| **Button hover / active** | The shade a primary button turns under the pointer or while its menu is open (`--button-hover`). Left empty it behaves like before (80 % of the button colour) |
+| **Loading bar** | The progress bar at the very top of the page (`--loader`) |
+| **Use the same colors for both Light & Dark modes** | Copies the light palette into dark and keeps the two in step while it is on |
+| **Presets** | Four ready-made palettes – *Modern Indigo*, *Emerald Tech*, *Sunset Coral*, *Ocean Cyan* – each with its own light **and** dark colours (plus a matching hero gradient for Indigo / Coral / Cyan) |
+| **Gradients** | *Button*, *Loading bar* and *Hero* can each carry a **linear** (with an angle slider) or **radial** gradient, two or three stops, with a preview strip |
+| **Reset to defaults** | Asks first, then clears both palettes and every gradient back to the template colours – save to publish it |
+
+**How the picker works.** Every colour field opens a popover with a saturation/brightness area and a hue slider (React Aria `ColorPicker`), one input that understands and reformats **HEX, RGB and HSL** (`#0891b2` → `rgb(8, 145, 178)` → `hsl(186, 91%, 38%)`), quick swatches, an eyedropper button (EyeDropper API where the browser has it, the OS picker otherwise) and *Template* to drop the override for that single token.
+
+**What is stored.** Colours stay exactly as typed; `src/lib/theme.ts` validates them on both sides and `themeVars()` converts them into design tokens (a custom primary also derives `--primary-foreground`, the focus ring, the accent and the sidebar accents so nothing becomes unreadable). `normaliseTheme()` / `normaliseGradients()` fall back to the template for anything unknown, and a token nobody touched is simply not emitted – which is why *Reset* and an untouched site look identical. The root layout renders the result as a `<style>` tag from the tag-cached settings row, so the first paint already carries the palette; the hero takes its text colour from the gradient's own brightness, and the loading bar reads the values through a small client context for its gradient. Saving invalidates the `site-settings` tag like every other settings save.
 
 #### Settings
 
@@ -269,6 +292,8 @@ woo-solution/
 │   ├── migrations/20261025000000_currency.sql     # store currency (USD / BDT) + USD→BDT rate, orders.exchange_rate
 │   ├── migrations/20261026000000_money_micros.sql # prices become USD micro-dollars (1 USD = 1,000,000); *_cents → *_micros
 │   ├── migrations/20261027000000_variations.sql   # variable products: type/sku, attributes, variations, place_order()
+│   ├── migrations/20261028000000_admin_stats_customers.sql  # dashboard customer counts (dropped by the money rewrite)
+│   ├── migrations/20261029000000_theme.sql        # theme customization: palettes + gradients (Extra → Theme Customization)
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
@@ -297,8 +322,9 @@ woo-solution/
 │   │   ├── admin/                           # dashboard: app-sidebar, admin-header, forms, list toolbar …
 │   │   │   ├── media/                       # Media Library UI + the reusable picker / media-ref-field
 │   │   │   ├── pages/                       # page form, Tiptap rich-text editor, tag input, SEO panel, status select
-│   │   │   ├── menu/                        # UI → Menu: location switch, add panel, item table, edit dialog
-│   │   │   └── home/                        # UI → Home page: section switches + filter title form
+│   │   │   ├── menu/                        # Extra → Menu: location switch, add panel, item table, edit dialog
+│   │   │   ├── home/                        # Extra → Home page: section switches + filter title form
+│   │   │   └── extra/                       # Extra → Theme Customization: colour fields (HEX/RGB/HSL), gradients, presets
 │   │   ├── page-article.tsx                 # storefront template for CMS pages (also used by the admin preview)
 │   │   ├── data-grid.tsx, page-breadcrumbs.tsx  # client wrappers around the React Aria Table (selection, bulk bar, dnd-kit row reordering) / Breadcrumbs
 │   │   ├── home-product-filter.tsx          # home page: client-side category pills + product grid + pager (UI → Home page)

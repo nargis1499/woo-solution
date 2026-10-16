@@ -3,6 +3,7 @@ import { cacheLife, cacheTag } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { STORE_NAME } from "@/lib/config";
 import { isCurrencyCode, moneyFromSettings, type Money } from "@/lib/money";
+import { DEFAULT_THEME, normaliseColors, normaliseGradients } from "@/lib/theme";
 import type { SiteSettings } from "@/lib/types";
 
 export const SITE_SETTINGS_TAG = "site-settings";
@@ -31,6 +32,10 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   home_show_featured: true,
   home_show_filter: false,
   home_filter_title: null,
+  theme_light: DEFAULT_THEME.light,
+  theme_dark: DEFAULT_THEME.dark,
+  theme_gradients: DEFAULT_THEME.gradients,
+  theme_sync: false,
 };
 
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -73,6 +78,11 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     home_show_featured: flag(row.home_show_featured, true),
     home_show_filter: flag(row.home_show_filter, false),
     home_filter_title: text(row.home_filter_title),
+    // Extra → Theme Customization: unknown shapes fall back to the template palette
+    theme_light: normaliseColors(row.theme_light),
+    theme_dark: normaliseColors(row.theme_dark),
+    theme_gradients: normaliseGradients(row.theme_gradients),
+    theme_sync: flag(row.theme_sync, false),
   };
 }
 

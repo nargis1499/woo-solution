@@ -43,6 +43,22 @@
   --sidebar-accent-foreground: oklch(0.357 0.091 301.1);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.66 0.117 304.3);
+
+  /*
+   * Theme Customization (Extra → Theme Customization) – components read these
+   * instead of the raw palette, so the admin can restyle buttons and the
+   * loading bar for both modes. The defaults point back at the template
+   * colours; src/lib/theme.ts overrides them per mode from site_settings.
+   */
+  --button: var(--primary);
+  --button-foreground: var(--primary-foreground);
+  --button-hover: color-mix(in oklab, var(--primary) 80%, transparent);
+  --button-hover-foreground: var(--primary-foreground);
+  --button-image: none;
+  --loader: var(--primary);
+  --loader-image: none;
+  --hero-image: none;
+  --hero-foreground: var(--primary-foreground);
 }
 
 .dark {
@@ -77,6 +93,13 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* theme layer – the values follow the dark palette (see :root) */
+  --button: var(--primary);
+  --button-foreground: var(--primary-foreground);
+  --button-hover: color-mix(in oklab, var(--primary) 80%, transparent);
+  --button-hover-foreground: var(--primary-foreground);
+  --loader: var(--primary);
 }
 
 @theme inline {
@@ -154,6 +177,33 @@
 /* Page width + gutters shared by the storefront pages. */
 @utility container-page {
   @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+/*
+ * Theme Customization hooks. Buttons and the home hero paint themselves from
+ * `--button*` / `--hero*` (gradient first, flat colour underneath) so an admin
+ * palette in Extra → Theme Customization restyles the whole app – including
+ * the live preview, which reuses these exact classes.
+ */
+@layer components {
+  .theme-button {
+    background-color: var(--button);
+    background-image: var(--button-image);
+    color: var(--button-foreground);
+  }
+  .theme-button:hover:not(:disabled):not([aria-disabled="true"]),
+  .theme-button[aria-expanded="true"] {
+    background-color: var(--button-hover);
+    background-image: none;
+    color: var(--button-hover-foreground);
+  }
+  .theme-hero {
+    background-color: var(--primary);
+    background-image: var(--hero-image);
+    color: var(--hero-foreground);
+    /* descendants that use primary-foreground (badge, muted paragraph) follow the hero */
+    --primary-foreground: var(--hero-foreground);
+  }
 }
 
 /*

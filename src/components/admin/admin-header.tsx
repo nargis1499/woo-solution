@@ -12,8 +12,9 @@ import { ADMIN_NAV } from "./app-sidebar";
 /** Sticky top bar of the dashboard: sidebar toggle, breadcrumb, theme + "view store". */
 export function AdminHeader() {
   const pathname = usePathname();
-  const section = ADMIN_NAV.find((n) => (n.exact ? pathname === n.href : pathname.startsWith(n.href)));
-  const isSectionRoot = section ? pathname === section.href : false;
+  const section = ADMIN_NAV.find((n) => (n.exact ? pathname === n.href : pathname.startsWith(n.href.split("?")[0])));
+  // a nav href may carry a query (?tab=extra) – the root of the section is still its path
+  const isSectionRoot = section ? pathname === section.href.split("?")[0] : false;
 
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur md:rounded-t-xl">

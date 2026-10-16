@@ -152,19 +152,34 @@ export function CheckboxField({
   description,
   defaultChecked,
   id,
+  onChange,
 }: {
   name: string;
   label: string;
   description?: string;
   defaultChecked?: boolean;
   id?: string;
+  /** Controlled use (e.g. Extra → Theme Customization keeps the state in React). */
+  onChange?: (selected: boolean) => void;
 }) {
   const autoId = useId();
   const inputId = id ?? `${name}-${autoId}`;
+  const [selected, setSelected] = useSwitchValue(Boolean(defaultChecked));
   return (
     <FieldLabel htmlFor={inputId}>
       <Field orientation="horizontal">
-        <Checkbox id={inputId} name={name} defaultSelected={defaultChecked} />
+        {onChange ? (
+          <Checkbox
+            id={inputId}
+            isSelected={selected}
+            onChange={(value) => {
+              setSelected(value);
+              onChange(value);
+            }}
+          />
+        ) : (
+          <Checkbox id={inputId} name={name} defaultSelected={defaultChecked} />
+        )}
         <FieldContent>
           <FieldTitle>{label}</FieldTitle>
           {description && <FieldDescription>{description}</FieldDescription>}
