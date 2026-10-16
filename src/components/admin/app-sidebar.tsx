@@ -44,9 +44,10 @@ export const ADMIN_NAV = [
   { href: "/nemesis/orders", label: "Orders", icon: ShoppingCartIcon },
   { href: "/nemesis/users", label: "Users", icon: UsersIcon },
   { href: "/nemesis/media", label: "Media", icon: ImagesIcon },
-  // The UI page (tabs: Menu · Home page · Extra). The sidebar entry is called "UI" and
-  // opens the Theme Customization tab directly.
-  { href: "/nemesis/ui?tab=extra", label: "UI", icon: LayoutTemplateIcon },
+  // The UI page (tabs: Menu · Home page · Extra). Plain href: the sidebar entry always opens
+  // the page on its first tab and stays highlighted on the others – deep links (?tab=extra) are
+  // for the tab strip itself, not the sidebar.
+  { href: "/nemesis/ui", label: "UI", icon: LayoutTemplateIcon },
   { href: "/nemesis/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -80,7 +81,7 @@ export function AdminSidebar({ user, storeName }: { user: CurrentUser; storeName
           <SidebarGroupContent>
             <SidebarMenu>
               {ADMIN_NAV.map(({ href, label, icon: Icon, exact }) => {
-                // Hrefs carrying a query (?tab=extra) still highlight their own section
+                // Every tab of a section (?tab=extra, ?location=footer) highlights the same entry.
                 const path = href.split("?")[0];
                 const active = exact ? pathname === path : pathname.startsWith(path);
                 return (

@@ -182,7 +182,7 @@ What the database does behind the form (migration 14):
 On the storefront the page of a variable product shows one dropdown per attribute instead of the plain price; the charged price (the sale price when the chosen variation has one, with its regular price struck through), the *Only N left in stock* / *Sold out* badge, the summary and the image follow the chosen combination, combinations that don't exist are marked *— unavailable* and disabled, and **Add to cart** stays disabled until a real, in-stock combination is picked. The shop card shows *Choose options* instead of *Add to cart* and lists *From <cheapest price>*. Every variation is its own cart line (`Blue / S` and `Red / S` sit next to each other with their own price and stock), cancelling an order restocks the variation that was bought, and both the storefront order page and the admin order page name the variation – `order_items` keeps `variation_id` *and* a copy of the label, so deleting a variation later never rewrites the history of an order.
 #### Menus
 
-`/nemesis/ui` → **Menu** manages the storefront navigation – **Extra** sits directly above **Settings** in the sidebar (its own entry: `/nemesis/ui?tab=extra`) and the page opens on its first tab, *Menu*.
+`/nemesis/ui` → **Menu** manages the storefront navigation – **Extra** sits directly above **Settings** in the sidebar — the entry is called **UI**, points at `/nemesis/ui` and therefore always opens the page on its first tab, *Menu*; the tab itself is reachable at `?tab=extra`.
 
 - **Location** – switch between the **Header menu** (top of every page, also the mobile hamburger sheet) and the **Footer menu** (`?location=footer`). Each location is its own list.
 - **Add to menu** – pick a **page** (drafts are listed too, but stay hidden in the storefront until published), a **category**, or enter a **custom link** (link text + URL; a path on this site such as `/about`, a full `https://` address, `mailto:` or `tel:`; `javascript:` and friends are rejected) with an optional *open in a new tab*. Pages and categories already in the menu are left out of the pickers. New items join the end of the list.
@@ -202,7 +202,7 @@ The settings live in `site_settings` (migration 11); the storefront reads them t
 
 #### Theme customization
 
-`/nemesis/ui?tab=extra` → **Extra** restyles the whole store – storefront *and* dashboard – without touching code. The sidebar entry **Extra** (`/nemesis/ui?tab=extra`, directly above *Settings*) opens it.
+`/nemesis/ui?tab=extra` → **Extra** restyles the whole store – storefront *and* dashboard – without touching code. The **UI** sidebar entry (directly above *Settings*) opens the page on *Menu*; the tab's own address is `/nemesis/ui?tab=extra` (and a typed `/nemesis/extra` redirects there).
 
 | Control | What it does |
 | --- | --- |
