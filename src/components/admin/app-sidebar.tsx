@@ -7,7 +7,7 @@ import {
   ExternalLinkIcon,
   FileTextIcon,
   GaugeIcon,
-  PaintbrushIcon,
+  LayoutTemplateIcon,
   LogOutIcon,
   PackageIcon,
   SettingsIcon,
@@ -44,8 +44,9 @@ export const ADMIN_NAV = [
   { href: "/nemesis/orders", label: "Orders", icon: ShoppingCartIcon },
   { href: "/nemesis/users", label: "Users", icon: UsersIcon },
   { href: "/nemesis/media", label: "Media", icon: ImagesIcon },
-  // Extra (the UI page: Menu · Home page · Extra) – the navigation entry opens its own tab
-  { href: "/nemesis/ui?tab=extra", label: "Extra", icon: PaintbrushIcon },
+  // The UI page (tabs: Menu · Home page · Extra). The sidebar entry is called "UI" and
+  // opens the Theme Customization tab directly.
+  { href: "/nemesis/ui?tab=extra", label: "UI", icon: LayoutTemplateIcon },
   { href: "/nemesis/settings", label: "Settings", icon: SettingsIcon },
 ];
 
