@@ -68,6 +68,7 @@ export function OrderChat({
   const reportedSeen = useRef(new Set<string>());
 
   const open = isOrderChatOpen(status);
+  const latest = messages[messages.length - 1];
   const turn = orderChatTurn(messages, viewer);
   const trimmed = draft.trim();
   const tooLong = trimmed.length > MAX_ORDER_MESSAGE_LENGTH;
@@ -230,7 +231,7 @@ export function OrderChat({
     <Card data-testid="order-chat">
       {/* Header: who is on the other side, their presence, and (admin only) the privacy switch. */}
       <div className="flex flex-wrap items-center gap-3 px-(--card-spacing)">
-        <ChatHeader counterpart={counterpart} presence={presence} />
+        <ChatHeader counterpart={counterpart} presence={presence} viewer={viewer} />
         <div className="ml-auto flex items-center gap-2">
           {viewer === "admin" && (
             <Select
@@ -327,9 +328,14 @@ export function OrderChat({
               </p>
             )}
 
-            <p className="text-xs text-muted-foreground" data-testid="order-chat-note">
-              {tooLong ? `Please shorten the message to ${MAX_ORDER_MESSAGE_LENGTH} characters.` : turn.note}
-            </p>
+            {/* Under the text box: whose turn it is on the left, the newest message's time and
+                status on the right (✓ sent, ✓✓ delivered, ✓✓ seen). */}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <p data-testid="order-chat-note">
+                {tooLong ? `Please shorten the message to ${MAX_ORDER_MESSAGE_LENGTH} characters.` : turn.note}
+              </p>
+              <MessageMeta latest={latest} mine={latest?.sender_type === viewer} viewer={viewer} customerName={customerName} counterpart={counterpart} />
+            </div>
           </>
         )}
       </CardFooter>
@@ -337,19 +343,33 @@ export function OrderChat({
   );
 }
 
-/** Avatar + green dot + name, and the "Online" / "Last seen 10:42 AM" line. */
-function ChatHeader({ counterpart, presence }: { counterpart: ChatCounterpart; presence: Presence }) {
+/**
+ * Avatar + green dot + name, and the "Online" / "Last seen 10:42 AM" line.
+ *
+ * On the **customer** side the counterpart is the store itself: the badge reads "Admin"
+ * and shows the official shield instead of a personal name and photo – who is answering
+ * is not the customer's business. The admin's own view shows the buyer as they are.
+ */
+function ChatHeader({ counterpart, presence, viewer }: { counterpart: ChatCounterpart; presence: Presence; viewer: OrderChatViewer }) {
   const online = isOnline(presence);
   const showTime = !online && Boolean(presence.lastActiveAt);
-  const initial = (counterpart.name || "?").trim().slice(0, 1).toUpperCase();
+  const isStore = viewer === "customer";
+  const name = isStore ? "Admin" : counterpart.name;
+  const initial = (name || "?").trim().slice(0, 1).toUpperCase();
 
   return (
     <div className="flex items-center gap-3" data-testid="order-chat-header" data-online={online ? "true" : "false"}>
       <span className="relative shrink-0">
-        <Avatar>
-          {counterpart.avatarUrl && <AvatarImage src={counterpart.avatarUrl} alt="" />}
-          <AvatarFallback>{initial}</AvatarFallback>
-        </Avatar>
+        {isStore ? (
+          <span className="grid size-8 place-items-center rounded-full bg-primary text-primary-foreground" data-testid="order-chat-header-badge" aria-hidden>
+            <ShieldCheckIcon className="size-4" />
+          </span>
+        ) : (
+          <Avatar>
+            {counterpart.avatarUrl && <AvatarImage src={counterpart.avatarUrl} alt="" />}
+            <AvatarFallback>{initial}</AvatarFallback>
+          </Avatar>
+        )}
         <span
           className={cn("absolute -right-0.5 -bottom-0.5 size-3 rounded-full border-2 border-card", online ? "bg-emerald-500" : "bg-muted-foreground/50")}
           data-testid="order-chat-presence-dot"
@@ -357,7 +377,9 @@ function ChatHeader({ counterpart, presence }: { counterpart: ChatCounterpart; p
         />
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm font-medium">{counterpart.name}</span>
+        <span className="block truncate text-sm font-medium" data-testid="order-chat-header-name">
+          {name}
+        </span>
         <span className="block text-xs text-muted-foreground" data-testid="order-chat-presence">
           {online ? (
             "Online"
@@ -436,6 +458,48 @@ function MessageBubble({ message, mine, customerName }: { message: OrderMessage;
         </span>
       </div>
     </li>
+  );
+}
+
+/**
+ * The newest message's timestamp and – when it is yours – how far it got, rendered in a
+ * line just below the text box instead of inside the bubble.
+ */
+function MessageMeta({
+  latest,
+  mine,
+  viewer,
+  customerName,
+  counterpart,
+}: {
+  latest: OrderMessage | undefined;
+  mine: boolean;
+  viewer: OrderChatViewer;
+  customerName?: string | null;
+  counterpart: ChatCounterpart;
+}) {
+  if (!latest) return null;
+  const sender = latest.sender_type === "admin" ? (viewer === "customer" ? "Admin" : counterpart.name || "Admin") : latest.sender_name || customerName || "Customer";
+  const receipt = mine ? (latest.seen_at ? "seen" : latest.delivered_at ? "delivered" : "sent") : null;
+
+  return (
+    <span className="flex items-center gap-1.5" data-testid="order-chat-meta" data-status={receipt ?? (mine ? "sent" : "received")}>
+      <span className="sr-only">{mine ? "Your last message" : `Last message from ${sender}`}</span>
+      <LocalTime iso={latest.created_at} data-testid="order-chat-meta-time" />
+      {mine && (
+        <>
+          <span aria-hidden>·</span>
+          {receipt === "seen" ? (
+            <CheckCheckIcon className="size-3.5 text-emerald-500" data-testid="order-chat-meta-receipt-seen" aria-label="Seen" />
+          ) : receipt === "delivered" ? (
+            <CheckCheckIcon className="size-3.5 opacity-70" data-testid="order-chat-meta-receipt-delivered" aria-label="Delivered" />
+          ) : (
+            <CheckIcon className="size-3.5 opacity-50" data-testid="order-chat-meta-receipt-sent" aria-label="Sent" />
+          )}
+          <span data-testid="order-chat-meta-status">{receipt === "seen" ? "Seen" : receipt === "delivered" ? "Delivered" : "Sent"}</span>
+        </>
+      )}
+    </span>
   );
 }
 

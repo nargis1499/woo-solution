@@ -163,8 +163,9 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
           viewer="customer"
           initialMessages={messages}
           customerName={user.name ?? order.shipping_name}
-          // presence is already filtered by the admin's own visibility mode (store_presence())
-          counterpart={{ name: store.name ?? "Store Admin", avatarUrl: store.avatarUrl, presence: { online: store.online, lastActiveAt: store.lastActiveAt, visibility: store.visibility } }}
+          // The customer talks to the store, not to a person: no name, no photo, just the
+          // badge. Presence is already filtered by the admin's own visibility mode.
+          counterpart={{ name: "Admin", avatarUrl: null, presence: { online: store.online, lastActiveAt: store.lastActiveAt, visibility: store.visibility } }}
         />
       )}
 

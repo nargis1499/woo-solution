@@ -54,9 +54,3 @@ export async function getPresenceVisibility(userId: string): Promise<PresenceVis
   const value = (data as { presence_visibility: string | null }).presence_visibility;
   return value === "last_seen_only" || value === "offline" ? value : "online";
 }
-
-/** Author of the admin bubbles: the admin in charge of this thread (the freshest one). */
-export async function getStoreIdentity(): Promise<{ name: string; avatarUrl: string | null }> {
-  const presence = await getStorePresence();
-  return { name: presence.name ?? "Store Admin", avatarUrl: presence.avatarUrl };
-}
