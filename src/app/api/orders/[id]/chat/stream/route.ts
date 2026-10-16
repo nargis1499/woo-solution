@@ -14,8 +14,9 @@ import type { OrderMessage } from "@/lib/types";
  *   receipt   – the recipient stamped messages delivered / seen → ✓ / ✓✓ on the sender's side
  *   presence  – the other side's "Online" / "Last seen …" state, polled every 8 s and
  *               pushed whenever it changes. For a customer it is the *filtered* view of
- *               the store staff (`store_presence()`), so an admin who keeps themselves
- *               offline never leaks an activity time through this channel either.
+ *               the store staff (`store_presence_for()`, resolved against *this*
+ *               customer's override), so an admin who keeps themselves offline never
+ *               leaks an activity time through this channel either.
  *
  * Delivery is driven by the in-process bus the POST routes publish to, with a database
  * poll behind it: a message stored by another instance – or a broadcast lost while the
@@ -112,7 +113,8 @@ export async function GET(request: Request, { params }: Params) {
           const person = await getPersonPresence(customerId);
           return { online: presenceStatus(person.lastActiveAt) === "online", lastActiveAt: person.lastActiveAt };
         }
-        const store = await getStorePresence();
+        // resolved for this customer: their per-customer override, else the global switch
+        const store = await getStorePresence(user.id);
         return { online: store.online, lastActiveAt: store.lastActiveAt, visibility: store.visibility };
       };
 

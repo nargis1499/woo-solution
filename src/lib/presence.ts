@@ -11,6 +11,14 @@ export const PRESENCE_ONLINE_WINDOW_MS = 45_000;
 /** The interval the browser pings `/api/presence/ping` at. */
 export const PRESENCE_PING_INTERVAL_MS = 25_000;
 
+/**
+ * No mouse, key, scroll or touch for this long and the visitor stops being "Online": the
+ * heartbeat pauses on purpose, so the stamp ages out of the 45 s window and the other side
+ * reads "Last seen …". A closed tab and a lost connection end the same way – "Online" is
+ * never claimed on somebody's behalf, not even by a per-customer "Online" override.
+ */
+export const PRESENCE_IDLE_AFTER_MS = 120_000;
+
 /** Admin privacy switch. `online` = show the real status, `last_seen_only` = never show "Online", `offline` = always offline. */
 export const PRESENCE_VISIBILITIES = ["online", "last_seen_only", "offline"] as const;
 export type PresenceVisibility = (typeof PRESENCE_VISIBILITIES)[number];

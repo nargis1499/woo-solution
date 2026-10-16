@@ -42,7 +42,9 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
   if (!order) notFound();
   const items = order.order_items ?? [];
   // `null` = migration 17 not run yet → the thread is simply not shown.
-  const [messages, store] = await Promise.all([listOrderMessagesOrNull(order.id), getStorePresence()]);
+  // The store's presence is resolved *for this customer*: their per-customer override (migration 20),
+  // else the admin's global switch. The customer never gets an activity time the admin hid.
+  const [messages, store] = await Promise.all([listOrderMessagesOrNull(order.id), getStorePresence(order.user_id)]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">

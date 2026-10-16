@@ -5,7 +5,7 @@ import { adminGetOrder } from "@/lib/admin/data";
 import { requireAdmin } from "@/lib/admin/auth";
 import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { listOrderMessagesOrNull } from "@/lib/order-messages";
-import { getPersonPresence, getPresenceVisibility } from "@/lib/presence.server";
+import { getCustomerVisibility, getPersonPresence } from "@/lib/presence.server";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
 import { deleteOrder } from "@/app/nemesis/actions";
@@ -29,7 +29,8 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
   const [messages, buyer, visibility] = await Promise.all([
     listOrderMessagesOrNull(order.id),
     order.user_id ? getPersonPresence(order.user_id) : Promise.resolve({ online: false, lastActiveAt: null, name: null, avatarUrl: null }),
-    getPresenceVisibility(user.id),
+    // What *this* buyer sees: their own override row, else the admin's global switch.
+    getCustomerVisibility(user.id, order.user_id),
   ]);
   const items = order.order_items ?? [];
 
@@ -159,6 +160,7 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
             viewer="admin"
             initialMessages={messages}
             customerName={order.shipping_name}
+            customerId={order.user_id}
             visibility={visibility}
             counterpart={{
               name: buyer.name ?? order.shipping_name ?? "Customer",

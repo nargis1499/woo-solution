@@ -8,8 +8,21 @@ import type { SettingsMedia, SiteSettings } from "@/lib/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GeneralSettingsForm, SeoSettingsForm, ShopSettingsForm } from "./settings-forms";
+import { PresenceVisibilityCard } from "./presence-visibility";
+import type { PresenceVisibility } from "@/lib/presence";
 
-export function SettingsTabs({ settings, media, currencyMigrated = true }: { settings: SiteSettings; media: SettingsMedia; currencyMigrated?: boolean }) {
+export function SettingsTabs({
+  settings,
+  media,
+  currencyMigrated = true,
+  presenceVisibility,
+}: {
+  settings: SiteSettings;
+  media: SettingsMedia;
+  currencyMigrated?: boolean;
+  /** The global fallback of the admin's online visibility (Presence card). */
+  presenceVisibility: PresenceVisibility;
+}) {
   // The URL is the source of truth (?tab=seo …): it is shareable, survives a reload, and when Next.js
   // restores this page after navigating away the tabs follow the link that was clicked.
   const param = useSearchParams().get("tab") ?? undefined;
@@ -41,7 +54,10 @@ export function SettingsTabs({ settings, media, currencyMigrated = true }: { set
       </TabsList>
       {/* shouldForceMount keeps every form mounted, so unsaved edits survive switching tabs */}
       <TabsContent id="general" shouldForceMount className="data-inert:hidden">
-        <GeneralSettingsForm settings={settings} favicon={media.favicon} />
+        <div className="space-y-5">
+          <GeneralSettingsForm settings={settings} favicon={media.favicon} />
+          <PresenceVisibilityCard value={presenceVisibility} />
+        </div>
       </TabsContent>
       <TabsContent id="seo" shouldForceMount className="data-inert:hidden">
         <SeoSettingsForm settings={settings} shareImage={media.share_image} />

@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { CheckCheckIcon, CheckIcon, SendIcon, ShieldCheckIcon } from "lucide-react";
 import { toast } from "sonner";
-import { updatePresenceVisibility } from "@/app/nemesis/actions";
+import { updateCustomerVisibility } from "@/app/nemesis/actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { CLOSED_THREAD_MESSAGE, MAX_ORDER_MESSAGE_LENGTH, isOrderChatOpen, orderChatTurn, sortOrderMessages, type OrderChatViewer } from "@/lib/order-chat";
+import { CLOSED_THREAD_MESSAGE, MESSAGE_RECEIPT_LABELS, MAX_ORDER_MESSAGE_LENGTH, customerVisibleReceipt, isOrderChatOpen, lastAdminReplyAt, messageReceipt, orderChatTurn, sortOrderMessages, type MessageReceipt, type OrderChatViewer } from "@/lib/order-chat";
 import { PRESENCE_VISIBILITY_LABELS, PRESENCE_VISIBILITIES, isOnline, type Presence, type PresenceVisibility } from "@/lib/presence";
 import { cn } from "@/lib/utils";
 import type { OrderMessage, OrderStatus } from "@/lib/types";
@@ -37,6 +37,7 @@ export function OrderChat({
   initialMessages,
   counterpart,
   customerName,
+  customerId,
   visibility,
 }: {
   orderId: string;
@@ -47,7 +48,9 @@ export function OrderChat({
   counterpart: ChatCounterpart;
   /** Shown as the author of the customer's bubbles (their profile name / the shipping name). */
   customerName?: string | null;
-  /** Admin view only: the caller's own privacy switch. */
+  /** Admin view only: the buyer the privacy switch below the header applies to. */
+  customerId?: string | null;
+  /** Admin view only: what this buyer currently sees (per-customer override, else the global switch). */
   visibility?: PresenceVisibility;
 }) {
   const [messages, setMessages] = useState<OrderMessage[]>(() => sortOrderMessages(initialMessages));
@@ -73,6 +76,14 @@ export function OrderChat({
   const trimmed = draft.trim();
   const tooLong = trimmed.length > MAX_ORDER_MESSAGE_LENGTH;
   const canSend = open && turn.canSend && trimmed.length > 0 && !tooLong && !sending;
+
+  // The customer's side of the receipts: "seen" only while the admin lets them see it
+  // (per-customer override, else the global switch) and only once the admin has answered
+  // that message. The admin's own view always shows what really happened.
+  const adminOnline = isOnline(presence);
+  const replyAt = lastAdminReplyAt(messages);
+  const receiptFor = (message: OrderMessage): MessageReceipt =>
+    viewer === "customer" ? customerVisibleReceipt(message, { adminOnline, lastAdminReplyAt: replyAt }) : messageReceipt(message);
 
   /** A rejected receipt is reported again by the next effect pass. */
   const retry = (ids: string[]) => {
@@ -215,11 +226,12 @@ export function OrderChat({
   }
 
   function changeVisibility(next: PresenceVisibility) {
+    if (!customerId) return;
     const previous = mode;
     setMode(next);
     startTransition(async () => {
-      const result = await updatePresenceVisibility(next);
-      if (result.ok) toast.success(`Visibility set to ${PRESENCE_VISIBILITY_LABELS[next]}.`);
+      const result = await updateCustomerVisibility(customerId, next);
+      if (result.ok) toast.success(`Visibility for this customer set to ${PRESENCE_VISIBILITY_LABELS[next]}.`);
       else {
         setMode(previous);
         toast.error(result.error ?? "The visibility could not be changed.");
@@ -233,15 +245,16 @@ export function OrderChat({
       <div className="flex flex-wrap items-center gap-3 px-(--card-spacing)">
         <ChatHeader counterpart={counterpart} presence={presence} viewer={viewer} />
         <div className="ml-auto flex items-center gap-2">
-          {viewer === "admin" && (
+          {viewer === "admin" && customerId && (
             <Select
-              aria-label="Your visibility to customers"
+              aria-label="Your visibility to this customer"
               selectedKey={mode}
               onSelectionChange={(key) => key && key !== mode && changeVisibility(String(key) as PresenceVisibility)}
               className="w-36"
               data-testid="order-chat-visibility"
+              data-customer={customerId}
             >
-              <SelectTrigger size="sm" aria-label="Your visibility to customers">
+              <SelectTrigger size="sm" aria-label="Your visibility to this customer">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -273,9 +286,10 @@ export function OrderChat({
           </p>
         ) : (
           <ul ref={list} className="scrollbar-hidden max-h-64 space-y-3 overflow-y-auto overscroll-contain pr-1" data-testid="order-chat-messages">
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} mine={message.sender_type === viewer} customerName={customerName} />
-            ))}
+            {messages.map((message) => {
+              const mine = message.sender_type === viewer;
+              return <MessageBubble key={message.id} message={message} mine={mine} status={mine ? receiptFor(message) : null} customerName={customerName} />;
+            })}
           </ul>
         )}
       </CardContent>
@@ -334,7 +348,14 @@ export function OrderChat({
               <p data-testid="order-chat-note">
                 {tooLong ? `Please shorten the message to ${MAX_ORDER_MESSAGE_LENGTH} characters.` : turn.note}
               </p>
-              <MessageMeta latest={latest} mine={latest?.sender_type === viewer} viewer={viewer} customerName={customerName} counterpart={counterpart} />
+              <MessageMeta
+                latest={latest}
+                mine={latest?.sender_type === viewer}
+                status={latest && latest.sender_type === viewer ? receiptFor(latest) : null}
+                viewer={viewer}
+                customerName={customerName}
+                counterpart={counterpart}
+              />
             </div>
           </>
         )}
@@ -418,7 +439,7 @@ function LocalTime({ iso, withDate = false, className, "data-testid": testId }: 
   );
 }
 
-function MessageBubble({ message, mine, customerName }: { message: OrderMessage; mine: boolean; customerName?: string | null }) {
+function MessageBubble({ message, mine, status, customerName }: { message: OrderMessage; mine: boolean; status: MessageReceipt | null; customerName?: string | null }) {
   const isAdmin = message.sender_type === "admin";
   // The bubble speaks with the store's voice ("Admin" + the shield badge) – who is personally
   // behind it is shown in the thread header, not on every message.
@@ -455,10 +476,14 @@ function MessageBubble({ message, mine, customerName }: { message: OrderMessage;
           <p className={cn("text-xs font-semibold", isAdmin ? "text-primary-foreground/90" : "text-muted-foreground")}>{name}</p>
           <p className="mt-0.5 whitespace-pre-wrap">{message.message}</p>
         </div>
-        <span className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-muted-foreground" data-testid="order-chat-bubble-meta">
+        <span
+          className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-muted-foreground"
+          data-testid="order-chat-bubble-meta"
+          data-status={status ?? "received"}
+        >
           <LocalTime iso={message.created_at} />
           {/* ✓ / ✓✓ only on your own messages – the other side's read state is their business. */}
-          {mine && <Receipt message={message} />}
+          {mine && status && <Receipt status={status} label={MESSAGE_RECEIPT_LABELS[status]} />}
         </span>
       </div>
     </li>
@@ -472,35 +497,31 @@ function MessageBubble({ message, mine, customerName }: { message: OrderMessage;
 function MessageMeta({
   latest,
   mine,
+  status,
   viewer,
   customerName,
   counterpart,
 }: {
   latest: OrderMessage | undefined;
   mine: boolean;
+  /** The receipt to paint for `latest` – already masked for the customer (see `receiptFor`). */
+  status: MessageReceipt | null;
   viewer: OrderChatViewer;
   customerName?: string | null;
   counterpart: ChatCounterpart;
 }) {
   if (!latest) return null;
   const sender = latest.sender_type === "admin" ? (viewer === "customer" ? "Admin" : counterpart.name || "Admin") : latest.sender_name || customerName || "Customer";
-  const receipt = mine ? (latest.seen_at ? "seen" : latest.delivered_at ? "delivered" : "sent") : null;
 
   return (
-    <span className="flex items-center gap-1.5" data-testid="order-chat-meta" data-status={receipt ?? (mine ? "sent" : "received")}>
+    <span className="flex items-center gap-1.5" data-testid="order-chat-meta" data-status={status ?? (mine ? "sent" : "received")}>
       <span className="sr-only">{mine ? "Your last message" : `Last message from ${sender}`}</span>
       <LocalTime iso={latest.created_at} data-testid="order-chat-meta-time" />
-      {mine && (
+      {mine && status && (
         <>
           <span aria-hidden>·</span>
-          {receipt === "seen" ? (
-            <CheckCheckIcon className="size-3.5 text-emerald-500" data-testid="order-chat-meta-receipt-seen" aria-label="Seen" />
-          ) : receipt === "delivered" ? (
-            <CheckCheckIcon className="size-3.5 opacity-70" data-testid="order-chat-meta-receipt-delivered" aria-label="Delivered" />
-          ) : (
-            <CheckIcon className="size-3.5 opacity-50" data-testid="order-chat-meta-receipt-sent" aria-label="Sent" />
-          )}
-          <span data-testid="order-chat-meta-status">{receipt === "seen" ? "Seen" : receipt === "delivered" ? "Delivered" : "Sent"}</span>
+          <Receipt status={status} label={MESSAGE_RECEIPT_LABELS[status]} prefix="order-chat-meta-receipt" />
+          <span data-testid="order-chat-meta-status">{MESSAGE_RECEIPT_LABELS[status]}</span>
         </>
       )}
     </span>
@@ -508,12 +529,12 @@ function MessageMeta({
 }
 
 /** How far one of *your* messages got: ✓ sent, ✓✓ delivered, ✓✓ (green) seen. */
-function Receipt({ message }: { message: OrderMessage }) {
-  if (message.seen_at) {
-    return <CheckCheckIcon className="size-3.5 text-emerald-500" data-testid="order-chat-receipt-seen" aria-label="Seen" />;
+function Receipt({ status, label, prefix = "order-chat-receipt" }: { status: MessageReceipt; label: string; prefix?: string }) {
+  if (status === "seen") {
+    return <CheckCheckIcon className="size-3.5 text-emerald-500" data-testid={`${prefix}-seen`} aria-label={label} />;
   }
-  if (message.delivered_at) {
-    return <CheckCheckIcon className="size-3.5 opacity-70" data-testid="order-chat-receipt-delivered" aria-label="Delivered" />;
+  if (status === "delivered") {
+    return <CheckCheckIcon className="size-3.5 opacity-70" data-testid={`${prefix}-delivered`} aria-label={label} />;
   }
-  return <CheckIcon className="size-3.5 opacity-50" data-testid="order-chat-receipt-sent" aria-label="Sent" />;
+  return <CheckIcon className="size-3.5 opacity-50" data-testid={`${prefix}-sent`} aria-label={label} />;
 }

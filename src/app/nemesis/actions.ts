@@ -58,12 +58,13 @@ function formMoney(formData: FormData): Money {
 const productsReturn = (fd: FormData) => returnTo(fd, "/nemesis/products");
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Presence (Order inquiries) – the admin's own privacy switch
+ * Presence (Order inquiries) – the admin's own privacy switch, global + per customer
  * ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * Changes the **admin's own** visibility to customers. Only the row of the caller is
- * touched, and only the admin area can call it (`adminClient()` = assertAdmin).
+ * The **global** fallback: what every customer sees who has no per-customer override
+ * (see `store_presence_for()`). Only the row of the caller is touched, and only the
+ * admin area can call it (`adminClient()` = assertAdmin).
  */
 export async function updatePresenceVisibility(visibility: string): Promise<{ ok: boolean; error?: string }> {
   const next = PRESENCE_VISIBILITIES.find((v) => v === visibility);
@@ -73,7 +74,34 @@ export async function updatePresenceVisibility(visibility: string): Promise<{ ok
     const { user, supabase } = await adminClient();
     const { error } = await supabase.from("profiles").update({ presence_visibility: next satisfies PresenceVisibility }).eq("id", user.id);
     if (error) throw error;
-    // the storefront reads the filtered value through store_presence(); refresh the shell
+    // the storefront reads the filtered value through store_presence_for(); refresh the shell
+    revalidateStore();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
+/**
+ * What **one customer** sees: writes the caller's row in `admin_customer_visibility`
+ * (migration 20), created automatically – with "last seen only" – when the customer
+ * placed their first order. The admin can only ever write their own row: the id comes
+ * from the session, the policy on the table checks it again.
+ */
+export async function updateCustomerVisibility(customerId: string, visibility: string): Promise<{ ok: boolean; error?: string }> {
+  const next = PRESENCE_VISIBILITIES.find((v) => v === visibility);
+  if (!next) return { ok: false, error: "Unknown visibility." };
+  if (!UUID_RE.test(customerId)) return { ok: false, error: "Unknown customer." };
+
+  try {
+    const { user, supabase } = await adminClient();
+    const { error } = await supabase
+      .from("admin_customer_visibility")
+      .upsert(
+        { admin_id: user.id, customer_id: customerId, visibility: next satisfies PresenceVisibility, updated_at: new Date().toISOString() },
+        { onConflict: "admin_id,customer_id" },
+      );
+    if (error) throw error;
     revalidateStore();
     return { ok: true };
   } catch (e) {

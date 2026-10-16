@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { adminGetSiteSettings } from "@/lib/admin/data";
+import { getAdminStatus } from "@/lib/admin/auth";
+import { getPresenceVisibility } from "@/lib/presence.server";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/admin/ui";
 import { SettingsTabs } from "@/components/admin/settings-tabs";
@@ -8,7 +10,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 export const metadata: Metadata = { title: "Settings" };
 
 export default async function AdminSettingsPage() {
-  const settings = await adminGetSiteSettings();
+  const [settings, { user }] = await Promise.all([adminGetSiteSettings(), getAdminStatus()]);
+  const presenceVisibility = user ? await getPresenceVisibility(user.id) : "online";
 
   return (
     <>
@@ -26,7 +29,7 @@ export default async function AdminSettingsPage() {
               </AlertDescription>
             </Alert>
           )}
-          <SettingsTabs settings={settings} media={settings.media} currencyMigrated={settings.currencyMigrated} />
+          <SettingsTabs settings={settings} media={settings.media} currencyMigrated={settings.currencyMigrated} presenceVisibility={presenceVisibility} />
         </div>
       ) : (
         <Alert variant="destructive">
