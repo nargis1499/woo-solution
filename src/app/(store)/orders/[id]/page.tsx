@@ -75,6 +75,7 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
                 ) : (
                   <p className="font-medium">{item.product_name}</p>
                 )}
+                {item.variation_label && <p className="text-sm text-muted-foreground">{item.variation_label}</p>}
                 <p className="text-sm text-muted-foreground">
                   {formatMoney(item.unit_price_micros, orderMoney(order))} × {item.quantity}
                 </p>

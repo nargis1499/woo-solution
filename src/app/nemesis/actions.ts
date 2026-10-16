@@ -8,7 +8,15 @@ import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { HOME_FILTER_TITLE_MAX } from "@/lib/home-sections";
 import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, formatExchangeRate, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
 import { MENU_TAG } from "@/lib/menu";
-import type { OrderStatus, PaymentStatus } from "@/lib/types";
+import {
+  MAX_ATTRIBUTES,
+  MAX_ATTRIBUTE_OPTIONS,
+  MAX_VARIATIONS,
+  cleanOptions,
+  combinationLabel,
+  type SubmittedVariation,
+} from "@/lib/variations";
+import type { OrderStatus, PaymentStatus, ProductType } from "@/lib/types";
 import {
   UUID_RE,
   SLUG_RE,
@@ -64,6 +72,24 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   const description = str(formData, "description", 5000);
   const categoryId = str(formData, "category_id", 40);
   const money = formMoney(formData);
+  const type: ProductType = str(formData, "type", 10) === "variable" ? "variable" : "simple";
+  const isVariable = type === "variable";
+  const sku = str(formData, "sku", 64).trim() || null;
+
+  // Variable products: the axes the admin defined and one row per combination.
+  const jsonField = (field: string, max: number) => {
+    const raw = str(formData, field, max);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as unknown[]) : null;
+    } catch {
+      return null;
+    }
+  };
+  const { attributes, attributeError } = parseAttributes(jsonField("attributes_json", 20000));
+  const { variations, variationError } = parseVariations(jsonField("variations_json", 400000));
+
   const priceInput = str(formData, "price", 20);
   const compareAtInput = str(formData, "compare_at_price", 20);
   const priceDisplayMicros = parseMoneyInput(priceInput);
@@ -78,9 +104,40 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
 
   if (!name) fieldErrors.name = "Name is required.";
   if (!SLUG_RE.test(slug)) fieldErrors.slug = "Use lowercase letters, numbers and dashes only.";
-  if (priceDisplayMicros === null || Number.isNaN(priceDisplayMicros)) fieldErrors.price = `Enter a valid price, e.g. ${inputFromMicros(DEFAULT_PRICE_MICROS, money)}.`;
-  if (Number.isNaN(compareAtDisplayMicros)) fieldErrors.compare_at_price = "Enter a valid price or leave empty.";
-  if (!Number.isInteger(stock) || stock < 0) fieldErrors.stock = "Stock must be a whole number ≥ 0.";
+  if (sku && sku.length > 64) fieldErrors.sku = "Keep the SKU under 64 characters.";
+  if (attributeError) fieldErrors.attributes = attributeError;
+  if (variationError) fieldErrors.variations = variationError;
+
+  if (isVariable) {
+    // The parent price/stock belong to the variations (a trigger keeps them in sync), so the
+    // simple price fields are not part of a variable save.
+    if (!fieldErrors.attributes && attributes.length === 0) {
+      fieldErrors.attributes = "Add at least one attribute with one or more values (e.g. Color), then generate the variations.";
+    }
+    if (attributes.length && !variations.some((v) => attributes.every((a) => v.combination[a.name]))) {
+      fieldErrors.variations = "Every variation must have a value for each attribute – regenerate the variations.";
+    }
+    if (!fieldErrors.variations && variations.some((v) => attributes.some((a) => !a.options.some((o) => o.toLowerCase() === String(v.combination[a.name]).toLowerCase())))) {
+      fieldErrors.variations = "A variation uses a value that is not in its attribute – regenerate the variations.";
+    }
+    if (!fieldErrors.variations && variations.length === 0) fieldErrors.variations = "Generate at least one variation before saving.";
+    if (!fieldErrors.variations && variations.some((v) => v.priceDisplay === null || Number.isNaN(v.priceDisplay))) {
+      fieldErrors.variations = "Set a price for every variation.";
+    }
+    if (!fieldErrors.variations && variations.some((v) => Number.isNaN(v.compareAtDisplay))) {
+      fieldErrors.variations = "Enter a valid compare-at price or leave it empty.";
+    }
+    if (!fieldErrors.variations && variations.some((v) => !Number.isInteger(v.stockValue) || v.stockValue < 0)) {
+      fieldErrors.variations = "Stock must be a whole number ≥ 0 for every variation.";
+    }
+    if (!fieldErrors.variations && !variations.some((v) => v.is_active && (v.priceDisplay ?? 0) > 0)) {
+      fieldErrors.variations = "At least one enabled variation needs a price above 0.";
+    }
+  } else {
+    if (priceDisplayMicros === null || Number.isNaN(priceDisplayMicros)) fieldErrors.price = `Enter a valid price, e.g. ${inputFromMicros(DEFAULT_PRICE_MICROS, money)}.`;
+    if (Number.isNaN(compareAtDisplayMicros)) fieldErrors.compare_at_price = "Enter a valid price or leave empty.";
+    if (!Number.isInteger(stock) || stock < 0) fieldErrors.stock = "Stock must be a whole number ≥ 0.";
+  }
   if (categoryId && !UUID_RE.test(categoryId)) fieldErrors.category_id = "Invalid category.";
   if (!["keep", "media", "url", "remove"].includes(imageMode)) fieldErrors.image_media_id = "Invalid image selection.";
   if (imageMode === "url" && !/^https?:\/\/\S+$/i.test(imageUrlInput)) fieldErrors.image_url = "Enter a full image URL starting with http:// or https://.";
@@ -107,7 +164,13 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
     }
 
     // ── resolve media-library references (must exist, be images, not trashed) ──
-    const wanted = [...new Set([...(imageMode === "media" ? [imageMediaId] : []), ...galleryIds])];
+    const wanted = [
+      ...new Set([
+        ...(imageMode === "media" ? [imageMediaId] : []),
+        ...galleryIds,
+        ...variations.flatMap((v) => (v.image_media_id ? [v.image_media_id] : [])),
+      ]),
+    ];
     const found = new Map<string, { id: string; path: string }>();
     if (wanted.length) {
       const { data, error } = await supabase.from("media").select("id, path, kind, deleted_at").in("id", wanted);
@@ -137,16 +200,22 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       image.image_media_id = null;
     }
 
+    // A variable product's price/stock live on its variations: on update they are left alone
+    // (the trigger owns them), on insert they start at 0 and the variations fill them in.
     const row = {
       name,
       slug,
       description: description || null,
       category_id: categoryId || null,
-      price_micros: priceMicros,
-      compare_at_price_micros: compareAtMicros,
-      stock,
       is_active: isActive,
       is_featured: isFeatured,
+      type,
+      sku,
+      ...(isVariable
+        ? isEdit
+          ? {}
+          : { price_micros: 0, compare_at_price_micros: null, stock: 0 }
+        : { price_micros: priceMicros, compare_at_price_micros: compareAtMicros, stock }),
       ...image,
     };
 
@@ -155,6 +224,17 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       : await supabase.from("products").insert(row).select("id").single();
     if (result.error) throw result.error;
     const productId = result.data.id as string;
+
+    // ── variable products: replacement attributes + variations ──────────────
+    if (isVariable) {
+      await saveVariableProductSets(supabase, productId, attributes, variations, found, money);
+    } else if (isEdit) {
+      // Switching back to a simple product drops the variation matrix for good.
+      const { error: attrError } = await supabase.from("product_attributes").delete().eq("product_id", productId);
+      if (attrError) throw attrError;
+      const { error: varError } = await supabase.from("product_variations").delete().eq("product_id", productId);
+      if (varError) throw varError;
+    }
 
     // ── gallery: replace the ordered set in one go ──────────────────────────
     const { error: clearError } = await supabase.from("product_media").delete().eq("product_id", productId);
@@ -170,6 +250,132 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   } catch (e) {
     if (isRedirectError(e)) throw e;
     return { error: friendlyError(e), values };
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Variable products – parsing, validation and persistence
+ * ────────────────────────────────────────────────────────────────────────── */
+
+type ParsedAttribute = { name: string; options: string[] };
+type ParsedVariation = SubmittedVariation & { priceDisplay: number | null; compareAtDisplay: number; stockValue: number };
+
+/** Attribute list from the hidden `attributes_json` field. */
+function parseAttributes(raw: unknown[] | null): { attributes: ParsedAttribute[]; attributeError?: string } {
+  if (!raw) return { attributes: [] };
+  const attributes: ParsedAttribute[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const name = String((entry as { name?: unknown }).name ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
+    const options = cleanOptions((((entry as { options?: unknown }).options as string[]) ?? []).map((v) => String(v)));
+    if (!name && options.length === 0) continue; // an empty row the admin left behind
+    if (!name) return { attributes: [], attributeError: "Give every attribute a name." };
+    if (seen.has(name.toLowerCase())) return { attributes: [], attributeError: `“${name}” is used twice – every attribute needs its own name.` };
+    seen.add(name.toLowerCase());
+    if (!options.length) return { attributes: [], attributeError: `Add at least one value to “${name}”.` };
+    if (options.length > MAX_ATTRIBUTE_OPTIONS) return { attributes: [], attributeError: `“${name}” can hold at most ${MAX_ATTRIBUTE_OPTIONS} values.` };
+    attributes.push({ name, options });
+  }
+  if (attributes.length > MAX_ATTRIBUTES) return { attributes: [], attributeError: `A product can have at most ${MAX_ATTRIBUTES} attributes.` };
+  return { attributes };
+}
+
+/** Variation list from the hidden `variations_json` field (prices are still display strings). */
+function parseVariations(raw: unknown[] | null): { variations: ParsedVariation[]; variationError?: string } {
+  if (!raw) return { variations: [] };
+  if (raw.length > MAX_VARIATIONS) return { variations: [], variationError: `That is more than ${MAX_VARIATIONS} variations – reduce the attribute values.` };
+  const variations: ParsedVariation[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Partial<SubmittedVariation>;
+    const combination: Record<string, string> = {};
+    for (const [key, value] of Object.entries(row.combination ?? {})) {
+      const name = String(key ?? "").trim().slice(0, 60);
+      const option = String(value ?? "").trim().slice(0, 60);
+      if (name && option) combination[name] = option;
+    }
+    const signature = JSON.stringify(Object.entries(combination).sort(([a], [b]) => a.localeCompare(b)));
+    if (seen.has(signature)) continue; // duplicates cannot be stored (unique index) – drop them quietly
+    seen.add(signature);
+    const price = String(row.price ?? "").trim();
+    const compareAtPrice = String(row.compareAtPrice ?? "").trim();
+    variations.push({
+      id: row.id && UUID_RE.test(row.id) ? row.id : undefined,
+      sku: String(row.sku ?? "").trim().slice(0, 64) || null,
+      price,
+      compareAtPrice,
+      stock: String(row.stock ?? "0").trim(),
+      is_active: row.is_active !== false,
+      image_media_id: row.image_media_id && UUID_RE.test(row.image_media_id) ? row.image_media_id : "",
+      image_url: String(row.image_url ?? "").trim().slice(0, 2000),
+      combination,
+      priceDisplay: parseMoneyInput(price),
+      compareAtDisplay: Number(parseMoneyInput(compareAtPrice)),
+      stockValue: Number(String(row.stock ?? "0").trim() || "0"),
+    });
+  }
+  return { variations };
+}
+
+/**
+ * Writes the attributes and variations of a variable product: attributes are replaced as a
+ * set, variations are updated in place when they already exist (their id survives, so any
+ * order that references them keeps pointing at the same combination), inserted when they are
+ * new, and the ones the admin removed are deleted. The `sync_variation_parent` trigger keeps
+ * the product's own price/stock in step.
+ */
+async function saveVariableProductSets(
+  supabase: Awaited<ReturnType<typeof adminClient>>["supabase"],
+  productId: string,
+  attributes: ParsedAttribute[],
+  variations: ParsedVariation[],
+  found: Map<string, { id: string; path: string }>,
+  money: Money,
+): Promise<void> {
+  const { error: attrDeleteError } = await supabase.from("product_attributes").delete().eq("product_id", productId);
+  if (attrDeleteError) throw attrDeleteError;
+  if (attributes.length) {
+    const { error } = await supabase
+      .from("product_attributes")
+      .insert(attributes.map((a, index) => ({ product_id: productId, name: a.name, options: a.options, sort_order: index })));
+    if (error) throw error;
+  }
+
+  const names = attributes.map((a) => a.name);
+  const rows = variations.map((v, index) => ({
+    ...(v.id ? { id: v.id } : {}),
+    product_id: productId,
+    sku: v.sku,
+    price_micros: toBaseMicros(v.priceDisplay as number, money),
+    compare_at_price_micros: v.compareAtPrice ? toBaseMicros(v.compareAtDisplay, money) : null,
+    stock: Number.isInteger(v.stockValue) && v.stockValue >= 0 ? v.stockValue : 0,
+    is_active: v.is_active,
+    image_media_id: v.image_media_id || null,
+    image_url: v.image_media_id ? mediaUrl(found.get(v.image_media_id)!.path) : v.image_url || null,
+    combination: v.combination,
+    label: combinationLabel(v.combination, names),
+    sort_order: index,
+  }));
+
+  // 1. drop the rows the admin removed, *before* writing the new ones (their order items keep
+  //    the label they copied at checkout), 2. update the rows that still exist in place,
+  //    3. insert the combinations that were added.
+  const keepIds = variations.flatMap((v) => (v.id ? [v.id] : []));
+  const remove = supabase.from("product_variations").delete().eq("product_id", productId);
+  const { error: removeError } = keepIds.length ? await remove.not("id", "in", `(${keepIds.join(",")})`) : await remove;
+  if (removeError) throw removeError;
+
+  const updates = rows.filter((r) => "id" in r);
+  const inserts = rows.filter((r) => !("id" in r));
+  if (updates.length) {
+    const { error } = await supabase.from("product_variations").upsert(updates, { onConflict: "id" });
+    if (error) throw error;
+  }
+  if (inserts.length) {
+    const { error } = await supabase.from("product_variations").insert(inserts);
+    if (error) throw error;
   }
 }
 

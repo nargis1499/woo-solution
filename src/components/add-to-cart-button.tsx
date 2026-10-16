@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/button";
 
 type Props = {
   product: Pick<Product, "id" | "slug" | "name" | "price_micros" | "image_url" | "stock">;
+  /**
+   * The chosen combination of a variable product: its own price / stock / image replace the
+   * product's, and the cart keeps it as a separate line.
+   */
+  variation?: { id: string; label: string; price_micros: number; stock: number; image_url: string | null } | null;
   quantity?: number;
   size?: "sm" | "default" | "lg";
   className?: string;
@@ -22,21 +27,24 @@ type Props = {
   manageStock?: boolean;
 };
 
-export function AddToCartButton({ product, quantity = 1, size = "default", className, mode = "add", manageStock = true }: Props) {
+export function AddToCartButton({ product, variation = null, quantity = 1, size = "default", className, mode = "add", manageStock = true }: Props) {
   const addItem = useCartStore((s) => s.addItem);
   const [added, setAdded] = useState(false);
   const router = useRouter();
-  const outOfStock = manageStock && product.stock <= 0;
+  const stock = variation ? variation.stock : product.stock;
+  const outOfStock = manageStock && stock <= 0;
 
   function handlePress() {
     addItem(
       {
         productId: product.id,
+        variationId: variation?.id ?? null,
+        variationLabel: variation?.label ?? null,
         slug: product.slug,
         name: product.name,
-        priceMicros: product.price_micros,
-        imageUrl: product.image_url,
-        stock: manageStock ? product.stock : null,
+        priceMicros: variation ? variation.price_micros : product.price_micros,
+        imageUrl: variation?.image_url ?? product.image_url,
+        stock: manageStock ? stock : null,
       },
       quantity,
     );

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeftIcon, ShoppingCartIcon, Trash2Icon } from "lucide-react";
-import { selectCartSubtotal, useCartStore, useHydrated } from "@/lib/cart-store";
+import { lineKey, selectCartSubtotal, useCartStore, useHydrated } from "@/lib/cart-store";
 import { formatMoney } from "@/lib/money";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,7 +50,7 @@ export function CartView({ manageStock = true }: { manageStock?: boolean }) {
       <Card className="gap-0 py-0">
         <ul className="divide-y">
           {items.map((item) => (
-            <li key={item.productId} className="flex gap-4 p-4 sm:p-5">
+            <li key={lineKey(item)} className="flex gap-4 p-4 sm:p-5">
               <Link href={`/products/${item.slug}`} className="w-24 shrink-0 overflow-hidden rounded-lg sm:w-28">
                 <ProductImage src={item.imageUrl} alt={item.name} sizes="112px" />
               </Link>
@@ -60,13 +60,14 @@ export function CartView({ manageStock = true }: { manageStock?: boolean }) {
                     <Link href={`/products/${item.slug}`} className="font-medium hover:text-primary">
                       {item.name}
                     </Link>
+                    {item.variationLabel && <p className="text-xs text-muted-foreground">{item.variationLabel}</p>}
                     <p className="text-sm text-muted-foreground">{formatPrice(item.priceMicros)} each</p>
                   </div>
                   <p className="font-semibold tabular-nums">{formatPrice(item.priceMicros * item.quantity)}</p>
                 </div>
                 <div className="mt-auto flex items-center justify-between gap-4">
-                  <QuantityInput size="sm" value={item.quantity} max={manageStock ? (item.stock ?? undefined) : undefined} onChange={(q) => setQuantity(item.productId, q)} />
-                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onPress={() => removeItem(item.productId)}>
+                  <QuantityInput size="sm" value={item.quantity} max={manageStock ? (item.stock ?? undefined) : undefined} onChange={(q) => setQuantity(lineKey(item), q)} />
+                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onPress={() => removeItem(lineKey(item))}>
                     <Trash2Icon /> Remove
                   </Button>
                 </div>

@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { ShippingInput } from "@/lib/types";
 
 export type PlaceOrderInput = {
-  items: { product_id: string; quantity: number }[];
+  items: { product_id: string; variation_id?: string | null; quantity: number }[];
   shipping: ShippingInput;
 };
 
@@ -25,6 +25,7 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
         .filter((i) => i && UUID_RE.test(String(i.product_id)))
         .map((i) => ({
           product_id: String(i.product_id),
+          variation_id: i.variation_id && UUID_RE.test(String(i.variation_id)) ? String(i.variation_id) : null,
           quantity: Math.floor(Number(i.quantity)),
         }))
         .filter((i) => Number.isFinite(i.quantity) && i.quantity > 0)

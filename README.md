@@ -51,6 +51,7 @@ cp .env.example .env.local
    11. [`supabase/migrations/20261024000000_home_sections.sql`](supabase/migrations/20261024000000_home_sections.sql) – **Home page sections**: `site_settings.home_show_categories` / `home_show_featured` / `home_show_filter` / `home_filter_title` – the switches behind **UI → Home page**. Defaults keep the home page exactly as it was (categories + featured on, filtered products off)
    12. [`supabase/migrations/20261025000000_currency.sql`](supabase/migrations/20261025000000_currency.sql) – **Currency**: `site_settings.currency` (`USD` / `BDT`, default USD) + `site_settings.usd_to_bdt_rate`, and `orders.exchange_rate` so every order remembers the currency and rate it was placed with (`place_order()` stamps them). Amounts stay in the base unit (USD) – nothing in `products` or `orders` is rewritten; migration 13 below makes that unit a micro-dollar. Safe to run on an existing project
    13. [`supabase/migrations/20261026000000_money_micros.sql`](supabase/migrations/20261026000000_money_micros.sql) – **Price precision**: every money column becomes an integer number of **USD micro-dollars** (`1 USD = 1,000,000`, so a cent is 10,000) and is renamed `*_cents` → `*_micros` (`bigint`); existing amounts are multiplied by 10,000, so no price changes value. A whole cent is 1.20 ৳ at a rate of 120, which is why a taka price used to come back as 99.60 ৳ when you typed 100 ৳. Run it **together with the matching app release** – the two are not compatible with each other
+   14. [`supabase/migrations/20261027000000_variations.sql`](supabase/migrations/20261027000000_variations.sql) – **Variable products**: `products.type` (`simple` / `variable`) + `products.sku`, `product_attributes` (name + option values per product), `product_variations` (SKU, regular / sale price, stock, image, enabled flag – one row per combination) with RLS, the `product_variations_sync_parent` trigger that keeps the parent's price / stock in step, `order_items.variation_id` / `variation_label`, a `place_order()` that checks and decrements the *variation* that was bought, and restocking on cancellation. Products without attributes stay exactly as they are – safe to run on an existing project
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -142,7 +143,7 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | --- | --- |
 | Dashboard | Revenue / order / product / customer stats, orders by status, recent orders, low-stock list |
 | Pages | Static content pages (About, Contact, Privacy policy, FAQ …) with a rich-text editor, featured image, tags, draft / published workflow, preview and per-page SEO – see [Pages](#pages) below. Each published page is live at `/<slug>` |
-| Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **main image** + **gallery** picked from the Media Library (upload a new file or select an existing one – see [Media](#media)), or paste any image URL |
+| Products | Create, edit, delete; search & filter; draft/active, featured, stock, sale price; **main image** + **gallery** picked from the Media Library (upload a new file or select an existing one – see [Media](#media)), or paste any image URL. Each product is **Simple** or **Variable** – see [Variable products](#variable-products) |
 | Categories | Create, rename, delete (products become uncategorised); **drag the handle** (mouse, touch long-press, or ↑/↓ on a focused handle) to reorder – the shop's category filter and the sitemap follow the saved order. Which categories appear in the storefront navigation is decided under **UI → Menu** |
 | Orders | Filter by status, view items & shipping address, change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
@@ -156,6 +157,25 @@ The **Pages, Products, Orders and Users** lists are paginated: `?page=` + a **pe
 
 Every action reports back through a toast notification (bottom-right corner of the dashboard, [sonner](https://sonner.emilkowal.ski/)) – successes in green, failures in red – while validation errors stay next to the fields they belong to.
 
+#### Variable products
+
+**Products → New product** starts with a **Product type** selector. *Simple product* is the classic form (one price, sale price, SKU, stock). *Variable product* hides those four fields – the price and the stock of a variable product are computed from its variations – and reveals two new cards.
+
+**Attributes** – add up to five attributes (e.g. *Color*, *Size*) and type their values as tags/chips (up to 30 each; Enter or comma adds one, click the × removes it). Nothing is saved until you press *Save product*.
+
+**Variations** – **Generate variations** builds the full cartesian product of the attribute values (*Red / Blue* × *S / M* → 4 rows) and asks for confirmation before overwriting existing rows; the combinations you already had keep their price, stock, SKU and image. If you change the attributes again, **Generate variations** restores the missing rows and only drops the ones whose combination is gone.
+
+Every row is its own variant: **SKU** (type it, or *Auto SKUs* fills every empty one from the product name + attribute values, e.g. `RED-S`), **regular price** and **sale price**, **stock**, an optional **image** (*Choose* opens the Media Library picker – a variation image is used on the storefront as soon as that combination is selected), an **enabled** switch and a delete button. Rows can be deleted before saving; the card header counts them and warns about enabled rows without a price.
+
+Above the table, **Bulk edit** applies one value to everything: *Set price for all*, *Set compare-at price for all*, *Set stock for all*, *Enable all*, *Disable all*. A variable product **cannot be saved** without attributes, without at least one enabled variation that has a price, or with no variations at all – the reason appears in the card, and nothing is written to the database.
+
+What the database does behind the form (migration 14):
+
+- `product_attributes` and `product_variations` are related rows; a variation stores the combination it stands for (`{ "Color": "Red", "Size": "S" }`), the label customers see (*Red / S*) and a unique constraint on `(product_id, combination)` – generating twice can't duplicate a row.
+- Saving replaces the attributes and upserts the variations (existing ids survive, so rows are updated rather than deleted and re-created); the rows whose combination disappeared are removed. **Switching a product back to Simple deletes its attributes and variations.**
+- The parent row keeps a *summary*: `products.price_micros` = the cheapest **enabled** variation, `products.compare_at_price_micros` = `NULL` (the shop shows *From $10.00*, without a strike-through) and `products.stock` = the sum of the enabled variations. The `product_variations_sync_parent` trigger does that on every variation write, so the admin list, the shop cards and the low-stock dashboard card are always right.
+
+On the storefront the page of a variable product shows one dropdown per attribute instead of the plain price; the price, the sale price, the *Only N left in stock* / *Sold out* badge, the summary and the image follow the chosen combination, combinations that don't exist are marked *— unavailable* and disabled, and **Add to cart** stays disabled until a real, in-stock combination is picked. The shop card shows *Choose options* instead of *Add to cart* and lists *From <cheapest price>*. Every variation is its own cart line (`Blue / S` and `Red / S` sit next to each other with their own price and stock), cancelling an order restocks the variation that was bought, and both the storefront order page and the admin order page name the variation – `order_items` keeps `variation_id` *and* a copy of the label, so deleting a variation later never rewrites the history of an order.
 #### Menus
 
 `/nemesis/ui` → **Menu** manages the storefront navigation – **UI** sits directly above **Settings** in the sidebar and opens on its first tab, *Menu*.
@@ -244,6 +264,7 @@ woo-solution/
 │   ├── migrations/20261024000000_home_sections.sql  # home-page section switches + filter title (UI → Home page)
 │   ├── migrations/20261025000000_currency.sql     # store currency (USD / BDT) + USD→BDT rate, orders.exchange_rate
 │   ├── migrations/20261026000000_money_micros.sql # prices become USD micro-dollars (1 USD = 1,000,000); *_cents → *_micros
+│   ├── migrations/20261027000000_variations.sql   # variable products: type/sku, attributes, variations, place_order()
 │   └── seed.sql                             # demo categories + products
 ├── src/
 │   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders

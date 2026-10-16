@@ -7,8 +7,13 @@ import { MAX_QTY_PER_LINE } from "./config";
 
 export type CartItem = {
   productId: string;
+  /** Which variation was chosen (variable products); null for simple products. */
+  variationId?: string | null;
+  /** Display text of that variation, e.g. "Red / Small". */
+  variationLabel?: string | null;
   slug: string;
   name: string;
+  /** Unit price in USD micros – the variation's own price for a variable product. */
   priceMicros: number;
   imageUrl: string | null;
   /** Units available when stock is managed; null = unlimited (Settings → WooCommerce → stock management off) */
@@ -19,10 +24,18 @@ export type CartItem = {
 type CartState = {
   items: CartItem[];
   addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
-  setQuantity: (productId: string, quantity: number) => void;
-  removeItem: (productId: string) => void;
+  setQuantity: (lineKey: string, quantity: number) => void;
+  removeItem: (lineKey: string) => void;
   clear: () => void;
 };
+
+/**
+ * A cart line is one product **and** one variation: Red / Small and Red / Medium are two
+ * different lines, so prices, stock and the order items stay apart.
+ */
+export function lineKey(item: Pick<CartItem, "productId" | "variationId">): string {
+  return item.variationId ? `${item.productId}:${item.variationId}` : item.productId;
+}
 
 function clampQty(qty: number, stock: number | null) {
   const available = stock == null ? MAX_QTY_PER_LINE : Math.max(stock, 1);
@@ -41,31 +54,27 @@ export const useCartStore = create<CartState>()(
 
       addItem: (item, quantity = 1) =>
         set((state) => {
-          const existing = state.items.find((i) => i.productId === item.productId);
+          const key = lineKey(item);
+          const existing = state.items.find((i) => lineKey(i) === key);
           if (existing) {
             return {
               items: state.items.map((i) =>
-                i.productId === item.productId
-                  ? { ...i, ...item, quantity: clampQty(i.quantity + quantity, item.stock) }
-                  : i,
+                lineKey(i) === key ? { ...i, ...item, quantity: clampQty(i.quantity + quantity, item.stock) } : i,
               ),
             };
           }
           return { items: [...state.items, { ...item, quantity: clampQty(quantity, item.stock) }] };
         }),
 
-      setQuantity: (productId, quantity) =>
+      setQuantity: (key, quantity) =>
         set((state) => ({
           items:
             quantity <= 0
-              ? state.items.filter((i) => i.productId !== productId)
-              : state.items.map((i) =>
-                  i.productId === productId ? { ...i, quantity: clampQty(quantity, i.stock) } : i,
-                ),
+              ? state.items.filter((i) => lineKey(i) !== key)
+              : state.items.map((i) => (lineKey(i) === key ? { ...i, quantity: clampQty(quantity, i.stock) } : i)),
         })),
 
-      removeItem: (productId) =>
-        set((state) => ({ items: state.items.filter((i) => i.productId !== productId) })),
+      removeItem: (key) => set((state) => ({ items: state.items.filter((i) => lineKey(i) !== key) })),
 
       clear: () => set({ items: [] }),
     }),

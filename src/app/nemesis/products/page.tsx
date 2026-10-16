@@ -7,6 +7,7 @@ import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatMoney, moneyFromSettings } from "@/lib/money";
 import { deleteProduct, deleteProducts } from "@/app/nemesis/actions";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { FilterSelect } from "@/components/admin/filter-select";
 import { DeleteButton } from "@/components/admin/form-bits";
@@ -99,14 +100,22 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
               <div key="p" className="flex items-center gap-3">
                 <Thumb src={p.image_url} />
                 <div className="min-w-0">
-                  <Link href={editHref(p.id)} className="block truncate font-medium hover:underline">
-                    {p.name}
-                  </Link>
+                  <span className="flex items-center gap-2">
+                    <Link href={editHref(p.id)} className="truncate font-medium hover:underline">
+                      {p.name}
+                    </Link>
+                    {p.type === "variable" && (
+                      <Badge variant="secondary" className="shrink-0 text-xs">
+                        Variable
+                      </Badge>
+                    )}
+                  </span>
                   <p className="truncate text-xs text-muted-foreground">/{p.slug}</p>
                 </div>
               </div>,
               p.category?.name ?? "—",
               <span key="price">
+                {p.type === "variable" && <span className="mr-1 text-xs text-muted-foreground">From</span>}
                 {formatMoney(p.price_micros, money)}
                 {p.compare_at_price_micros != null && p.compare_at_price_micros > p.price_micros && (
                   <span className="ml-1 text-xs text-muted-foreground line-through">{formatMoney(p.compare_at_price_micros, money)}</span>

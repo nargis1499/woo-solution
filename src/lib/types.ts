@@ -34,6 +34,37 @@ export type MenuItem = {
   category?: { id: string; name: string; slug: string } | null;
 };
 
+export type ProductType = "simple" | "variable";
+
+/** A variable product's axis, e.g. name "Color", options ["Red", "Blue"]. */
+export type ProductAttribute = {
+  id: string;
+  product_id: string;
+  name: string;
+  options: string[];
+  sort_order: number;
+};
+
+/** One purchasable combination of a variable product (Red / Small) with its own price + stock. */
+export type ProductVariation = {
+  id: string;
+  product_id: string;
+  sku: string | null;
+  price_micros: number;
+  compare_at_price_micros: number | null;
+  stock: number;
+  is_active: boolean;
+  image_url: string | null;
+  image_media_id: string | null;
+  /** Attribute name → chosen value, e.g. {"Color":"Red","Size":"Small"} */
+  combination: Record<string, string>;
+  /** Display text of the combination, e.g. "Red / Small" */
+  label: string;
+  sort_order: number;
+  /** Media-library file behind `image_url`, when the image came from the library. */
+  image_media?: MediaRef | null;
+};
+
 export type Product = {
   id: string;
   category_id: string | null;
@@ -43,6 +74,13 @@ export type Product = {
   price_micros: number;
   compare_at_price_micros: number | null;
   image_url: string | null;
+  /** `simple` (own price/stock) or `variable` (price/stock come from `variations`). */
+  type?: ProductType;
+  sku?: string | null;
+  /** Variable products only: the axes, in the order the admin defined them. */
+  attributes?: ProductAttribute[];
+  /** Variable products only: every combination, in display order. */
+  variations?: ProductVariation[];
   /** Media-library file behind `image_url` (null for external URLs / legacy uploads). */
   image_media_id?: string | null;
   stock: number;
@@ -113,7 +151,7 @@ export type MediaUsage = {
   product_id: string | null;
   product_name: string | null;
   product_slug: string | null;
-  role: "image" | "gallery" | "favicon" | "share_image" | "page_image" | "page_share_image" | "page_content";
+  role: "image" | "gallery" | "variation" | "favicon" | "share_image" | "page_image" | "page_share_image" | "page_content";
 };
 
 /* ─── Pages (CMS) ─────────────────────────────────────────────────────────── */
@@ -169,6 +207,9 @@ export type OrderItem = {
   unit_price_micros: number;
   quantity: number;
   line_total_micros: number;
+  /** Which variation of a variable product was bought (null for simple products). */
+  variation_id?: string | null;
+  variation_label?: string | null;
 };
 
 export type Order = {

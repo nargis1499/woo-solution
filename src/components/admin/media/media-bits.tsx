@@ -189,6 +189,7 @@ export function usageHref(u: MediaUsage): string {
 export const USAGE_ROLE_LABEL: Record<MediaUsage["role"], string> = {
   image: "main image",
   gallery: "gallery",
+  variation: "variation image",
   favicon: "Site favicon",
   share_image: "Social share image",
   page_image: "featured image",

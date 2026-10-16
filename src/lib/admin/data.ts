@@ -1,7 +1,9 @@
 import "server-only";
 import { MEDIA_REF_COLUMNS, isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
 import { createClient } from "@/lib/supabase/server";
-import { withOrderColumns } from "@/lib/data/order-columns";
+import { BASE_ORDER_COLUMNS, ORDER_COLUMNS, ORDER_ITEM_COLUMNS, ORDER_ITEM_COLUMNS_LEGACY, withOrderColumns } from "@/lib/data/order-columns";
+import { isMissingVariationSchema } from "@/lib/data/product-columns";
+import { withSortedVariations } from "@/lib/variations";
 import { requireAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { pageCount } from "@/lib/admin/pagination";
@@ -16,11 +18,20 @@ import type { AdminStats, Category, MediaRef, MenuItem, MenuLocation, Order, Ord
  * returns the full data set to admins. Belt and braces.
  */
 
-const PRODUCT_COLUMNS =
+const PRODUCT_COLUMNS_BASE =
   "id, category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, stock, is_active, is_featured, created_at, updated_at, category:categories(id, name, slug)";
+/** `type` / `sku` + the variation tables came with migration 14; see `withProductColumns`. */
+const PRODUCT_COLUMNS = `${PRODUCT_COLUMNS_BASE}, type, sku`;
 
 /** Media-library embeds (main image + ordered gallery). Only used where the form needs them. */
 const PRODUCT_MEDIA_COLUMNS = `${PRODUCT_COLUMNS}, image_media_id, image_media:media!products_image_media_id_fkey(${MEDIA_REF_COLUMNS}), gallery:product_media(media_id, position, media(${MEDIA_REF_COLUMNS}))`;
+
+/** Product form: the media embeds plus the variable-product tables. */
+const PRODUCT_VARIATION_COLUMNS = `${PRODUCT_MEDIA_COLUMNS}, attributes:product_attributes(id, product_id, name, options, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
+
+/** Without `type` / `sku`, for a database that has not run migration 14 yet. */
+const PRODUCT_COLUMNS_LEGACY = PRODUCT_COLUMNS_BASE;
+const PRODUCT_MEDIA_COLUMNS_LEGACY = `${PRODUCT_COLUMNS_BASE}, image_media_id, image_media:media!products_image_media_id_fkey(${MEDIA_REF_COLUMNS}), gallery:product_media(media_id, position, media(${MEDIA_REF_COLUMNS}))`;
 
 
 const PROFILE_COLUMNS = "id, full_name, phone, email, avatar_url, is_admin, created_at, updated_at";
@@ -103,10 +114,14 @@ export async function adminListProducts(options: ProductListOptions = {}): Promi
   const total = count ?? 0;
   const { perPage, page, from, to } = pageWindow(options, total);
 
-  const { data, error } = await build(PRODUCT_COLUMNS, false)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false }) // stable order for rows created in the same instant (e.g. seed data)
-    .range(from, to);
+  const run = (columns: string) =>
+    build(columns, false)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false }) // stable order for rows created in the same instant (e.g. seed data)
+      .range(from, to);
+
+  let { data, error } = await run(PRODUCT_COLUMNS);
+  if (error && isMissingVariationSchema(error)) ({ data, error } = await run(PRODUCT_COLUMNS_LEGACY));
   if (error) throw new Error(`Failed to load products: ${error.message}`);
   return { items: (data ?? []) as unknown as Product[], total, page, perPage };
 }
@@ -115,11 +130,13 @@ export async function adminGetProduct(id: string): Promise<Product | null> {
   await requireAdmin();
   if (!isUuid(id)) return null;
   const supabase = await createClient();
-  let { data, error } = await supabase.from("products").select(PRODUCT_MEDIA_COLUMNS).eq("id", id).maybeSingle();
+  const load = (columns: string) => supabase.from("products").select(columns).eq("id", id).maybeSingle();
+  let { data, error } = await load(PRODUCT_VARIATION_COLUMNS);
+  if (error && /product_variations|product_attributes/i.test(`${error.message} ${error.code}`)) ({ data, error } = await load(PRODUCT_MEDIA_COLUMNS_LEGACY));
   // Before the media migration ran the embeds don't resolve – fall back to the plain row.
-  if (error && isMissingMediaSchema(error.message)) ({ data, error } = await supabase.from("products").select(PRODUCT_COLUMNS).eq("id", id).maybeSingle());
+  if (error && isMissingMediaSchema(error.message)) ({ data, error } = await load(PRODUCT_COLUMNS_LEGACY));
   if (error) throw new Error(`Failed to load product: ${error.message}`);
-  return data ? withSortedGallery(data as unknown as Product) : null;
+  return data ? withSortedVariations(withSortedGallery(data as unknown as Product)) : null;
 }
 
 // ─── Pages (CMS) ────────────────────────────────────────────────────────────
@@ -267,13 +284,15 @@ export async function adminGetOrder(id: string): Promise<Order | null> {
   await requireAdmin();
   if (!isUuid(id)) return null;
   const supabase = await createClient();
-  const { data, error } = await withOrderColumns((columns) =>
+  const load = (orderColumns: string, itemColumns: string) =>
     supabase
       .from("orders")
-      .select(`${columns}, order_items(id, order_id, product_id, product_name, product_slug, image_url, unit_price_micros, quantity, line_total_micros)`)
+      .select(`${orderColumns}, order_items(${itemColumns})`)
       .eq("id", id)
-      .maybeSingle(),
-  );
+      .maybeSingle();
+  let { data, error } = await load(ORDER_COLUMNS, ORDER_ITEM_COLUMNS);
+  if (error && /variation_(id|label)/i.test(`${error.message} ${error.code}`)) ({ data, error } = await load(ORDER_COLUMNS, ORDER_ITEM_COLUMNS_LEGACY));
+  if (error && /exchange_rate/i.test(`${error.message} ${error.code}`)) ({ data, error } = await load(BASE_ORDER_COLUMNS, ORDER_ITEM_COLUMNS_LEGACY));
   if (error) throw new Error(`Failed to load order: ${error.message}`);
   return (data as unknown as Order) ?? null;
 }

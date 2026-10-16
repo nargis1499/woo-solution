@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Product } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
+import { LinkButton } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AddToCartButton } from "./add-to-cart-button";
 import { Price } from "./price";
@@ -31,8 +32,15 @@ export function ProductCard({ product, priority, manageStock = true }: { product
             {product.name}
           </Link>
         </h3>
-        <Price micros={product.price_micros} compareAtMicros={product.compare_at_price_micros} className="mt-auto" />
-        <AddToCartButton product={product} size="sm" className="mt-2 w-full" manageStock={manageStock} />
+        <Price micros={product.price_micros} compareAtMicros={product.compare_at_price_micros} from={product.type === "variable"} className="mt-auto" />
+        {product.type === "variable" ? (
+          // A variable product needs its options first – send the shopper to the product page.
+          <LinkButton href={`/products/${product.slug}`} variant="outline" size="sm" className="mt-2 w-full">
+            Choose options
+          </LinkButton>
+        ) : (
+          <AddToCartButton product={product} size="sm" className="mt-2 w-full" manageStock={manageStock} />
+        )}
       </CardContent>
     </Card>
   );

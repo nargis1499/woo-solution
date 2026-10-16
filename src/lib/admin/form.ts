@@ -56,6 +56,8 @@ export function friendlyError(e: unknown): string {
   if (code === "23505" || /duplicate key/.test(message)) return "That slug is already in use. Please pick another one.";
   if (code === "23514" || /stock_check|violates check constraint/.test(message)) return "Not enough stock to re-open this order.";
   if (code === "42501" || /row-level security|permission denied/i.test(message)) return "You are not allowed to do that.";
+  if (/product_variations|product_attributes|variation_id|variation_label|"type"|column products\.type/i.test(message))
+    return "The variable-product tables are missing – run supabase/migrations/20261027000000_variations.sql in the Supabase SQL Editor, then try again.";
   if (code === "42P01" || code === "PGRST205" || code === "PGRST204" || /relation "?(public\.)?(media|product_media)"? does not exist|image_media_id|product_media.*schema cache|media.*schema cache/i.test(message))
     return "The Media Library tables are missing – run supabase/migrations/20261019000000_media_library.sql in the Supabase SQL Editor, then try again.";
   if (/relation "?(public\.)?(pages|tags|page_tags|page_media)"? does not exist|(pages|page_tags|page_media|tags).*schema cache/i.test(message))

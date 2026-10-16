@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { BanknoteIcon, CreditCardIcon, ShoppingCartIcon } from "lucide-react";
 import { placeOrder } from "@/app/(store)/checkout/actions";
-import { selectCartSubtotal, useCartStore, useHydrated } from "@/lib/cart-store";
+import { lineKey, selectCartSubtotal, useCartStore, useHydrated } from "@/lib/cart-store";
 import { formatMoney } from "@/lib/money";
 import type { CurrentUser } from "@/lib/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -59,7 +59,7 @@ export function CheckoutForm({ user }: { user: CurrentUser }) {
     const field = (name: string) => String(form.get(name) ?? "").trim();
     startTransition(async () => {
       const result = await placeOrder({
-        items: items.map((i) => ({ product_id: i.productId, quantity: i.quantity })),
+        items: items.map((i) => ({ product_id: i.productId, variation_id: i.variationId ?? null, quantity: i.quantity })),
         shipping: {
           name: field("name"),
           phone: field("phone"),
@@ -168,12 +168,13 @@ export function CheckoutForm({ user }: { user: CurrentUser }) {
         <CardContent>
           <ul className="divide-y">
             {items.map((item) => (
-              <li key={item.productId} className="flex items-center gap-3 py-3 text-sm">
+              <li key={lineKey(item)} className="flex items-center gap-3 py-3 text-sm">
                 <div className="w-14 shrink-0 overflow-hidden rounded-md">
                   <ProductImage src={item.imageUrl} alt={item.name} sizes="56px" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate leading-snug font-medium">{item.name}</p>
+                  {item.variationLabel && <p className="truncate text-xs text-muted-foreground">{item.variationLabel}</p>}
                   <p className="text-muted-foreground">× {item.quantity}</p>
                 </div>
                 <p className="font-medium tabular-nums">{formatPrice(item.priceMicros * item.quantity)}</p>

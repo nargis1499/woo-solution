@@ -53,6 +53,8 @@ async function ProductDetails({ params }: { params: Params }) {
   const { manage_stock } = settings;
   const money = moneyFromSettings(settings);
   if (!product) notFound();
+  // Variable products show "From …" at the top; the panel below shows the chosen combination.
+  const isVariable = (product.type ?? "simple") === "variable" && (product.attributes?.length ?? 0) > 0;
 
   return (
     <>
@@ -78,7 +80,7 @@ async function ProductDetails({ params }: { params: Params }) {
               </Link>
             )}
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{product.name}</h1>
-            <Price micros={product.price_micros} compareAtMicros={product.compare_at_price_micros} className="mt-3 text-2xl" />
+            <Price micros={product.price_micros} compareAtMicros={product.compare_at_price_micros} from={isVariable} className="mt-3 text-2xl" />
           </div>
           {product.description && <p className="leading-relaxed text-muted-foreground">{product.description}</p>}
           <ProductPurchasePanel product={product} manageStock={manage_stock} />
@@ -91,7 +93,7 @@ async function ProductDetails({ params }: { params: Params }) {
               <BanknoteIcon className="size-4" aria-hidden /> Cash on delivery available.
             </li>
             <li className="flex items-center gap-2">
-              <PackageCheckIcon className="size-4" aria-hidden /> SKU: {product.id.slice(0, 8).toUpperCase()}
+              <PackageCheckIcon className="size-4" aria-hidden /> SKU: {product.sku ?? product.id.slice(0, 8).toUpperCase()}
             </li>
           </ul>
         </div>

@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useFormToast } from "./flash-toast";
 import { CheckboxField, SubmitButton } from "./form-bits";
+import { VariableProductFields, initialAttributes, initialVariations } from "./product-variations";
+import { submittedVariations, type DraftAttribute, type DraftVariation } from "@/lib/variations";
 import { ProductMediaFields } from "./media/product-media-fields";
 
 function slugify(input: string) {
@@ -42,14 +44,22 @@ export function ProductForm({
   // slug auto-follows the name until the user edits the slug by hand
   const [slugTouched, setSlugTouched] = useState(Boolean(product?.slug));
   const [slug, setSlug] = useState(v.slug ?? product?.slug ?? "");
+  const [name, setName] = useState(v.name ?? product?.name ?? "");
 
-  const gallery = (product?.gallery ?? []).flatMap((g) => (g.media ? [g.media] : []));
-
+  // Simple (one price + stock) or variable (attributes → generated variations).
   // Prices are stored in USD micros and shown in the store currency (Settings → WooCommerce).
   // The form tells the action which currency/rate it displayed, and what it displayed, so
   // untouched prices are stored back exactly and edited ones are converted with the same rate.
   const money = useMoney();
   const symbol = CURRENCIES[money.currency].symbol;
+
+  const [type, setType] = useState<"simple" | "variable">((v.type as "simple" | "variable") ?? product?.type ?? "simple");
+  const [sku, setSku] = useState(v.sku ?? product?.sku ?? "");
+  const [attributes, setAttributes] = useState<DraftAttribute[]>(() => (v.attributes_json ? (JSON.parse(v.attributes_json) as DraftAttribute[]) : initialAttributes(product)));
+  const [variations, setVariations] = useState<DraftVariation[]>(() => (v.variations_json ? (JSON.parse(v.variations_json) as DraftVariation[]).map((row) => ({ ...row, key: row.id ?? crypto.randomUUID(), image_preview: row.image_url ?? "" })) : initialVariations(product, money)));
+
+  const gallery = (product?.gallery ?? []).flatMap((g) => (g.media ? [g.media] : []));
+
   const priceShown = product ? inputFromMicros(product.price_micros, money) : "";
   const compareAtShown = product?.compare_at_price_micros != null ? inputFromMicros(product.compare_at_price_micros, money) : "";
 
@@ -61,6 +71,9 @@ export function ProductForm({
       <input type="hidden" name="money_rate" value={String(money.rate)} />
       <input type="hidden" name="price_shown" value={priceShown} />
       <input type="hidden" name="compare_at_price_shown" value={compareAtShown} />
+      <input type="hidden" name="type" value={type} />
+      <input type="hidden" name="attributes_json" value={JSON.stringify(attributes)} data-testid="attributes-json" />
+      <input type="hidden" name="variations_json" value={JSON.stringify(submittedVariations(variations))} data-testid="variations-json" />
 
       <div className="space-y-6">
         <Card>
@@ -69,6 +82,30 @@ export function ProductForm({
           </CardHeader>
           <CardContent>
             <FieldGroup className="gap-5">
+              <Field data-invalid={Boolean(err.type) || undefined}>
+                <FieldLabel htmlFor="product_type">Product type</FieldLabel>
+                <Select
+                  name="product_type"
+                  defaultSelectedKey={type}
+                  onSelectionChange={(key) => setType(String(key) as "simple" | "variable")}
+                  aria-label="Product type"
+                  isInvalid={Boolean(err.type)}
+                >
+                  <SelectTrigger id="product_type" className="w-full sm:max-w-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem id="simple">Simple product</SelectItem>
+                    <SelectItem id="variable">Variable product</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  {type === "variable"
+                    ? "Prices, stock and images come from the variations below."
+                    : "One price and one stock count."}
+                </FieldDescription>
+                <FieldError>{err.type}</FieldError>
+              </Field>
               <Field data-invalid={Boolean(err.name) || undefined}>
                 <FieldLabel htmlFor="name">Name</FieldLabel>
                 <Input
@@ -76,8 +113,8 @@ export function ProductForm({
                   name="name"
                   required
                   maxLength={200}
-                  defaultValue={v.name ?? product?.name ?? ""}
-                  onChange={(e) => { if (!slugTouched) setSlug(slugify(e.target.value)); }}
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); if (!slugTouched) setSlug(slugify(e.target.value)); }}
                   aria-invalid={Boolean(err.name) || undefined}
                 />
                 <FieldError>{err.name}</FieldError>
@@ -113,6 +150,12 @@ export function ProductForm({
           </CardHeader>
           <CardContent>
             <FieldGroup className="gap-5">
+              {type === "variable" ? (
+                <p className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                  A variable product takes its price, stock and image from the <span className="font-medium">variations</span> below – the
+                  shop shows the cheapest enabled one (“From …”).
+                </p>
+              ) : (
               <div className="grid gap-4 sm:grid-cols-3">
                 <Field data-invalid={Boolean(err.price) || undefined}>
                   <FieldLabel htmlFor="price">Price ({money.currency})</FieldLabel>
@@ -161,6 +204,20 @@ export function ProductForm({
                   <input type="hidden" name="stock" value={product?.stock ?? 0} />
                 )}
               </div>
+              )}
+              <Field data-invalid={Boolean(err.sku) || undefined}>
+                <FieldLabel htmlFor="sku">SKU</FieldLabel>
+                <Input
+                  id="sku"
+                  name="sku"
+                  value={sku}
+                  maxLength={64}
+                  placeholder={type === "variable" ? "Used as the prefix for variation SKUs" : "Optional, e.g. TEE-001"}
+                  onChange={(e) => setSku(e.target.value)}
+                  aria-invalid={Boolean(err.sku) || undefined}
+                />
+                <FieldError>{err.sku}</FieldError>
+              </Field>
               <Field data-invalid={Boolean(err.category_id) || undefined}>
                 <FieldLabel htmlFor="category_id">Category</FieldLabel>
                 <Select name="category_id" defaultSelectedKey={v.category_id ?? product?.category_id ?? ""} aria-label="Category" isInvalid={Boolean(err.category_id)}>
@@ -185,6 +242,21 @@ export function ProductForm({
             </FieldGroup>
           </CardContent>
         </Card>
+
+        {/* ── Variable products: attributes → generated variations ──────────── */}
+        {type === "variable" && (
+          <VariableProductFields
+            product={product}
+            attributes={attributes}
+            variations={variations}
+            onAttributesChange={setAttributes}
+            onVariationsChange={setVariations}
+            money={money}
+            manageStock={manageStock}
+            baseSku={sku || product?.sku || slug || name}
+            errors={err}
+          />
+        )}
       </div>
 
       {/* ── Image + gallery (Media Library) ───────────────────────────────── */}

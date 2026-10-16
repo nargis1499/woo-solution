@@ -47,7 +47,10 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
                 <li key={item.id} className="flex items-center gap-4 px-6 py-4">
                   <Thumb src={item.image_url} size="lg" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{item.product_name}</p>
+                    <p className="truncate font-medium">
+                      {item.product_name}
+                      {item.variation_label && <span className="ml-2 text-xs font-normal text-muted-foreground">{item.variation_label}</span>}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {formatMoney(item.unit_price_micros, orderMoney(order))} × {item.quantity}
                       {item.product_slug && (

@@ -14,18 +14,24 @@ export function Price({
   compareAtMicros,
   money,
   className,
+  from = false,
 }: {
   micros: number;
   compareAtMicros?: number | null;
   money?: Money;
   className?: string;
+  /** Variable products: the amount is the cheapest enabled variation ("From ৳…"). */
+  from?: boolean;
 }) {
   const current = useMoney();
   const m = money ?? current;
   const onSale = compareAtMicros != null && compareAtMicros > micros;
   return (
     <span className={cn("inline-flex items-baseline gap-2", className)}>
-      <span className={cn("font-semibold tabular-nums", onSale && "text-primary")}>{formatMoney(micros, m)}</span>
+      <span className={cn("font-semibold tabular-nums", onSale && "text-primary")}>
+        {from && <span className="mr-1 text-sm font-normal text-muted-foreground">From</span>}
+        {formatMoney(micros, m)}
+      </span>
       {onSale && <span className="text-sm text-muted-foreground line-through">{formatMoney(compareAtMicros, m)}</span>}
     </span>
   );
