@@ -251,6 +251,7 @@ Both the customer's order page (`/orders/[id]`) and the admin's (`/nemesis/order
 | Turn rule | a customer holds the pen until they post, then waits for an admin reply; admins can send as many messages back to back as they want. Enforced by the POST route, not just in the UI |
 | Length | 200 characters, counted live under the field (`145 / 200`, red and Send disabled over the limit); the same limit is a `CHECK` constraint in the database |
 | Author | customers show their profile picture (initials as fallback), admins show the store's shield badge. Admin messages sit left, customer messages right – in both views |
+| Look | the thread stays **256 px tall** however long it gets (it scrolls, it never grows), the scrollbar is invisible in every engine (`.scrollbar-hidden`) while the wheel / touch still work, and it scrolls to the newest message smoothly on open and on every message that arrives. Bubbles ease in, the live dot breathes – both fall back to no motion under `prefers-reduced-motion` |
 
 | Endpoint | What it does |
 | --- | --- |
@@ -258,7 +259,7 @@ Both the customer's order page (`/orders/[id]`) and the admin's (`/nemesis/order
 | `POST /api/orders/[id]/chat` | validates session + ownership (RLS), status, turn rule and length – then stores the message and pushes it to every open stream |
 | `GET /api/orders/[id]/chat/stream` | `text/event-stream`: replays what the page missed on connect, then pushes each stored message (`retry: 3000`, comment pings). The POST route publishes over an in-process bus, and a 2 s database poll behind it catches missed broadcasts |
 
-The thread is one row per message in `order_messages` with a snapshot of the author's name / avatar, so it keeps rendering after a profile edit or a deleted account. There is no update or delete policy – messages are immutable, and deleting an order deletes its thread (cascade). Sign in as the customer and the admin in two windows to see a message cross over in about a second.
+The thread is one row per message in `order_messages` with a snapshot of the author's name / avatar, so it keeps rendering after a profile edit or a deleted account. There is no update or delete policy – messages are immutable, and deleting an order deletes its thread (cascade) – which the dashboard's *Delete order* button (and bulk delete) both use. Sign in as the customer and the admin in two windows to see a message cross over in about a second.
 
 #
 ### Pages

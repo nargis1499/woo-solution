@@ -144,7 +144,12 @@ export default async function AdminOrderPage({ params, searchParams }: { params:
         </div>
       </div>
 
-      {messages && <OrderChat orderId={order.id} status={order.status} viewer="admin" initialMessages={messages} customerName={order.shipping_name} />}
+      {/* `mt-6` keeps the thread clear of the two cards above it – it sits outside the grid. */}
+      {messages && (
+        <div className="mt-6">
+          <OrderChat orderId={order.id} status={order.status} viewer="admin" initialMessages={messages} customerName={order.shipping_name} />
+        </div>
+      )}
     </>
   );
 }

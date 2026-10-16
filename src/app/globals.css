@@ -155,6 +155,20 @@
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: none; }
   }
+
+  /* Order inquiries: a bubble fades/slides in when it is sent or received, and the
+     live dot breathes while the SSE stream is connected. `motion-reduce:animate-none`
+     on the elements keeps both out of the way for people who ask for less motion. */
+  --animate-chat-in: chat-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  @keyframes chat-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
+  --animate-chat-live: chat-live 2.4s ease-in-out infinite;
+  @keyframes chat-live {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.85); }
+  }
 }
 
 @layer base {
@@ -177,6 +191,24 @@
 /* Page width + gutters shared by the storefront pages. */
 @utility container-page {
   @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+/*
+ * Order inquiries: the message list scrolls but shows no scrollbar – the track is
+ * hidden for every engine (`scrollbar-width` for Firefox, `-ms-overflow-style` for
+ * Edge, `::-webkit-scrollbar` for Chrome / Safari). The element stays a normal
+ * scroll container, so the wheel, touch and keyboard still work.
+ */
+@layer components {
+  .scrollbar-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
 }
 
 /*

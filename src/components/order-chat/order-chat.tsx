@@ -58,11 +58,14 @@ export function OrderChat({
     return () => source.close();
   }, [orderId]);
 
-  // Keep the newest bubble in view as the thread grows. Only the list scrolls – scrolling the
-  // page here would jump the whole order page down the moment it loads.
+  // Smoothly keep the newest bubble in view: once when the thread mounts and again after every
+  // message that is sent or streamed in. Only the list scrolls – scrolling the page here would
+  // jump the whole order page down the moment it loads. Reduced-motion users get an instant jump.
   useEffect(() => {
     const element = list.current;
-    if (element) element.scrollTop = element.scrollHeight;
+    if (!element) return;
+    const smooth = !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    element.scrollTo({ top: element.scrollHeight, behavior: smooth ? "smooth" : "auto" });
   }, [messages.length]);
 
   const open = isOrderChatOpen(status);
@@ -102,7 +105,10 @@ export function OrderChat({
         <CardTitle>Order inquiries</CardTitle>
         <CardAction>
           <span
-            className={cn("mt-1.5 block size-2 rounded-full", live ? "bg-emerald-500" : "bg-muted-foreground/40")}
+            className={cn(
+              "mt-1.5 block size-2 rounded-full",
+              live ? "animate-chat-live motion-reduce:animate-none bg-emerald-500" : "bg-muted-foreground/40",
+            )}
             data-testid="order-chat-live"
             data-live={live ? "true" : "false"}
             title={live ? "Live updates on" : "Reconnecting…"}
@@ -118,7 +124,7 @@ export function OrderChat({
             No messages yet.
           </p>
         ) : (
-          <ul ref={list} className="max-h-96 space-y-3 overflow-y-auto pr-1" data-testid="order-chat-messages">
+          <ul ref={list} className="scrollbar-hidden max-h-64 space-y-3 overflow-y-auto overscroll-contain pr-1" data-testid="order-chat-messages">
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} customerName={customerName} />
             ))}
@@ -157,7 +163,7 @@ export function OrderChat({
                   {trimmed.length} / {MAX_ORDER_MESSAGE_LENGTH}
                 </span>
               </div>
-              <Button type="button" onPress={send} isDisabled={!canSend} className="self-stretch" data-testid="order-chat-send">
+              <Button type="button" onPress={send} isDisabled={!canSend} className="self-stretch transition-transform duration-150 ease-out motion-reduce:transition-none active:scale-[0.97]" data-testid="order-chat-send">
                 <SendIcon /> {viewer === "admin" ? "Reply" : "Send"}
               </Button>
             </div>
@@ -186,7 +192,7 @@ function MessageBubble({ message, customerName }: { message: OrderMessage; custo
 
   return (
     <li
-      className={cn("flex items-start gap-2", !isAdmin && "flex-row-reverse")}
+      className={cn("animate-chat-in motion-reduce:animate-none flex items-start gap-2", !isAdmin && "flex-row-reverse")}
       data-testid={`order-chat-message-${message.sender_type}`}
       data-message-id={message.id}
       aria-label={`${name}, ${at}`}
