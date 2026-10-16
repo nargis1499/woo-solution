@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import type { Selection } from "react-aria-components";
 import { DndContext, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
@@ -205,6 +205,15 @@ export function DataGrid({ label, columns, rows, className, bulkDelete, reorder 
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 6 } }),
   );
 
+  /**
+   * dnd-kit derives the `aria-describedby` of every drag handle from a **module-level
+   * counter** (`DndDescribedBy-0`, `-1`, ...) when `DndContext` is given no `id`. That counter
+   * keeps counting across server renders, so the server HTML and the client hydration
+   * disagreed and React logged a hydration mismatch on every handle. A `useId()`-based id is
+   * stable on both sides, and it is the id dnd-kit points the screen-reader instructions at.
+   */
+  const dndId = `row-dnd-${useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
+
   const table = (
     <>
       {/* Clips the rows to the card's radius so the card itself can stay `overflow-visible` for the sticky bar below. */}
@@ -252,7 +261,7 @@ export function DataGrid({ label, columns, rows, className, bulkDelete, reorder 
               >
                 {reorder && (
                   <TableCell className="pl-3">
-                    <DragHandle id={r.id} label={r.label} />
+                    <DragHandle id={r.id} label={r.label} descriptionId={dndId} />
                   </TableCell>
                 )}
                 {selectable && (
@@ -280,6 +289,7 @@ export function DataGrid({ label, columns, rows, className, bulkDelete, reorder 
   if (!reorder) return table;
   return (
     <DndContext
+      id={dndId}
       sensors={sensors}
       collisionDetection={closestCenter}
       modifiers={[restrictToVerticalAxis]}
@@ -304,8 +314,13 @@ const CSS_ESCAPE = (value: string) => (typeof window !== "undefined" && window.C
  * detached document first, and cell contents are skipped there – so this hook only ever runs
  * against the real `<tr>`.
  */
-function DragHandle({ id, label }: { id: string; label?: string }) {
+function DragHandle({ id, label, descriptionId }: { id: string; label?: string; /** id of the shared screen-reader instructions */ descriptionId: string }) {
+  // dnd-kit's `attributes` carry an `aria-describedby` built from its own generated id – when
+  // those two are out of step between the server render and hydration React reports a
+  // mismatch. The grid owns the stable id instead (see `dndId`), so it is set explicitly below.
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const { "aria-describedby": dndGeneratedId, ...dndAttributes } = attributes;
+  void dndGeneratedId; // deliberately discarded – replaced by the grid's stable `descriptionId`
   const rowRef = useRef<HTMLTableRowElement | null>(null);
 
   const handleRef = useCallback(
@@ -331,8 +346,9 @@ function DragHandle({ id, label }: { id: string; label?: string }) {
     <button
       ref={handleRef}
       type="button"
-      {...attributes}
+      {...dndAttributes}
       {...listeners}
+      aria-describedby={descriptionId}
       data-drag-handle={id}
       aria-label={`Drag to reorder${label ? ` ${label}` : ""}`}
       className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "cursor-grab touch-none text-muted-foreground active:cursor-grabbing")}
