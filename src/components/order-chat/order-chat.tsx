@@ -443,17 +443,21 @@ function MessageBubble({ message, mine, customerName }: { message: OrderMessage;
         </Avatar>
       )}
 
-      <div
-        className={cn(
-          "max-w-[85%] rounded-lg px-3 py-2 text-sm break-words",
-          isAdmin ? "rounded-tl-sm bg-primary text-primary-foreground" : "rounded-tr-sm bg-muted",
-        )}
-      >
-        <p className={cn("text-xs font-semibold", isAdmin ? "text-primary-foreground/90" : "text-muted-foreground")}>{name}</p>
-        <p className="mt-0.5 whitespace-pre-wrap">{message.message}</p>
-        <span className={cn("mt-1 flex items-center justify-end gap-1 text-[11px]", isAdmin ? "text-primary-foreground/75" : "text-muted-foreground")}>
+      {/* The bubble plus, **outside it and just below**, its own time and (for your own
+          messages) the ✓ / ✓✓ receipt – aligned to whichever side the bubble is on. */}
+      <div className={cn("flex max-w-[85%] min-w-0 flex-col", isAdmin ? "items-start" : "items-end")}>
+        <div
+          className={cn(
+            "rounded-lg px-3 py-2 text-sm break-words",
+            isAdmin ? "rounded-tl-sm bg-primary text-primary-foreground" : "rounded-tr-sm bg-muted",
+          )}
+        >
+          <p className={cn("text-xs font-semibold", isAdmin ? "text-primary-foreground/90" : "text-muted-foreground")}>{name}</p>
+          <p className="mt-0.5 whitespace-pre-wrap">{message.message}</p>
+        </div>
+        <span className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-muted-foreground" data-testid="order-chat-bubble-meta">
           <LocalTime iso={message.created_at} />
-          {/* ✓ / ✓✓ only on your own bubbles – the other side's read state is their business. */}
+          {/* ✓ / ✓✓ only on your own messages – the other side's read state is their business. */}
           {mine && <Receipt message={message} />}
         </span>
       </div>
