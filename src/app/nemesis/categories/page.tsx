@@ -16,15 +16,6 @@ export default async function AdminCategoriesPage() {
     <>
       <PageHeader
         title="Categories"
-        description={
-          <>
-            Group products so customers can browse by type. Drag a row to change the order of the shop&apos;s category filter. Which categories appear in the storefront navigation is decided under{" "}
-            <Link href="/nemesis/ui" className="font-medium text-foreground underline underline-offset-4">
-              UI → Menu
-            </Link>
-            .
-          </>
-        }
       />
 
       <Section title="Add a category" className="mb-6">
