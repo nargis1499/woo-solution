@@ -22,7 +22,7 @@ export async function Footer() {
   ].filter((c): c is { label: string; href: string; icon: typeof MailIcon; title: string } => Boolean(c));
 
   return (
-    <footer className="mt-16 border-t bg-muted/30">
+    <footer className="theme-footer mt-16 border-t" data-testid="site-footer">
       <div className="container-page flex flex-col gap-6 py-10 text-sm text-muted-foreground sm:flex-row sm:items-start sm:justify-between">
         <div className="max-w-md space-y-3">
           <div className="space-y-1">

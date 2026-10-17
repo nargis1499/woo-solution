@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
-import { CheckIcon, MoonIcon, PaintbrushIcon, RotateCcwIcon, SunIcon } from "lucide-react";
+import { CheckIcon, MoonIcon, PaintbrushIcon, RotateCcwIcon, ShoppingBagIcon, SunIcon } from "lucide-react";
 import type { Key } from "react-aria-components";
 import { updateTheme, type AdminFormState } from "@/app/nemesis/actions";
 import {
   TEMPLATE_DEFAULTS,
+  THEME_CHROME_FIELDS,
   THEME_COLOR_FIELDS,
+  contrastForeground,
   templateTheme,
   THEME_GRADIENT_FIELDS,
   THEME_PRESETS,
@@ -89,12 +91,12 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   function applyPreset(index: number) {
     const preset = THEME_PRESETS[index];
     if (sync) {
-      setLight(presetColors(preset, "light", true));
-      setDark(presetColors(preset, "dark", true));
+      setLight((c) => presetColors(preset, "light", true, c));
+      setDark((c) => presetColors(preset, "dark", true, c));
     } else if (mode === "light") {
-      setLight(presetColors(preset, "light", false));
+      setLight((c) => presetColors(preset, "light", false, c));
     } else {
-      setDark(presetColors(preset, "dark", false));
+      setDark((c) => presetColors(preset, "dark", false, c));
     }
     // The preset also brings its hero gradient to the mode it was applied to, so a light-mode
     // Emerald and a dark-mode Indigo each get a hero that matches their palette.
@@ -313,6 +315,52 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
             </CardFooter>
           </Card>
 
+          <Card data-testid="theme-header-footer">
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle>Header &amp; Footer</CardTitle>
+                <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground" data-testid="theme-header-footer-mode">
+                  {mode === "light" ? <SunIcon className="size-3.5" aria-hidden /> : <MoonIcon className="size-3.5" aria-hidden />}
+                  {mode === "light" ? "Light" : "Dark"} mode
+                </span>
+              </div>
+              <CardDescription>Background and foreground text colours stay synced for readable contrast.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {THEME_CHROME_FIELDS.map((field) => {
+                const bg = colors[field.key] ?? defaults[field.key] ?? "#ffffff";
+                const fg = contrastForeground(bg);
+                return (
+                  <div key={field.key} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3" data-testid={`theme-chrome-${field.key}`}>
+                    <div className="min-w-40 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">{field.label}</p>
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium shadow-2xs"
+                          style={{ backgroundColor: bg, color: fg }}
+                          data-testid={`theme-color-${field.key}-contrast`}
+                        >
+                          <span>Aa</span>
+                          <span className="opacity-85">{fg}</span>
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{field.description}</p>
+                    </div>
+                    <ThemeColorField
+                      id={`${mode}-${field.key}`}
+                      label={`${field.label} (${mode})`}
+                      value={colors[field.key]}
+                      fallback={defaults[field.key] ?? "#000000"}
+                      onChange={(value) => setColor(field.key, value)}
+                      onClear={() => setColor(field.key, null)}
+                      testId={`theme-color-${field.key}`}
+                    />
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -467,6 +515,18 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                 data-testid="theme-preview"
                 style={{ ...themeVars(previewColors, modeGradients), backgroundColor: "var(--background)", color: "var(--foreground)" } as CSSProperties}
               >
+                <div className="theme-header flex items-center justify-between border-b px-4 py-2.5 text-xs" data-testid="preview-header">
+                  <span className="flex items-center gap-2 font-semibold">
+                    <span className="grid size-5 place-items-center rounded bg-primary text-primary-foreground ring-1 ring-current/15">
+                      <ShoppingBagIcon className="size-3" aria-hidden />
+                    </span>
+                    Store header
+                  </span>
+                  <span className="flex items-center gap-3 text-muted-foreground">
+                    <span className="text-foreground font-medium">Shop</span>
+                    <span>Categories</span>
+                  </span>
+                </div>
                 <div className="theme-hero px-4 py-6">
                   <p className="text-lg font-bold">Hero section</p>
                   <p className="text-sm opacity-80">Storefront headline area</p>
@@ -489,6 +549,10 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                   <div className="flex items-center gap-2 rounded-lg border bg-secondary p-3 text-sm" style={{ color: "var(--secondary-foreground)" }} data-testid="preview-secondary-surface">
                     <PaintbrushIcon className="size-4" /> Secondary surface
                   </div>
+                </div>
+                <div className="theme-footer flex items-center justify-between border-t px-4 py-2.5 text-xs" data-testid="preview-footer">
+                  <span className="font-medium text-foreground">Store footer</span>
+                  <span className="text-muted-foreground">© Synced text</span>
                 </div>
               </div>
             </CardContent>

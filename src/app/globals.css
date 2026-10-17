@@ -59,6 +59,18 @@
   --loader-image: none;
   --hero-image: none;
   --hero-foreground: var(--primary-foreground);
+  --header-bg: color-mix(in oklab, var(--background) 80%, transparent);
+  --header-foreground: var(--foreground);
+  --header-muted: var(--muted);
+  --header-muted-foreground: var(--muted-foreground);
+  --header-accent: var(--accent);
+  --header-accent-foreground: var(--accent-foreground);
+  --header-border: var(--border);
+  --footer-bg: color-mix(in oklab, var(--muted) 30%, transparent);
+  --footer-foreground: var(--foreground);
+  --footer-muted: var(--muted);
+  --footer-muted-foreground: var(--muted-foreground);
+  --footer-border: var(--border);
 }
 
 .dark {
@@ -100,6 +112,18 @@
   --button-hover: color-mix(in oklab, var(--primary) 80%, transparent);
   --button-hover-foreground: var(--primary-foreground);
   --loader: var(--primary);
+  --header-bg: color-mix(in oklab, var(--background) 80%, transparent);
+  --header-foreground: var(--foreground);
+  --header-muted: var(--muted);
+  --header-muted-foreground: var(--muted-foreground);
+  --header-accent: var(--accent);
+  --header-accent-foreground: var(--accent-foreground);
+  --header-border: var(--border);
+  --footer-bg: color-mix(in oklab, var(--muted) 30%, transparent);
+  --footer-foreground: var(--foreground);
+  --footer-muted: var(--muted);
+  --footer-muted-foreground: var(--muted-foreground);
+  --footer-border: var(--border);
 }
 
 @theme inline {
@@ -274,6 +298,26 @@
     color: var(--hero-foreground);
     /* descendants that use primary-foreground (badge, muted paragraph) follow the hero */
     --primary-foreground: var(--hero-foreground);
+  }
+  .theme-header {
+    background-color: var(--header-bg);
+    color: var(--header-foreground);
+    border-color: var(--header-border);
+    --foreground: var(--header-foreground);
+    --muted: var(--header-muted);
+    --muted-foreground: var(--header-muted-foreground);
+    --accent: var(--header-accent);
+    --accent-foreground: var(--header-accent-foreground);
+    --border: var(--header-border);
+  }
+  .theme-footer {
+    background-color: var(--footer-bg);
+    color: var(--footer-foreground);
+    border-color: var(--footer-border);
+    --foreground: var(--footer-foreground);
+    --muted: var(--footer-muted);
+    --muted-foreground: var(--footer-muted-foreground);
+    --border: var(--footer-border);
   }
 }
 

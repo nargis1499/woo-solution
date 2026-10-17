@@ -12,8 +12,11 @@
  * "Reset to defaults" and the untouched look identical).
  */
 
-export const THEME_COLOR_KEYS = ["primary", "secondary", "button", "button_hover", "loader"] as const;
+export const THEME_PALETTE_KEYS = ["primary", "secondary", "button", "button_hover", "loader"] as const;
+export const THEME_CHROME_KEYS = ["header", "footer"] as const;
+export const THEME_COLOR_KEYS = [...THEME_PALETTE_KEYS, ...THEME_CHROME_KEYS] as const;
 export type ThemeColorKey = (typeof THEME_COLOR_KEYS)[number];
+export type ThemeChromeKey = (typeof THEME_CHROME_KEYS)[number];
 
 export type ThemeMode = "light" | "dark";
 
@@ -58,6 +61,11 @@ export const THEME_COLOR_FIELDS: { key: ThemeColorKey; label: string; descriptio
   { key: "loader", label: "Loading bar", description: "The progress bar along the top while a page loads" },
 ];
 
+export const THEME_CHROME_FIELDS: { key: ThemeChromeKey; label: string; description: string }[] = [
+  { key: "header", label: "Header", description: "Top navigation bar background — text and icons sync automatically" },
+  { key: "footer", label: "Footer", description: "Bottom footer background — text, links and borders sync automatically" },
+];
+
 export const THEME_GRADIENT_FIELDS: { key: ThemeGradientKey; label: string; description: string }[] = [
   { key: "button", label: "Button gradient", description: "Fills primary buttons instead of the flat button colour" },
   { key: "loader", label: "Loading bar gradient", description: "Fills the top progress bar instead of its flat colour" },
@@ -77,6 +85,8 @@ export const TEMPLATE_DEFAULTS: { light: ThemeColors; dark: ThemeColors } = {
     button: "#7f54b3",
     button_hover: "#a27fcc",
     loader: "#7f54b3",
+    header: "#ffffff",
+    footer: "#fafafa",
   },
   dark: {
     primary: "#b592e0",
@@ -84,6 +94,8 @@ export const TEMPLATE_DEFAULTS: { light: ThemeColors; dark: ThemeColors } = {
     button: "#b592e0",
     button_hover: "#c9aef0",
     loader: "#b592e0",
+    header: "#171717",
+    footer: "#1f1f1f",
   },
 };
 
@@ -99,8 +111,8 @@ export function templateGradients(): ThemeGradients {
 /** Reset writes these (same values as an untouched template – see the module doc). */
 export function templateTheme(): ThemeCustomization {
   return {
-    light: { primary: null, secondary: null, button: null, button_hover: null, loader: null },
-    dark: { primary: null, secondary: null, button: null, button_hover: null, loader: null },
+    light: { primary: null, secondary: null, button: null, button_hover: null, loader: null, header: null, footer: null },
+    dark: { primary: null, secondary: null, button: null, button_hover: null, loader: null, header: null, footer: null },
     sync: false,
     gradients: { light: templateGradients(), dark: templateGradients() },
   };
@@ -263,7 +275,7 @@ const gradientVar: Record<ThemeGradientKey, string> = {
  */
 export function themeVars(colors: ThemeColors, gradients?: ThemeGradients): Record<string, string> {
   const vars: Record<string, string> = {};
-  const { primary, secondary, button, button_hover, loader } = colors;
+  const { primary, secondary, button, button_hover, loader, header, footer } = colors;
 
   if (primary) {
     const onPrimary = contrastForeground(primary);
@@ -299,6 +311,26 @@ export function themeVars(colors: ThemeColors, gradients?: ThemeGradients): Reco
 
   const loaderColor = loader ?? primary;
   if (loaderColor) vars["--loader"] = loaderColor;
+
+  if (header) {
+    const onHeader = contrastForeground(header);
+    vars["--header-bg"] = header;
+    vars["--header-foreground"] = onHeader;
+    vars["--header-muted"] = `color-mix(in oklab, ${onHeader} 14%, ${header})`;
+    vars["--header-muted-foreground"] = `color-mix(in oklab, ${onHeader} 74%, ${header})`;
+    vars["--header-accent"] = `color-mix(in oklab, ${onHeader} 14%, ${header})`;
+    vars["--header-accent-foreground"] = onHeader;
+    vars["--header-border"] = `color-mix(in oklab, ${onHeader} 16%, ${header})`;
+  }
+
+  if (footer) {
+    const onFooter = contrastForeground(footer);
+    vars["--footer-bg"] = footer;
+    vars["--footer-foreground"] = onFooter;
+    vars["--footer-muted"] = `color-mix(in oklab, ${onFooter} 14%, ${footer})`;
+    vars["--footer-muted-foreground"] = `color-mix(in oklab, ${onFooter} 74%, ${footer})`;
+    vars["--footer-border"] = `color-mix(in oklab, ${onFooter} 16%, ${footer})`;
+  }
 
   for (const key of THEME_GRADIENT_KEYS) {
     const gradient = gradients?.[key];
@@ -400,11 +432,13 @@ export function normaliseTheme(raw: {
 
 /* ── Presets ────────────────────────────────────────────────────────────── */
 
+export type ThemePaletteKey = (typeof THEME_PALETTE_KEYS)[number];
+
 export type ThemePreset = {
   id: string;
   name: string;
-  light: Required<ThemeColors>;
-  dark: Required<ThemeColors>;
+  light: Record<ThemePaletteKey, string>;
+  dark: Record<ThemePaletteKey, string>;
   /** Hero gradient that ships with the palette – seeded into the mode a preset is applied to. */
   hero?: { from: string; to: string; angle: number };
 };
@@ -497,9 +531,17 @@ export const THEME_PRESETS: ThemePreset[] = [
 ];
 
 /** The palette a preset applies when "sync modes" is on: the light set, in both modes. */
-export function presetColors(preset: ThemePreset, mode: ThemeMode, sync: boolean): ThemeColors {
+export function presetColors(preset: ThemePreset, mode: ThemeMode, sync: boolean, existing?: Partial<ThemeColors>): ThemeColors {
   const set = sync || mode === "light" ? preset.light : preset.dark;
-  return { primary: set.primary, secondary: set.secondary, button: set.button, button_hover: set.button_hover, loader: set.loader };
+  return {
+    primary: set.primary,
+    secondary: set.secondary,
+    button: set.button,
+    button_hover: set.button_hover,
+    loader: set.loader,
+    header: existing?.header ?? null,
+    footer: existing?.footer ?? null,
+  };
 }
 
 /** Two palette entries are the same colour (`null` = "template", only equal to `null`). */
@@ -520,7 +562,7 @@ function sameColor(a: string | null, b: string | null): boolean {
 export function presetIdFor(colors: ThemeColors, mode: ThemeMode, sync = false): string | null {
   for (const preset of THEME_PRESETS) {
     const set = presetColors(preset, mode, sync);
-    if (THEME_COLOR_KEYS.every((key) => sameColor(colors[key], set[key]))) return preset.id;
+    if (THEME_PALETTE_KEYS.every((key) => sameColor(colors[key], set[key]))) return preset.id;
   }
   return null;
 }

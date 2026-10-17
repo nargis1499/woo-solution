@@ -17,12 +17,12 @@ export async function Header() {
   const [{ store_name }, nav] = await Promise.all([getSiteSettings(), getMenu("header")]);
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+    <header className="theme-header sticky top-0 z-40 border-b backdrop-blur" data-testid="site-header">
       <div className="container-page flex h-16 items-center gap-2 sm:gap-4">
         <MobileNav items={nav} storeName={store_name} />
 
         <Link href="/" className="flex min-w-0 items-center gap-2.5 text-lg font-bold tracking-tight">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm ring-1 ring-current/15">
             <ShoppingBag className="size-4" aria-hidden />
           </span>
           <span className="truncate">{store_name}</span>
