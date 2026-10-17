@@ -8,6 +8,7 @@ import {
   TEMPLATE_DEFAULTS,
   THEME_CHROME_SECTIONS,
   THEME_COLOR_FIELDS,
+  contrastForeground,
   syncedForeground,
   templateTheme,
   THEME_GRADIENT_FIELDS,
@@ -36,7 +37,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useFormToast } from "@/components/admin/flash-toast";
-import { CheckboxField, SubmitButton } from "@/components/admin/form-bits";
+import { SubmitButton } from "@/components/admin/form-bits";
 import { ThemeColorField } from "./color-field";
 import { cn } from "@/lib/utils";
 
@@ -160,6 +161,8 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
 
   const previewColors: ThemeColors = sync ? light : mode === "light" ? light : dark;
   const activePreset = { light: presetIdFor(light, "light", sync), dark: presetIdFor(dark, "dark", sync) };
+  const presetPillBg = colors.primary ?? defaults.primary ?? "#7f54b3";
+  const presetPillFg = contrastForeground(presetPillBg);
 
   return (
     <form
@@ -222,7 +225,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
 
               <div className="my-4 border-t" />
 
-              <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="space-y-2">
                   <ToggleGroup
                     aria-label="Color mode"
@@ -254,18 +257,18 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                   </div>
                 </div>
 
-                <div className="rounded-lg border bg-muted/15 px-3.5 py-2.5">
-                  <CheckboxField
-                    name="theme_sync"
+                <label className="flex cursor-pointer items-center gap-2.5 text-xs font-medium select-none" data-testid="theme-sync-toggle">
+                  <span>Apply to both modes</span>
+                  <Switch
                     id="theme_sync"
-                    label="Use the same colors for both Light & Dark modes"
-                    defaultChecked={sync}
+                    aria-label="Apply to both modes"
+                    isSelected={sync}
                     onChange={(checked) => {
                       setSync(checked);
                       if (checked) setDark(light);
                     }}
                   />
-                </div>
+                </label>
               </div>
             </div>
 
@@ -324,9 +327,13 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                   className="flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                   data-testid="theme-section-presets-toggle"
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium">Presets</span>
-                    <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                  <div className="inline-flex flex-wrap items-center gap-2.5">
+                    <span className="text-sm leading-none font-medium">Presets</span>
+                    <span
+                      className="inline-flex h-5 items-center rounded-full px-2.5 text-xs leading-none font-medium shadow-2xs"
+                      style={{ backgroundColor: presetPillBg, color: presetPillFg }}
+                      data-testid="theme-section-presets-pill"
+                    >
                       {presetLabel(mode === "light" ? light : dark, mode, sync)}
                     </span>
                   </div>
@@ -409,9 +416,13 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                   className="flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                   data-testid="theme-section-header-footer-toggle"
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium">Header &amp; Footer</span>
-                    <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs text-muted-foreground" data-testid="theme-header-footer-mode">
+                  <div className="inline-flex flex-wrap items-center gap-2.5">
+                    <span className="text-sm leading-none font-medium">Header &amp; Footer</span>
+                    <span
+                      className="inline-flex h-5 items-center gap-1.5 rounded-full px-2.5 text-xs leading-none font-medium shadow-2xs"
+                      style={{ backgroundColor: presetPillBg, color: presetPillFg }}
+                      data-testid="theme-header-footer-mode"
+                    >
                       {mode === "light" ? <SunIcon className="size-3" aria-hidden /> : <MoonIcon className="size-3" aria-hidden />}
                       {mode === "light" ? "Light" : "Dark"} mode
                     </span>
@@ -480,9 +491,13 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                   className="flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                   data-testid="theme-section-gradients-toggle"
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium">Gradients</span>
-                    <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs text-muted-foreground" data-testid="theme-gradients-mode">
+                  <div className="inline-flex flex-wrap items-center gap-2.5">
+                    <span className="text-sm leading-none font-medium">Gradients</span>
+                    <span
+                      className="inline-flex h-5 items-center gap-1.5 rounded-full px-2.5 text-xs leading-none font-medium shadow-2xs"
+                      style={{ backgroundColor: presetPillBg, color: presetPillFg }}
+                      data-testid="theme-gradients-mode"
+                    >
                       {mode === "light" ? <SunIcon className="size-3" aria-hidden /> : <MoonIcon className="size-3" aria-hidden />}
                       {mode === "light" ? "Light" : "Dark"} mode
                     </span>
