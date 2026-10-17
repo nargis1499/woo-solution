@@ -35,6 +35,7 @@ export function MediaRefField({
   removeLabel = "Remove",
   allowUrl = false,
   onChange,
+  extra,
 }: {
   name: string;
   label: string;
@@ -52,6 +53,8 @@ export function MediaRefField({
   allowUrl?: boolean;
   /** Fired when the admin picks or removes a file (true = a file is selected). */
   onChange?: (hasImage: boolean) => void;
+  /** Rendered under the buttons — e.g. the matching icon picker for a category. */
+  extra?: React.ReactNode;
 }) {
   const external = Boolean(currentUrl && !currentMedia); // stored value is an external URL
   const [mode, setMode] = useState<Mode>("keep");
@@ -145,6 +148,7 @@ export function MediaRefField({
               </Button>
             )}
           </div>
+          {extra}
           {showUrlInput && (
             <Input
               type="url"

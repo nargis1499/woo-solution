@@ -103,7 +103,7 @@ async function CategoryTiles() {
   if (categories.length === 0) return null;
   return (
     <div className="grid grid-cols-3 gap-x-4 gap-y-6 sm:grid-cols-4 lg:grid-cols-6">
-      {categories.map((c, index) => (
+      {categories.map((c) => (
         <Link
           key={c.id}
           href={`/shop?category=${c.slug}`}
@@ -112,7 +112,6 @@ async function CategoryTiles() {
         >
           <CategoryThumb
             category={c}
-            index={index}
             className="transition duration-200 group-hover:scale-105 group-hover:ring-2 group-hover:ring-primary/40"
           />
           <span className="text-sm font-medium group-hover:text-primary">{c.name}</span>

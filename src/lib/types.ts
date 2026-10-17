@@ -14,8 +14,10 @@ export type Category = {
   /** Library file behind `image_url` (null for external URLs / no image). */
   image_media_id?: string | null;
   image_media?: MediaRef | null;
-  /** Icon id picked in the admin (see `@/lib/category-icons`); null = automatic rotation. */
+  /** Icon id picked in the admin (see `@/lib/category-icons`); null = the shopping bag. */
   icon?: string | null;
+  /** Icon fill (#rrggbb) picked in the admin; null = the theme primary colour. */
+  icon_color?: string | null;
   /** Only present in admin queries (`products(count)`). */
   product_count?: number;
 };

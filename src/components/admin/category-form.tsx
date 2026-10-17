@@ -63,17 +63,24 @@ export function CategoryForm({ category, compact }: { category?: Category | null
           <FieldError>{err.slug}</FieldError>
         </Field>
       </div>
-      <CategoryIconPicker key={`icon:${formRun}`} value={category?.icon ?? null} error={err.icon} />
       <MediaRefField
         key={`image:${formRun}`}
         name="image"
-        label="Category image"
+        label="Category image & icons"
         currentUrl={category?.image_url ?? null}
         currentMedia={category?.image_media ?? null}
         error={err.image_media_id ?? err.image_url}
         allowUrl
         chooseLabel="Choose image"
         picker={{ kind: "image", title: "Category image", confirmLabel: "Use as category image", uploadFolderName: "categories" }}
+        extra={
+          <CategoryIconPicker
+            key={`icon:${formRun}`}
+            value={category?.icon ?? null}
+            color={category?.icon_color ?? null}
+            error={err.icon ?? err.icon_color}
+          />
+        }
       />
       <div className={compact ? "flex justify-end gap-2" : "flex gap-2"}>
         <SubmitButton pendingLabel={category ? "Saving…" : "Adding…"}>{category ? "Save changes" : "Add category"}</SubmitButton>

@@ -556,11 +556,13 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
   const name = str(formData, "name", 100);
   const slug = slugify(str(formData, "slug", 100) || name);
   const iconInput = str(formData, "icon", 40);
+  const iconColorInput = str(formData, "icon_color", 20).trim();
 
   const fieldErrors: Record<string, string> = {};
   if (!name) fieldErrors.name = "Name is required.";
   if (!SLUG_RE.test(slug)) fieldErrors.slug = "Use lowercase letters, numbers and dashes only.";
   if (iconInput && !isCategoryIconId(iconInput)) fieldErrors.icon = "Pick one of the available icons.";
+  if (iconColorInput && !/^#[0-9a-f]{6}$/i.test(iconColorInput)) fieldErrors.icon_color = "Pick a fill colour, or clear it for the theme primary.";
   if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
 
   try {
@@ -568,7 +570,13 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
     const image = await resolveImageChoice(formData, "image", fieldErrors);
     if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
 
-    const row = { name, slug, icon: iconInput || null, ...image };
+    const row = {
+      name,
+      slug,
+      icon: iconInput || null,
+      icon_color: iconColorInput ? iconColorInput.toLowerCase() : null,
+      ...image,
+    };
     let result;
     if (isEdit) {
       result = await supabase.from("categories").update(row).eq("id", id).select("id").single();

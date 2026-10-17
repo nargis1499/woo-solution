@@ -35,12 +35,12 @@ export default async function AdminCategoriesPage() {
             { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
           ]}
           reorder={{ action: reorderCategories, savedMessage: "Category order saved." }}
-          rows={categories.map((c, index) => ({
+          rows={categories.map((c) => ({
             id: c.id,
             label: c.name,
             cells: [
               <Link key="n" href={`/nemesis/categories/${c.id}`} className="flex items-center gap-3 font-medium hover:underline">
-                <CategoryThumb category={c} index={index} size="sm" />
+                <CategoryThumb category={c} size="sm" />
                 {c.name}
               </Link>,
               <Link key="s" href={`/shop?category=${c.slug}`} target="_blank" className="hover:underline">

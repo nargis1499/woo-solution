@@ -15,7 +15,7 @@
 --      Everything (dashboard, order chat, notifications, media, pages …) works from there.
 --
 --  WHAT IS IN HERE
---   • All 23 migrations in order — schema, RLS, triggers, functions, storage bucket.
+--   • All 24 migrations in order — schema, RLS, triggers, functions, storage bucket.
 --   • API role grants (Supabase normally sets these up; stated here so the file is
 --     self-contained).
 --   • OPTIONAL demo catalog at the very end (categories + products + header menu).
@@ -3283,14 +3283,43 @@ comment on column public.categories.image_media_id is 'Media Library file behind
 --  CATEGORY ICONS
 --
 --  The icon a category shows on the "Shop by category" tiles when it has no
---  picture. The value is an id from src/lib/category-icons.ts (22 Lucide icons);
---  null keeps the automatic 1 → 2 → 3 rotation.
+--  picture. The value is an id from src/lib/category-icons.ts (24 Lucide icons);
+--  null means the default shopping bag.
 -- -----------------------------------------------------------------------------
 
 alter table public.categories
   add column if not exists icon text;
 
-comment on column public.categories.icon is 'Icon id picked in the admin (see src/lib/category-icons.ts); null = automatic rotation.';
+comment on column public.categories.icon is 'Icon id picked in the admin (see src/lib/category-icons.ts); null = the default shopping bag.';
+
+-- =============================================================================
+-- 24. Category icon colour — the fill behind that icon
+-- (migration 20261037000000_category_icon_color.sql)
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+--  CATEGORY ICON COLOUR
+--
+--  The fill behind a category's icon on the "Shop by category" tiles. A plain
+--  `#rrggbb` value picked in the admin; null means the theme's primary colour.
+-- -----------------------------------------------------------------------------
+
+alter table public.categories
+  add column if not exists icon_color text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'categories_icon_color_check'
+  ) then
+    alter table public.categories
+      add constraint categories_icon_color_check
+      check (icon_color is null or icon_color ~ '^#[0-9a-fA-F]{6}$');
+  end if;
+end
+$$;
+
+comment on column public.categories.icon_color is 'Icon fill (#rrggbb) picked in the admin; null = the theme primary colour.';
 
 
 -- =============================================================================

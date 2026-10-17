@@ -16,9 +16,13 @@ export const CATEGORY_IMAGE_COLUMNS = `image_url, image_media_id, image_media:me
 /** Migration 23 — the icon id picked in the admin. */
 export const CATEGORY_ICON_COLUMN = "icon";
 
+/** Migration 24 — the fill behind that icon (null = the theme primary). */
+export const CATEGORY_ICON_COLOR_COLUMN = "icon_color";
+
 /** `suffix` is for extra selects such as `, products(count)`. */
 export function categoryColumnSets(suffix = ""): string[] {
   return [
+    `${CATEGORY_COLUMNS}, ${CATEGORY_ICON_COLUMN}, ${CATEGORY_ICON_COLOR_COLUMN}, ${CATEGORY_IMAGE_COLUMNS}${suffix}`,
     `${CATEGORY_COLUMNS}, ${CATEGORY_ICON_COLUMN}, ${CATEGORY_IMAGE_COLUMNS}${suffix}`,
     `${CATEGORY_COLUMNS}, ${CATEGORY_IMAGE_COLUMNS}${suffix}`,
     `${CATEGORY_COLUMNS}${suffix}`,
