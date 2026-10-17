@@ -1,14 +1,23 @@
 /**
- * The icons an admin may give a category (Categories → "Choose from icon library").
+ * The icons an admin may give a category (Categories → "Set icon").
  *
  * Every entry is a Lucide component: a tree-shaken, inline SVG — no icon font,
  * no sprite request, no runtime dependency. The storefront renders exactly the
- * one icon the category uses; the picker is the only place that imports all 24.
+ * one icon the category uses; the picker is the only place that imports all 48.
  */
 import {
+  Baby,
+  Backpack,
+  Bath,
+  Bed,
+  Bike,
   BookOpen,
+  Cake,
   Camera,
+  Car,
   Coffee,
+  Cpu,
+  Crown,
   Dumbbell,
   Flower2,
   Footprints,
@@ -17,17 +26,32 @@ import {
   Gift,
   Glasses,
   Headphones,
+  Heart,
   House,
+  IceCream,
   Lamp,
   Laptop,
+  Leaf,
+  Music,
+  Palette,
   PawPrint,
+  Pizza,
   Plane,
+  Plug,
+  Scissors,
   Shirt,
   ShoppingBag,
+  ShoppingCart,
   Smartphone,
   Sofa,
   Sparkles,
+  Speaker,
+  Star,
+  Store,
   Tag,
+  TreePine,
+  Truck,
+  Tv,
   Utensils,
   Watch,
   type LucideIcon,
@@ -35,8 +59,9 @@ import {
 
 export type CategoryIconOption = { id: string; label: string; Icon: LucideIcon };
 
-/** 24 icons, in reading order. */
+/** 48 icons: the original 24, then the extended 24. */
 export const CATEGORY_ICONS: CategoryIconOption[] = [
+  // ── the original twenty-four ─────────────────────────────────────────────
   { id: "shopping-bag", label: "Shopping bag", Icon: ShoppingBag },
   { id: "tag", label: "Tag", Icon: Tag },
   { id: "sparkles", label: "Sparkles", Icon: Sparkles },
@@ -61,6 +86,31 @@ export const CATEGORY_ICONS: CategoryIconOption[] = [
   { id: "paw-print", label: "Paw print", Icon: PawPrint },
   { id: "flower", label: "Flower", Icon: Flower2 },
   { id: "plane", label: "Plane", Icon: Plane },
+  // ── the extended twenty-four ─────────────────────────────────────────────
+  { id: "shopping-cart", label: "Shopping cart", Icon: ShoppingCart },
+  { id: "store", label: "Store", Icon: Store },
+  { id: "backpack", label: "Backpack", Icon: Backpack },
+  { id: "bike", label: "Bike", Icon: Bike },
+  { id: "car", label: "Car", Icon: Car },
+  { id: "truck", label: "Truck", Icon: Truck },
+  { id: "baby", label: "Baby", Icon: Baby },
+  { id: "heart", label: "Heart", Icon: Heart },
+  { id: "star", label: "Star", Icon: Star },
+  { id: "crown", label: "Crown", Icon: Crown },
+  { id: "palette", label: "Palette", Icon: Palette },
+  { id: "scissors", label: "Scissors", Icon: Scissors },
+  { id: "music", label: "Music", Icon: Music },
+  { id: "speaker", label: "Speaker", Icon: Speaker },
+  { id: "tv", label: "TV", Icon: Tv },
+  { id: "cpu", label: "Chip", Icon: Cpu },
+  { id: "plug", label: "Plug", Icon: Plug },
+  { id: "bath", label: "Bath", Icon: Bath },
+  { id: "bed", label: "Bed", Icon: Bed },
+  { id: "pizza", label: "Pizza", Icon: Pizza },
+  { id: "cake", label: "Cake", Icon: Cake },
+  { id: "ice-cream", label: "Ice cream", Icon: IceCream },
+  { id: "leaf", label: "Leaf", Icon: Leaf },
+  { id: "tree", label: "Tree", Icon: TreePine },
 ];
 
 /** What a category without a picture and without a picked icon shows. */

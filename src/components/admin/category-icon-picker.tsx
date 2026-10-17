@@ -13,10 +13,23 @@ import {
 import { cn } from "@/lib/utils";
 import { CategoryIconFill } from "./category-icon-fill";
 
+/** White or near-black glyph for a custom fill, whichever reads better. */
+function onFill(color: string): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(color);
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const lin = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const l = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  return l > 0.45 ? "#111111" : "#ffffff";
+}
+
 /** Inline style for the gradient behind an icon (theme primary when no colour is set). */
 export function iconFillStyle(color: string | null | undefined): React.CSSProperties {
   if (!color) return {};
-  return { backgroundImage: `linear-gradient(135deg, ${color}, ${color}, ${color}66)` };
+  return { backgroundImage: `linear-gradient(135deg, ${color}, ${color}, ${color}66)`, color: onFill(color) };
 }
 
 /**
@@ -91,7 +104,12 @@ export function CategoryIconPicker({
         aria-label="Icon library"
       >
         <DialogTitle>Icon library</DialogTitle>
-        <div className="grid grid-cols-6 gap-2" role="group" aria-label="Icons">
+        <div
+          className="icon-scroll grid h-72 grid-cols-5 content-start gap-2 overflow-y-auto overscroll-contain pr-1 sm:grid-cols-6"
+          role="group"
+          aria-label="Icons"
+          data-testid="category-icon-grid"
+        >
           {CATEGORY_ICONS.map(({ id, label, Icon }) => {
             const isSelected = id === selected;
             return (
@@ -108,7 +126,7 @@ export function CategoryIconPicker({
                   setOpen(false);
                 }}
                 className={cn(
-                  "relative grid aspect-square w-full place-items-center rounded-xl p-0 text-primary-foreground",
+                  "relative grid aspect-square h-auto w-full place-items-center rounded-full p-0 text-primary-foreground hover:text-primary-foreground",
                   !fill && "bg-linear-to-br from-primary via-primary to-primary/40",
                   isSelected && "ring-2 ring-ring ring-offset-2 ring-offset-popover",
                 )}
