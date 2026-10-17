@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
-import { CheckIcon, MoonIcon, PaintbrushIcon, RotateCcwIcon, ShoppingBagIcon, SunIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, MoonIcon, PaintbrushIcon, RotateCcwIcon, ShoppingBagIcon, SunIcon } from "lucide-react";
 import type { Key } from "react-aria-components";
 import { updateTheme, type AdminFormState } from "@/app/nemesis/actions";
 import {
@@ -29,7 +29,8 @@ import { startTransition, useActionState } from "react";
 import { AlertDialog, AlertDialogCancel, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Field, FieldError, FieldGroup, FieldLabel, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
@@ -66,6 +67,10 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   const [gradients, setGradients] = useState<ThemeGradientSets>(saved.gradients);
   const [sync, setSync] = useState(saved.sync);
   const [resetOpen, setResetOpen] = useState(false);
+  const [colorsOpen, setColorsOpen] = useState(true);
+  const [presetsOpen, setPresetsOpen] = useState(true);
+  const [headerFooterOpen, setHeaderFooterOpen] = useState(true);
+  const [gradientsOpen, setGradientsOpen] = useState(true);
 
   const colors = mode === "light" ? light : dark;
   const defaults = TEMPLATE_DEFAULTS[mode];
@@ -200,173 +205,229 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                 }}
               />
 
-              <FieldSet>
-                <FieldLegend variant="label">Colors</FieldLegend>
-                <FieldGroup className="gap-3">
-                  {THEME_COLOR_FIELDS.map((field) => (
-                    <div key={field.key} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
-                      <div className="min-w-40">
-                        <p className="text-sm font-medium">{field.label}</p>
-                        <p className="text-xs text-muted-foreground">{field.description}</p>
-                      </div>
-                      <ThemeColorField
-                        id={`${mode}-${field.key}`}
-                        label={`${field.label} (${mode})`}
-                        value={colors[field.key]}
-                        fallback={defaults[field.key] ?? "#000000"}
-                        onChange={(value) => setColor(field.key, value)}
-                        onClear={() => setColor(field.key, null)}
-                        testId={`theme-color-${field.key}`}
-                      />
-                    </div>
-                  ))}
-                </FieldGroup>
-              </FieldSet>
-
-              <FieldSet>
-                <FieldLegend variant="label">Presets</FieldLegend>
-                {/* Each mode owns its palette: a click paints the mode being edited, so the
-                    Light and Dark chips below can name two different presets. */}
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="theme-presets">
-                  {THEME_PRESETS.map((preset, index) => {
-                    const set = sync || mode === "light" ? preset.light : preset.dark;
-                    const swatches = [set.primary, set.secondary, set.button, set.button_hover, set.loader];
-                    const isActive = activePreset[mode] === preset.id;
-                    const otherMode = mode === "light" ? "dark" : "light";
-                    const isOther = !sync && activePreset[otherMode] === preset.id;
-                    const OtherIcon = otherMode === "dark" ? MoonIcon : SunIcon;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => applyPreset(index)}
-                        aria-pressed={isActive}
-                        data-active={isActive ? "true" : undefined}
-                        data-testid={`theme-preset-${preset.id}`}
-                        className={cn(
-                          "relative rounded-lg border p-3 text-left transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-                          isActive && "border-primary bg-accent ring-2 ring-primary",
-                        )}
-                      >
-                        <span className="flex gap-1">
-                          {swatches.map((c, i) => (
-                            <span key={i} className="size-5 rounded-[4px] border" style={{ backgroundColor: c || "#000000" }} />
-                          ))}
-                        </span>
-                        <span className={cn("mt-2 block text-sm font-medium", (isActive || isOther) && "pe-5")}>{preset.name}</span>
-                        {isActive && (
-                          <CheckIcon className="absolute end-2.5 top-2.5 size-4 text-primary" aria-hidden data-testid={`theme-preset-${preset.id}-active`} />
-                        )}
-                        {isOther && !isActive && (
-                          <OtherIcon className="absolute end-2.5 top-2.5 size-3.5 text-muted-foreground" aria-hidden data-testid={`theme-preset-${preset.id}-other`} />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2" data-testid="theme-preset-modes">
-                  {MODES.map((m) => {
-                    const name = presetLabel(m.id === "light" ? light : dark, m.id, sync);
-                    const ModeIcon = m.id === "light" ? SunIcon : MoonIcon;
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setMode(m.id)}
-                        aria-pressed={mode === m.id}
-                        data-testid={`theme-preset-${m.id}-label`}
-                        className={cn(
-                          "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-                          mode === m.id ? "border-primary bg-accent" : "text-muted-foreground",
-                        )}
-                      >
-                        <ModeIcon className="size-3.5" aria-hidden />
-                        {m.id === "light" ? "Light" : "Dark"}
-                        <span className="font-medium text-foreground" data-testid={`theme-preset-${m.id}-name`}>{name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </FieldSet>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="theme-header-footer">
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle>Header &amp; Footer</CardTitle>
-                <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground" data-testid="theme-header-footer-mode">
-                  {mode === "light" ? <SunIcon className="size-3.5" aria-hidden /> : <MoonIcon className="size-3.5" aria-hidden />}
-                  {mode === "light" ? "Light" : "Dark"} mode
-                </span>
-              </div>
-              <CardDescription>Background and foreground text colours stay synced for readable contrast.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {THEME_CHROME_SECTIONS.map((section) => {
-                const bg = colors[section.bgKey] ?? defaults[section.bgKey] ?? "#ffffff";
-                const fg = colors[section.fgKey] ?? (colors[section.bgKey] ? syncedForeground(bg) : defaults[section.fgKey] ?? "#0f172a");
-                return (
-                  <div key={section.id} className="space-y-3 rounded-md border p-3" data-testid={`theme-chrome-${section.id}`}>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="min-w-40">
-                        <p className="text-sm font-medium">{section.label}</p>
-                        <p className="text-xs text-muted-foreground">{section.description}</p>
-                      </div>
-                      <span
-                        className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-medium shadow-2xs"
-                        style={{ backgroundColor: bg, color: fg }}
-                        data-testid={`theme-color-${section.id}-contrast`}
-                      >
-                        <span>Synced preview</span>
-                        <span className="font-mono text-[11px] opacity-85">{fg}</span>
+              <Collapsible isExpanded={colorsOpen} onExpandedChange={setColorsOpen}>
+                <FieldSet className="rounded-lg border p-3.5" data-testid="theme-section-colors">
+                  <CollapsibleTrigger
+                    className="flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    data-testid="theme-section-colors-toggle"
+                  >
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="text-sm font-medium">Colors</span>
+                      <span className="flex items-center gap-1" aria-hidden>
+                        {THEME_COLOR_FIELDS.map((field) => (
+                          <span
+                            key={field.key}
+                            className="size-3.5 rounded-[3px] border"
+                            style={{ backgroundColor: colors[field.key] ?? defaults[field.key] ?? "#000000" }}
+                          />
+                        ))}
                       </span>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5">
-                        <span className="text-xs font-medium">Background</span>
-                        <ThemeColorField
-                          id={`${mode}-${section.bgKey}`}
-                          label={`${section.label} background (${mode})`}
-                          value={colors[section.bgKey]}
-                          fallback={defaults[section.bgKey] ?? "#ffffff"}
-                          onChange={(value) => setColor(section.bgKey, value)}
-                          onClear={() => setColor(section.bgKey, null)}
-                          testId={`theme-color-${section.bgKey}`}
-                        />
+                    <ChevronDownIcon className={cn("size-4 shrink-0 text-muted-foreground transition-transform", colorsOpen && "rotate-180")} aria-hidden />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <FieldGroup className="mt-3 gap-3 border-t pt-3">
+                      {THEME_COLOR_FIELDS.map((field) => (
+                        <div key={field.key} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+                          <div className="min-w-40">
+                            <p className="text-sm font-medium">{field.label}</p>
+                            <p className="text-xs text-muted-foreground">{field.description}</p>
+                          </div>
+                          <ThemeColorField
+                            id={`${mode}-${field.key}`}
+                            label={`${field.label} (${mode})`}
+                            value={colors[field.key]}
+                            fallback={defaults[field.key] ?? "#000000"}
+                            onChange={(value) => setColor(field.key, value)}
+                            onClear={() => setColor(field.key, null)}
+                            testId={`theme-color-${field.key}`}
+                          />
+                        </div>
+                      ))}
+                    </FieldGroup>
+                  </CollapsibleContent>
+                </FieldSet>
+              </Collapsible>
+
+              <Collapsible isExpanded={presetsOpen} onExpandedChange={setPresetsOpen}>
+                <FieldSet className="rounded-lg border p-3.5" data-testid="theme-section-presets">
+                  <CollapsibleTrigger
+                    className="flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    data-testid="theme-section-presets-toggle"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">Presets</span>
+                      <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                        {presetLabel(mode === "light" ? light : dark, mode, sync)}
+                      </span>
+                    </div>
+                    <ChevronDownIcon className={cn("size-4 shrink-0 text-muted-foreground transition-transform", presetsOpen && "rotate-180")} aria-hidden />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-3 space-y-3 border-t pt-3">
+                      {/* Each mode owns its palette: a click paints the mode being edited, so the
+                          Light and Dark chips below can name two different presets. */}
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="theme-presets">
+                        {THEME_PRESETS.map((preset, index) => {
+                          const set = sync || mode === "light" ? preset.light : preset.dark;
+                          const swatches = [set.primary, set.secondary, set.button, set.button_hover, set.loader];
+                          const isActive = activePreset[mode] === preset.id;
+                          const otherMode = mode === "light" ? "dark" : "light";
+                          const isOther = !sync && activePreset[otherMode] === preset.id;
+                          const OtherIcon = otherMode === "dark" ? MoonIcon : SunIcon;
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={() => applyPreset(index)}
+                              aria-pressed={isActive}
+                              data-active={isActive ? "true" : undefined}
+                              data-testid={`theme-preset-${preset.id}`}
+                              className={cn(
+                                "relative rounded-lg border p-3 text-left transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+                                isActive && "border-primary bg-accent ring-2 ring-primary",
+                              )}
+                            >
+                              <span className="flex gap-1">
+                                {swatches.map((c, i) => (
+                                  <span key={i} className="size-5 rounded-[4px] border" style={{ backgroundColor: c || "#000000" }} />
+                                ))}
+                              </span>
+                              <span className={cn("mt-2 block text-sm font-medium", (isActive || isOther) && "pe-5")}>{preset.name}</span>
+                              {isActive && (
+                                <CheckIcon className="absolute end-2.5 top-2.5 size-4 text-primary" aria-hidden data-testid={`theme-preset-${preset.id}-active`} />
+                              )}
+                              {isOther && !isActive && (
+                                <OtherIcon className="absolute end-2.5 top-2.5 size-3.5 text-muted-foreground" aria-hidden data-testid={`theme-preset-${preset.id}-other`} />
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5">
-                        <span className="text-xs font-medium">Foreground text</span>
-                        <ThemeColorField
-                          id={`${mode}-${section.fgKey}`}
-                          label={`${section.label} foreground text (${mode})`}
-                          value={colors[section.fgKey]}
-                          fallback={fg}
-                          onChange={(value) => setColor(section.fgKey, value)}
-                          onClear={() => setColor(section.fgKey, colors[section.bgKey] ? syncedForeground(bg) : null)}
-                          testId={`theme-color-${section.fgKey}`}
-                        />
+
+                      <div className="flex flex-wrap items-center gap-2" data-testid="theme-preset-modes">
+                        {MODES.map((m) => {
+                          const name = presetLabel(m.id === "light" ? light : dark, m.id, sync);
+                          const ModeIcon = m.id === "light" ? SunIcon : MoonIcon;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setMode(m.id)}
+                              aria-pressed={mode === m.id}
+                              data-testid={`theme-preset-${m.id}-label`}
+                              className={cn(
+                                "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+                                mode === m.id ? "border-primary bg-accent" : "text-muted-foreground",
+                              )}
+                            >
+                              <ModeIcon className="size-3.5" aria-hidden />
+                              {m.id === "light" ? "Light" : "Dark"}
+                              <span className="font-medium text-foreground" data-testid={`theme-preset-${m.id}-name`}>{name}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  </CollapsibleContent>
+                </FieldSet>
+              </Collapsible>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle>Gradients</CardTitle>
-                <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground" data-testid="theme-gradients-mode">
-                  {mode === "light" ? <SunIcon className="size-3.5" aria-hidden /> : <MoonIcon className="size-3.5" aria-hidden />}
-                  {mode === "light" ? "Light" : "Dark"} mode
-                </span>
-              </div>
-              <CardDescription>Linear or radial, two or three stops.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <Collapsible isExpanded={headerFooterOpen} onExpandedChange={setHeaderFooterOpen}>
+            <Card className="gap-0 py-0" data-testid="theme-header-footer">
+              <CollapsibleTrigger
+                className="flex w-full items-center justify-between gap-3 rounded-xl px-6 py-5 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                data-testid="theme-section-header-footer-toggle"
+              >
+                <CardHeader className="w-full p-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle>Header &amp; Footer</CardTitle>
+                    <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground" data-testid="theme-header-footer-mode">
+                      {mode === "light" ? <SunIcon className="size-3.5" aria-hidden /> : <MoonIcon className="size-3.5" aria-hidden />}
+                      {mode === "light" ? "Light" : "Dark"} mode
+                    </span>
+                  </div>
+                  <CardDescription>Background and foreground text colours stay synced for readable contrast.</CardDescription>
+                </CardHeader>
+                <ChevronDownIcon className={cn("size-5 shrink-0 text-muted-foreground transition-transform", headerFooterOpen && "rotate-180")} aria-hidden />
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-4 border-t pt-5 pb-6">
+                  {THEME_CHROME_SECTIONS.map((section) => {
+                    const bg = colors[section.bgKey] ?? defaults[section.bgKey] ?? "#ffffff";
+                    const fg = colors[section.fgKey] ?? (colors[section.bgKey] ? syncedForeground(bg) : defaults[section.fgKey] ?? "#0f172a");
+                    return (
+                      <div key={section.id} className="space-y-3 rounded-md border p-3" data-testid={`theme-chrome-${section.id}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="min-w-40">
+                            <p className="text-sm font-medium">{section.label}</p>
+                            <p className="text-xs text-muted-foreground">{section.description}</p>
+                          </div>
+                          <span
+                            className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-medium shadow-2xs"
+                            style={{ backgroundColor: bg, color: fg }}
+                            data-testid={`theme-color-${section.id}-contrast`}
+                          >
+                            <span>Synced preview</span>
+                            <span className="font-mono text-[11px] opacity-85">{fg}</span>
+                          </span>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5">
+                            <span className="text-xs font-medium">Background</span>
+                            <ThemeColorField
+                              id={`${mode}-${section.bgKey}`}
+                              label={`${section.label} background (${mode})`}
+                              value={colors[section.bgKey]}
+                              fallback={defaults[section.bgKey] ?? "#ffffff"}
+                              onChange={(value) => setColor(section.bgKey, value)}
+                              onClear={() => setColor(section.bgKey, null)}
+                              testId={`theme-color-${section.bgKey}`}
+                            />
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5">
+                            <span className="text-xs font-medium">Foreground text</span>
+                            <ThemeColorField
+                              id={`${mode}-${section.fgKey}`}
+                              label={`${section.label} foreground text (${mode})`}
+                              value={colors[section.fgKey]}
+                              fallback={fg}
+                              onChange={(value) => setColor(section.fgKey, value)}
+                              onClear={() => setColor(section.fgKey, colors[section.bgKey] ? syncedForeground(bg) : null)}
+                              testId={`theme-color-${section.fgKey}`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+
+          <Collapsible isExpanded={gradientsOpen} onExpandedChange={setGradientsOpen}>
+            <Card className="gap-0 py-0" data-testid="theme-section-gradients">
+              <CollapsibleTrigger
+                className="flex w-full items-center justify-between gap-3 rounded-xl px-6 py-5 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                data-testid="theme-section-gradients-toggle"
+              >
+                <CardHeader className="w-full p-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle>Gradients</CardTitle>
+                    <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground" data-testid="theme-gradients-mode">
+                      {mode === "light" ? <SunIcon className="size-3.5" aria-hidden /> : <MoonIcon className="size-3.5" aria-hidden />}
+                      {mode === "light" ? "Light" : "Dark"} mode
+                    </span>
+                  </div>
+                  <CardDescription>Linear or radial, two or three stops.</CardDescription>
+                </CardHeader>
+                <ChevronDownIcon className={cn("size-5 shrink-0 text-muted-foreground transition-transform", gradientsOpen && "rotate-180")} aria-hidden />
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-4 border-t pt-5 pb-6">
               {THEME_GRADIENT_FIELDS.map((field) => {
                 const g = modeGradients[field.key];
                 return (
@@ -492,8 +553,10 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                   </div>
                 );
               })}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
         </div>
 
         {/* ── live preview ─────────────────────────────────────────────── */}
