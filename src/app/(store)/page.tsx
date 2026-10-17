@@ -7,7 +7,7 @@ import { FREE_SHIPPING_THRESHOLD_MICROS } from "@/lib/config";
 import { getSiteSettings } from "@/lib/site-settings";
 import { canonicalFor } from "@/lib/seo";
 import { formatMoney, moneyFromSettings } from "@/lib/money";
-import { CategoryThumb } from "@/components/category-thumb";
+import { CategoryCard } from "@/components/category-card";
 import { HomeProductFilter } from "@/components/home-product-filter";
 import { ProductGrid, ProductGridSkeleton } from "@/components/product-grid";
 import { Badge } from "@/components/ui/badge";
@@ -102,20 +102,9 @@ async function CategoryTiles() {
   const categories = await getCategories();
   if (categories.length === 0) return null;
   return (
-    <div className="grid grid-cols-3 gap-x-4 gap-y-6 sm:grid-cols-4 lg:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6" data-testid="home-category-grid">
       {categories.map((c) => (
-        <Link
-          key={c.id}
-          href={`/shop?category=${c.slug}`}
-          data-testid="home-category-tile"
-          className="group flex flex-col items-center gap-3 rounded-xl p-2 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <CategoryThumb
-            category={c}
-            className="transition duration-200 group-hover:scale-105 group-hover:ring-2 group-hover:ring-primary/40"
-          />
-          <span className="text-sm font-medium group-hover:text-primary">{c.name}</span>
-        </Link>
+        <CategoryCard key={c.id} category={c} />
       ))}
     </div>
   );
@@ -123,12 +112,9 @@ async function CategoryTiles() {
 
 function CategoryTilesSkeleton() {
   return (
-    <div className="grid grid-cols-3 gap-x-4 gap-y-6 sm:grid-cols-4 lg:grid-cols-6" aria-hidden>
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="flex flex-col items-center gap-3 p-2">
-          <Skeleton className="size-20 rounded-full sm:size-24" />
-          <Skeleton className="h-4 w-16 rounded-md" />
-        </div>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6" aria-hidden>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Skeleton key={i} className="h-20 rounded-2xl" />
       ))}
     </div>
   );

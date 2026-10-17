@@ -3,10 +3,16 @@ import { CATEGORY_ICON_BY_ID, DEFAULT_CATEGORY_ICON } from "@/lib/category-icons
 import type { Category } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** Public URL of the category picture (library file first, then the stored URL). */
-export function categoryImageUrl(category: Pick<Category, "image_url" | "image_media">): string | null {
+/**
+ * Public URL of the category picture (library file first, then the stored URL).
+ * `prefer` picks the rendition: thumbnails for the admin list, `large` for a card.
+ */
+export function categoryImageUrl(
+  category: Pick<Category, "image_url" | "image_media">,
+  prefer: "thumbnail" | "medium" | "large" = "medium",
+): string | null {
   const media = category.image_media;
-  if (media) return mediaPreviewUrl(media, "medium") ?? mediaUrl(media.path);
+  if (media) return mediaPreviewUrl(media, prefer) ?? mediaUrl(media.path);
   return category.image_url || null;
 }
 
