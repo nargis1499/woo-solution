@@ -285,12 +285,17 @@ export function OrderChat({
             No messages yet.
           </p>
         ) : (
-          <ul ref={list} className="scrollbar-hidden max-h-64 space-y-3 overflow-y-auto overscroll-contain pr-1" data-testid="order-chat-messages">
-            {messages.map((message) => {
-              const mine = message.sender_type === viewer;
-              return <MessageBubble key={message.id} message={message} mine={mine} status={mine ? receiptFor(message) : null} customerName={customerName} />;
-            })}
-          </ul>
+          <>
+            {/* `overscroll-auto` (the browser default) is deliberate: once the thread is scrolled all
+                the way to its newest or oldest message, the wheel / finger keeps going and scrolls the
+                page instead of dying inside the box. `overscroll-contain` used to trap it here. */}
+            <ul ref={list} className="scrollbar-hidden max-h-64 space-y-3 overflow-y-auto overscroll-auto pr-1" data-testid="order-chat-messages">
+              {messages.map((message) => {
+                const mine = message.sender_type === viewer;
+                return <MessageBubble key={message.id} message={message} mine={mine} status={mine ? receiptFor(message) : null} customerName={customerName} />;
+              })}
+            </ul>
+          </>
         )}
       </CardContent>
 
