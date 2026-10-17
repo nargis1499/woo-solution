@@ -13,7 +13,7 @@
  */
 
 export const THEME_PALETTE_KEYS = ["primary", "secondary", "button", "button_hover", "loader"] as const;
-export const THEME_CHROME_KEYS = ["header", "footer"] as const;
+export const THEME_CHROME_KEYS = ["header", "header_foreground", "footer", "footer_foreground"] as const;
 export const THEME_COLOR_KEYS = [...THEME_PALETTE_KEYS, ...THEME_CHROME_KEYS] as const;
 export type ThemeColorKey = (typeof THEME_COLOR_KEYS)[number];
 export type ThemeChromeKey = (typeof THEME_CHROME_KEYS)[number];
@@ -61,9 +61,27 @@ export const THEME_COLOR_FIELDS: { key: ThemeColorKey; label: string; descriptio
   { key: "loader", label: "Loading bar", description: "The progress bar along the top while a page loads" },
 ];
 
-export const THEME_CHROME_FIELDS: { key: ThemeChromeKey; label: string; description: string }[] = [
-  { key: "header", label: "Header", description: "Top navigation bar background — text and icons sync automatically" },
-  { key: "footer", label: "Footer", description: "Bottom footer background — text, links and borders sync automatically" },
+export const THEME_CHROME_SECTIONS: {
+  id: "header" | "footer";
+  label: string;
+  description: string;
+  bgKey: "header" | "footer";
+  fgKey: "header_foreground" | "footer_foreground";
+}[] = [
+  {
+    id: "header",
+    label: "Site Header",
+    description: "Sticky top navigation bar — text, links and icons stay synced with the background",
+    bgKey: "header",
+    fgKey: "header_foreground",
+  },
+  {
+    id: "footer",
+    label: "Site Footer",
+    description: "Bottom store footer — headings, links and dividers stay synced with the background",
+    bgKey: "footer",
+    fgKey: "footer_foreground",
+  },
 ];
 
 export const THEME_GRADIENT_FIELDS: { key: ThemeGradientKey; label: string; description: string }[] = [
@@ -86,7 +104,9 @@ export const TEMPLATE_DEFAULTS: { light: ThemeColors; dark: ThemeColors } = {
     button_hover: "#a27fcc",
     loader: "#7f54b3",
     header: "#ffffff",
+    header_foreground: "#0f172a",
     footer: "#fafafa",
+    footer_foreground: "#0f172a",
   },
   dark: {
     primary: "#b592e0",
@@ -95,7 +115,9 @@ export const TEMPLATE_DEFAULTS: { light: ThemeColors; dark: ThemeColors } = {
     button_hover: "#c9aef0",
     loader: "#b592e0",
     header: "#171717",
+    header_foreground: "#f8fafc",
     footer: "#1f1f1f",
+    footer_foreground: "#f8fafc",
   },
 };
 
@@ -111,8 +133,28 @@ export function templateGradients(): ThemeGradients {
 /** Reset writes these (same values as an untouched template – see the module doc). */
 export function templateTheme(): ThemeCustomization {
   return {
-    light: { primary: null, secondary: null, button: null, button_hover: null, loader: null, header: null, footer: null },
-    dark: { primary: null, secondary: null, button: null, button_hover: null, loader: null, header: null, footer: null },
+    light: {
+      primary: null,
+      secondary: null,
+      button: null,
+      button_hover: null,
+      loader: null,
+      header: null,
+      header_foreground: null,
+      footer: null,
+      footer_foreground: null,
+    },
+    dark: {
+      primary: null,
+      secondary: null,
+      button: null,
+      button_hover: null,
+      loader: null,
+      header: null,
+      header_foreground: null,
+      footer: null,
+      footer_foreground: null,
+    },
     sync: false,
     gradients: { light: templateGradients(), dark: templateGradients() },
   };
@@ -244,6 +286,23 @@ export function contrastForeground(color: string): string {
   return luminance(rgb) > 0.45 ? "#111111" : "#ffffff";
 }
 
+/**
+ * Harmonious foreground text colour synced to a header or footer background:
+ * keeps the same hue family in a deep ink (on light backgrounds) or crisp light
+ * tint (on dark backgrounds) so the background and text look cohesive together.
+ */
+export function syncedForeground(color: string): string {
+  const rgb = parseColor(color);
+  if (!rgb) return "#ffffff";
+  const { h, s } = toHsl(rgb);
+  const isLight = luminance(rgb) > 0.45;
+  if (s < 6) return isLight ? "#0f172a" : "#f8fafc";
+  const sat = Math.min(s, isLight ? 48 : 36);
+  const light = isLight ? 15 : 96;
+  const parsed = parseColor(`hsl(${h}, ${sat}%, ${light}%)`);
+  return parsed ? toHex(parsed) : isLight ? "#0f172a" : "#f8fafc";
+}
+
 /* ── Gradients ──────────────────────────────────────────────────────────── */
 
 /** Average of several colours – used to judge how light a gradient is overall. */
@@ -275,7 +334,7 @@ const gradientVar: Record<ThemeGradientKey, string> = {
  */
 export function themeVars(colors: ThemeColors, gradients?: ThemeGradients): Record<string, string> {
   const vars: Record<string, string> = {};
-  const { primary, secondary, button, button_hover, loader, header, footer } = colors;
+  const { primary, secondary, button, button_hover, loader, header, header_foreground, footer, footer_foreground } = colors;
 
   if (primary) {
     const onPrimary = contrastForeground(primary);
@@ -312,24 +371,26 @@ export function themeVars(colors: ThemeColors, gradients?: ThemeGradients): Reco
   const loaderColor = loader ?? primary;
   if (loaderColor) vars["--loader"] = loaderColor;
 
-  if (header) {
-    const onHeader = contrastForeground(header);
-    vars["--header-bg"] = header;
+  if (header || header_foreground) {
+    const bg = header ?? "var(--background)";
+    const onHeader = header_foreground ?? (header ? syncedForeground(header) : "var(--foreground)");
+    if (header) vars["--header-bg"] = header;
     vars["--header-foreground"] = onHeader;
-    vars["--header-muted"] = `color-mix(in oklab, ${onHeader} 14%, ${header})`;
-    vars["--header-muted-foreground"] = `color-mix(in oklab, ${onHeader} 74%, ${header})`;
-    vars["--header-accent"] = `color-mix(in oklab, ${onHeader} 14%, ${header})`;
+    vars["--header-muted"] = `color-mix(in oklab, ${onHeader} 14%, ${bg})`;
+    vars["--header-muted-foreground"] = `color-mix(in oklab, ${onHeader} 74%, ${bg})`;
+    vars["--header-accent"] = `color-mix(in oklab, ${onHeader} 14%, ${bg})`;
     vars["--header-accent-foreground"] = onHeader;
-    vars["--header-border"] = `color-mix(in oklab, ${onHeader} 16%, ${header})`;
+    vars["--header-border"] = `color-mix(in oklab, ${onHeader} 16%, ${bg})`;
   }
 
-  if (footer) {
-    const onFooter = contrastForeground(footer);
-    vars["--footer-bg"] = footer;
+  if (footer || footer_foreground) {
+    const bg = footer ?? "var(--muted)";
+    const onFooter = footer_foreground ?? (footer ? syncedForeground(footer) : "var(--foreground)");
+    if (footer) vars["--footer-bg"] = footer;
     vars["--footer-foreground"] = onFooter;
-    vars["--footer-muted"] = `color-mix(in oklab, ${onFooter} 14%, ${footer})`;
-    vars["--footer-muted-foreground"] = `color-mix(in oklab, ${onFooter} 74%, ${footer})`;
-    vars["--footer-border"] = `color-mix(in oklab, ${onFooter} 16%, ${footer})`;
+    vars["--footer-muted"] = `color-mix(in oklab, ${onFooter} 14%, ${bg})`;
+    vars["--footer-muted-foreground"] = `color-mix(in oklab, ${onFooter} 74%, ${bg})`;
+    vars["--footer-border"] = `color-mix(in oklab, ${onFooter} 16%, ${bg})`;
   }
 
   for (const key of THEME_GRADIENT_KEYS) {
@@ -540,7 +601,9 @@ export function presetColors(preset: ThemePreset, mode: ThemeMode, sync: boolean
     button_hover: set.button_hover,
     loader: set.loader,
     header: existing?.header ?? null,
+    header_foreground: existing?.header_foreground ?? null,
     footer: existing?.footer ?? null,
+    footer_foreground: existing?.footer_foreground ?? null,
   };
 }
 

@@ -6,9 +6,9 @@ import type { Key } from "react-aria-components";
 import { updateTheme, type AdminFormState } from "@/app/nemesis/actions";
 import {
   TEMPLATE_DEFAULTS,
-  THEME_CHROME_FIELDS,
+  THEME_CHROME_SECTIONS,
   THEME_COLOR_FIELDS,
-  contrastForeground,
+  syncedForeground,
   templateTheme,
   THEME_GRADIENT_FIELDS,
   THEME_PRESETS,
@@ -74,12 +74,20 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   const modeGradients = sync ? gradients.light : gradients[mode];
 
   function setColor(key: ThemeColorKey, value: string | null) {
+    const patch = (current: ThemeColors): ThemeColors => {
+      const next: ThemeColors = { ...current, [key]: value };
+      // Changing Header or Footer background automatically syncs its foreground text colour
+      // so the pair always looks harmonious and readable.
+      if (key === "header") next.header_foreground = value ? syncedForeground(value) : null;
+      if (key === "footer") next.footer_foreground = value ? syncedForeground(value) : null;
+      return next;
+    };
     // Sync (or editing while synced) keeps both modes identical – one click, both themes.
     if (sync) {
-      setLight((c) => ({ ...c, [key]: value }));
-      setDark((c) => ({ ...c, [key]: value }));
-    } else if (mode === "light") setLight((c) => ({ ...c, [key]: value }));
-    else setDark((c) => ({ ...c, [key]: value }));
+      setLight(patch);
+      setDark(patch);
+    } else if (mode === "light") setLight(patch);
+    else setDark(patch);
   }
 
   /**
@@ -326,35 +334,52 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
               </div>
               <CardDescription>Background and foreground text colours stay synced for readable contrast.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {THEME_CHROME_FIELDS.map((field) => {
-                const bg = colors[field.key] ?? defaults[field.key] ?? "#ffffff";
-                const fg = contrastForeground(bg);
+            <CardContent className="space-y-4">
+              {THEME_CHROME_SECTIONS.map((section) => {
+                const bg = colors[section.bgKey] ?? defaults[section.bgKey] ?? "#ffffff";
+                const fg = colors[section.fgKey] ?? (colors[section.bgKey] ? syncedForeground(bg) : defaults[section.fgKey] ?? "#0f172a");
                 return (
-                  <div key={field.key} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3" data-testid={`theme-chrome-${field.key}`}>
-                    <div className="min-w-40 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium">{field.label}</p>
-                        <span
-                          className="inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium shadow-2xs"
-                          style={{ backgroundColor: bg, color: fg }}
-                          data-testid={`theme-color-${field.key}-contrast`}
-                        >
-                          <span>Aa</span>
-                          <span className="opacity-85">{fg}</span>
-                        </span>
+                  <div key={section.id} className="space-y-3 rounded-md border p-3" data-testid={`theme-chrome-${section.id}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-40">
+                        <p className="text-sm font-medium">{section.label}</p>
+                        <p className="text-xs text-muted-foreground">{section.description}</p>
                       </div>
-                      <p className="text-xs text-muted-foreground">{field.description}</p>
+                      <span
+                        className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-medium shadow-2xs"
+                        style={{ backgroundColor: bg, color: fg }}
+                        data-testid={`theme-color-${section.id}-contrast`}
+                      >
+                        <span>Synced preview</span>
+                        <span className="font-mono text-[11px] opacity-85">{fg}</span>
+                      </span>
                     </div>
-                    <ThemeColorField
-                      id={`${mode}-${field.key}`}
-                      label={`${field.label} (${mode})`}
-                      value={colors[field.key]}
-                      fallback={defaults[field.key] ?? "#000000"}
-                      onChange={(value) => setColor(field.key, value)}
-                      onClear={() => setColor(field.key, null)}
-                      testId={`theme-color-${field.key}`}
-                    />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5">
+                        <span className="text-xs font-medium">Background</span>
+                        <ThemeColorField
+                          id={`${mode}-${section.bgKey}`}
+                          label={`${section.label} background (${mode})`}
+                          value={colors[section.bgKey]}
+                          fallback={defaults[section.bgKey] ?? "#ffffff"}
+                          onChange={(value) => setColor(section.bgKey, value)}
+                          onClear={() => setColor(section.bgKey, null)}
+                          testId={`theme-color-${section.bgKey}`}
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5">
+                        <span className="text-xs font-medium">Foreground text</span>
+                        <ThemeColorField
+                          id={`${mode}-${section.fgKey}`}
+                          label={`${section.label} foreground text (${mode})`}
+                          value={colors[section.fgKey]}
+                          fallback={fg}
+                          onChange={(value) => setColor(section.fgKey, value)}
+                          onClear={() => setColor(section.fgKey, colors[section.bgKey] ? syncedForeground(bg) : null)}
+                          testId={`theme-color-${section.fgKey}`}
+                        />
+                      </div>
+                    </div>
                   </div>
                 );
               })}
