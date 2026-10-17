@@ -36,8 +36,9 @@ cp .env.example .env.local
 
 ### Set up the database
 
-1. Open your Supabase project → **SQL Editor** → *New query*.
-2. Run the migrations **in order** – paste each file and execute it:
+**One file, one paste.** On a fresh Supabase project you can skip the list below: open the **SQL Editor**, paste [`supabase/complete-setup.sql`](supabase/complete-setup.sql) (all 21 migrations in order + the API role grants + the demo catalog, ~3,400 lines) and press **Run**. It creates every table, policy, trigger and function, the `media` Storage bucket, 4 categories and 12 demo products. Delete the clearly-marked *OPTIONAL demo catalog* block at the end if you want an empty store. Verified end-to-end against a brand-new database: sign-up → profile, dashboard, creating users, checkout → order, chat, notifications.
+
+**Or run the migrations one by one** (e.g. to follow what each one adds) – open **SQL Editor** → *New query* and paste each file in order:
    1. [`supabase/migrations/20261014000000_init.sql`](supabase/migrations/20261014000000_init.sql) – schema, RLS, `place_order()`
    2. [`supabase/migrations/20261015000000_google_auth.sql`](supabase/migrations/20261015000000_google_auth.sql) – `profiles.avatar_url` + Google-aware profile trigger (safe to run on an existing project)
    3. [`supabase/migrations/20261016000000_admin.sql`](supabase/migrations/20261016000000_admin.sql) – `profiles.is_admin`, admin RLS policies, `site_settings`, `admin_stats()` / `admin_delete_user()` and the (now legacy) `product-images` Storage bucket (safe to run on an existing project)
@@ -67,6 +68,9 @@ cp .env.example .env.local
    ```
 
 > Using the Supabase CLI instead? `supabase link --project-ref <ref> && supabase db push`, then run the seed file with `supabase db query -f supabase/seed.sql` (or paste it in the SQL editor).
+
+> `supabase/complete-setup.sql` is generated from the migrations – regenerate it after adding one:
+> `python3 scripts/build-complete-sql.py` (or concatenate `supabase/migrations/*.sql` in filename order, then `supabase/seed.sql`).
 
 ### Configure environment variables
 
