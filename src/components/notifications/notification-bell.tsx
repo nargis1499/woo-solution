@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowRightIcon, BellIcon, BellOffIcon } from "lucide-react";
-import { Dialog, DialogTrigger } from "react-aria-components";
+import { Dialog, OverlayTriggerStateContext, type OverlayTriggerState } from "react-aria-components";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Popover, PopoverTitle } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -19,18 +19,77 @@ import { NotificationRow } from "./notification-row";
  *
  * It is a **non-modal** popover (`isNonModal`): no dimming underlay, no page-wide
  * `inert` – clicking anywhere outside closes it while the page behind stays usable.
+ *
+ * The open state is owned here rather than by a `DialogTrigger`/`Popover` pair:
+ *
+ *   - the bell is a plain button whose press toggles – one press, one change;
+ *   - a press anywhere outside the box closes it, Escape closes it, and the
+ *     close requests React Aria makes on its own (it treats the focus moving as
+ *     "focus left the popover") are ignored.
+ *
+ * A controlled DialogTrigger used to close on the pointer-down of the second click
+ * – the press on the trigger itself – and the trigger's own press then reopened
+ * the box, so the bell appeared not to toggle at all. With the state here that
+ * cannot happen: only the handlers above change it.
  */
 export function NotificationBell({ basePath, className }: { basePath: string; className?: string }) {
   const notifications = useNotifications();
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // Every way the box closes lives here – a press anywhere outside it (but not on the
+  // bell, which toggles) and Escape. React Aria also asks to close when focus leaves
+  // the popover, which is exactly what pressing the bell does; letting it through is
+  // what made the bell close and instantly reopen on the same click.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target || boxRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true); // capture: the dialog stops Escape from bubbling
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [open]);
+
   if (!notifications) return null;
 
   const { items, unread, live, markAllRead, markRead } = notifications;
   const label = unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
 
+  // What the dialog reads for its Escape key / closing behaviour.
+  const state: OverlayTriggerState = {
+    isOpen: open,
+    open: () => setOpen(true),
+    close: () => setOpen(false),
+    toggle: () => setOpen((value) => !value),
+    setOpen,
+    point: null,
+    setPoint: () => {},
+  };
+
   return (
-    <DialogTrigger isOpen={open} onOpenChange={setOpen}>
-      <Button variant="ghost" size="icon" className={cn("relative", className)} aria-label={label} data-testid="notification-bell" data-unread={unread}>
+    <OverlayTriggerStateContext.Provider value={state}>
+      <Button
+        ref={triggerRef}
+        variant="ghost"
+        size="icon"
+        className={cn("relative", className)}
+        aria-label={label}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onPress={() => setOpen((value) => !value)}
+        data-testid="notification-bell"
+        data-unread={unread}
+      >
         <BellIcon className="size-5" />
         {unread > 0 && (
           <span
@@ -43,8 +102,19 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
         )}
       </Button>
 
-      <Popover placement="bottom end" offset={8} isNonModal className="w-[min(92vw,400px)] gap-0 overflow-hidden p-0">
-        <Dialog className="flex flex-col outline-none" data-testid="notification-popover">
+      <Popover
+        triggerRef={triggerRef}
+        isOpen={open}
+        // `isOpen` is the only source of truth; closes are handled above, never here.
+        onOpenChange={(next) => {
+          if (next) setOpen(true);
+        }}
+        placement="bottom end"
+        offset={8}
+        isNonModal
+        className="w-[min(92vw,400px)] gap-0 overflow-hidden p-0"
+      >
+        <Dialog ref={boxRef} className="flex flex-col outline-none" data-testid="notification-popover">
           <div className="flex items-center gap-2 border-b px-4 py-3">
             <PopoverTitle className="text-sm font-semibold">Notifications</PopoverTitle>
             <span
@@ -99,6 +169,6 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
           </div>
         </Dialog>
       </Popover>
-    </DialogTrigger>
+    </OverlayTriggerStateContext.Provider>
   );
 }
