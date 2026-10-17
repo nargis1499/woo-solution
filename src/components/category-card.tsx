@@ -61,7 +61,7 @@ export function CategoryCard({ category }: { category: Category }) {
           />
           {/* the oversized "shadow" glyph, cropped by the card edge */}
           <Icon
-            className="pointer-events-none absolute top-1/2 -right-2 size-16 -translate-y-1/2 text-primary/15 transition-transform duration-500 group-hover:scale-110"
+            className="pointer-events-none absolute top-1/2 right-1 size-16 -translate-y-1/2 text-primary/15 transition-transform duration-500 group-hover:scale-110"
             strokeWidth={1.5}
             aria-hidden
           />

@@ -102,7 +102,7 @@ async function CategoryTiles() {
   const categories = await getCategories();
   if (categories.length === 0) return null;
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6" data-testid="home-category-grid">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5" data-testid="home-category-grid">
       {categories.map((c) => (
         <CategoryCard key={c.id} category={c} />
       ))}
