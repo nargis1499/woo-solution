@@ -26,17 +26,20 @@ function badgeStyle(color: string | null | undefined): React.CSSProperties {
 /**
  * A "Shop by category" card. Three shapes, picked by what the admin gave it:
  *
- *   icon only  → icon badge + name, and an oversized watermark of the same
- *                glyph tinted with the theme primary on the right;
- *   image only → the picture in the round badge, plain card, no watermark;
- *   both       → the picture fills the card behind a scrim, the icon sits in
- *                the badge, the name turns white.
+ *   icon only  → no picture: icon badge + name, and an oversized watermark of
+ *                the same glyph tinted with the theme primary on the right;
+ *   both       → picture + an icon: the picture fills the card behind a scrim,
+ *                the icon sits in the badge, the name turns white. A category
+ *                with a picture but no picked icon counts too – its badge shows
+ *                the default shopping bag;
+ *   image only → the admin pressed "Remove icon" (`icon_disabled`): the
+ *                picture, alone, in the round badge, plain card, no watermark.
  */
 export function CategoryCard({ category }: { category: Category }) {
   const photo = categoryImageUrl(category, "large");
   const chosenIcon = category.icon ? CATEGORY_ICON_BY_ID[category.icon] : null;
   const Icon = chosenIcon ?? DEFAULT_CATEGORY_ICON;
-  const variant: "icon" | "image" | "both" = !photo ? "icon" : chosenIcon ? "both" : "image";
+  const variant: "icon" | "image" | "both" = !photo ? "icon" : category.icon_disabled ? "image" : "both";
 
   return (
     <Link

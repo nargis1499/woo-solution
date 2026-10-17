@@ -36,7 +36,7 @@ cp .env.example .env.local
 
 ### Set up the database
 
-**One file, one paste.** On a fresh Supabase project you can skip the list below: open the **SQL Editor**, paste [`supabase/complete-setup.sql`](supabase/complete-setup.sql) (all 24 migrations in order + the API role grants + the demo catalog, ~3,450 lines) and press **Run**. It creates every table, policy, trigger and function, the `media` Storage bucket, 4 categories and 12 demo products. Delete the clearly-marked *OPTIONAL demo catalog* block at the end if you want an empty store. Verified end-to-end against a brand-new database: sign-up → profile, dashboard, creating users, checkout → order, chat, notifications.
+**One file, one paste.** On a fresh Supabase project you can skip the list below: open the **SQL Editor**, paste [`supabase/complete-setup.sql`](supabase/complete-setup.sql) (all 25 migrations in order + the API role grants + the demo catalog, ~3,460 lines) and press **Run**. It creates every table, policy, trigger and function, the `media` Storage bucket, 4 categories and 12 demo products. Delete the clearly-marked *OPTIONAL demo catalog* block at the end if you want an empty store. Verified end-to-end against a brand-new database: sign-up → profile, dashboard, creating users, checkout → order, chat, notifications.
 
 **Or run the migrations one by one** (e.g. to follow what each one adds) – open **SQL Editor** → *New query* and paste each file in order:
    1. [`supabase/migrations/20261014000000_init.sql`](supabase/migrations/20261014000000_init.sql) – schema, RLS, `place_order()`
@@ -63,6 +63,7 @@ cp .env.example .env.local
    22. [`supabase/migrations/20261035000000_category_images.sql`](supabase/migrations/20261035000000_category_images.sql) – **Category images**: `categories.image_url` + `categories.image_media_id` (FK to `media`, `on delete set null`) so a category can show a picture on the *Shop by category* tiles – uploaded through the Media Library or pasted as a URL. Safe to run on an existing project (the tiles fall back to an icon)
    23. [`supabase/migrations/20261036000000_category_icons.sql`](supabase/migrations/20261036000000_category_icons.sql) – **Category icons**: `categories.icon` – the id of one of the 48 bundled Lucide icons an admin picks under **Categories → Category image & icons**. `null` means the default shopping bag. Safe to run on an existing project
    24. [`supabase/migrations/20261037000000_category_icon_color.sql`](supabase/migrations/20261037000000_category_icon_color.sql) – **Category icon colour**: `categories.icon_color` (`#rrggbb`, checked) – the fill behind that icon; `null` uses the theme's primary colour. Safe to run on an existing project
+   25. [`supabase/migrations/20261038000000_category_no_icon.sql`](supabase/migrations/20261038000000_category_no_icon.sql) – **Category "Remove icon"**: `categories.icon_disabled` – the admin's switch to drop the icon from a category that has a picture, so the *Shop by category* tile shows the image alone. Safe to run on an existing project (default `false`, so every tile looks exactly as before)
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 

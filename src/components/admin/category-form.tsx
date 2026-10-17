@@ -22,6 +22,9 @@ export function CategoryForm({ category, compact }: { category?: Category | null
   const err = state?.fieldErrors ?? {};
   const [slugTouched, setSlugTouched] = useState(Boolean(category?.slug));
   const [slug, setSlug] = useState(v.slug ?? category?.slug ?? "");
+  // Drives "Remove icon": it only makes sense while the category has a picture,
+  // and it follows the image field live (pick / paste / remove).
+  const [hasImage, setHasImage] = useState(Boolean(category?.image_url));
   const prefix = compact ? "new-" : "";
 
   // The quick-add form stays on the list page: once an add succeeded, React resets the
@@ -70,6 +73,7 @@ export function CategoryForm({ category, compact }: { category?: Category | null
         currentUrl={category?.image_url ?? null}
         currentMedia={category?.image_media ?? null}
         error={err.image_media_id ?? err.image_url}
+        onChange={setHasImage}
         allowUrl
         chooseLabel="Choose image"
         picker={{ kind: "image", title: "Category image", confirmLabel: "Use as category image", uploadFolderName: "categories" }}
@@ -78,6 +82,8 @@ export function CategoryForm({ category, compact }: { category?: Category | null
             key={`icon:${formRun}`}
             value={category?.icon ?? null}
             color={category?.icon_color ?? null}
+            hasImage={hasImage}
+            disabled={category?.icon_disabled ?? false}
             error={err.icon ?? err.icon_color}
           />
         }

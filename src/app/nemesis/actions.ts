@@ -557,6 +557,8 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
   const slug = slugify(str(formData, "slug", 100) || name);
   const iconInput = str(formData, "icon", 40);
   const iconColorInput = str(formData, "icon_color", 20).trim();
+  // "Remove icon": only stored when no icon is picked – the picture then carries the tile.
+  const iconDisabledInput = bool(formData, "icon_disabled");
 
   const fieldErrors: Record<string, string> = {};
   if (!name) fieldErrors.name = "Name is required.";
@@ -575,6 +577,7 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
       slug,
       icon: iconInput || null,
       icon_color: iconColorInput ? iconColorInput.toLowerCase() : null,
+      icon_disabled: iconDisabledInput && !iconInput,
       ...image,
     };
     let result;

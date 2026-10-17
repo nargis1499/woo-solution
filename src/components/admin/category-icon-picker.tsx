@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckIcon, RotateCcwIcon } from "lucide-react";
+import { BanIcon, CheckIcon, RotateCcwIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -34,42 +34,62 @@ export function iconFillStyle(color: string | null | undefined): React.CSSProper
 
 /**
  * "Set icon" + its fill colour: one gradient circle with the current icon, the
- * button that opens the 24-icon library, and the colour picker right beside it.
+ * button that opens the 48-icon library, and the colour picker right beside it.
  * Both values travel in hidden inputs, so they save with the rest of the form.
  * An empty icon means the shopping bag; an empty colour the theme primary.
+ *
+ * With a picture the default bag would otherwise sit on the tile, so the admin
+ * gets "Remove icon" there: it switches the icon off entirely (`icon_disabled`)
+ * and the storefront shows the image alone. Without a picture the button is
+ * hidden – a tile with neither an icon nor a picture would be empty.
  */
 export function CategoryIconPicker({
   value,
   color,
+  hasImage = false,
+  disabled = false,
   error,
   name = "icon",
   colorName = "icon_color",
+  disabledName = "icon_disabled",
 }: {
   value?: string | null;
   color?: string | null;
+  /** The category has a picture (live: follows the image field while editing). */
+  hasImage?: boolean;
+  /** Stored "Remove icon" choice. */
+  disabled?: boolean;
   error?: string;
   name?: string;
   colorName?: string;
+  disabledName?: string;
 }) {
   const [selected, setSelected] = useState<string>(isCategoryIconId(value) ? value : "");
   const [fill, setFill] = useState<string | null>(color ?? null);
+  const [removed, setRemoved] = useState(disabled);
   const [open, setOpen] = useState(false);
+  // Without a picture the switch is meaningless, so it never reaches the server.
+  const noIcon = hasImage && removed;
   const Current = (selected && CATEGORY_ICON_BY_ID[selected]) || DEFAULT_CATEGORY_ICON;
 
   return (
     <div data-testid="category-icon-field" className="flex flex-col gap-2">
       <input type="hidden" name={name} value={selected} />
+      <input type="hidden" name={disabledName} value={noIcon ? "true" : "false"} />
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={cn(
-            "grid size-9 shrink-0 place-items-center rounded-full text-primary-foreground ring-1 ring-border/60",
-            !fill && "bg-linear-to-br from-primary via-primary to-primary/40",
+            "grid size-9 shrink-0 place-items-center rounded-full ring-1 ring-border/60",
+            noIcon
+              ? "border border-dashed border-border bg-transparent text-muted-foreground ring-0"
+              : cn("text-primary-foreground", !fill && "bg-linear-to-br from-primary via-primary to-primary/40"),
           )}
-          style={iconFillStyle(fill)}
+          style={noIcon ? undefined : iconFillStyle(fill)}
           data-testid="category-icon-current"
+          data-empty={noIcon || undefined}
           aria-hidden
         >
-          <Current className="size-4" />
+          {noIcon ? <BanIcon className="size-4" /> : <Current className="size-4" />}
         </span>
         <Button
           type="button"
@@ -81,18 +101,31 @@ export function CategoryIconPicker({
         >
           Set icon
         </Button>
-        <CategoryIconFill value={fill} onChange={setFill} name={colorName} />
-        {selected && (
+        {!noIcon && <CategoryIconFill value={fill} onChange={setFill} name={colorName} />}
+        {noIcon ? null : hasImage ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onPress={() => {
+              setSelected("");
+              setRemoved(true);
+            }}
+            data-testid="category-icon-remove"
+          >
+            <XIcon /> Remove icon
+          </Button>
+        ) : selected ? (
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onPress={() => setSelected("")}
-            data-testid="category-icon-remove"
+            data-testid="category-icon-default"
           >
             <RotateCcwIcon /> Use default
           </Button>
-        )}
+        ) : null}
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -123,6 +156,7 @@ export function CategoryIconPicker({
                 data-selected={isSelected || undefined}
                 onPress={() => {
                   setSelected(id);
+                  setRemoved(false);
                   setOpen(false);
                 }}
                 className={cn(

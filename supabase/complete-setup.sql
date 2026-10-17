@@ -15,7 +15,7 @@
 --      Everything (dashboard, order chat, notifications, media, pages …) works from there.
 --
 --  WHAT IS IN HERE
---   • All 24 migrations in order — schema, RLS, triggers, functions, storage bucket.
+--   • All 25 migrations in order — schema, RLS, triggers, functions, storage bucket.
 --   • API role grants (Supabase normally sets these up; stated here so the file is
 --     self-contained).
 --   • OPTIONAL demo catalog at the very end (categories + products + header menu).
@@ -3320,6 +3320,26 @@ end
 $$;
 
 comment on column public.categories.icon_color is 'Icon fill (#rrggbb) picked in the admin; null = the theme primary colour.';
+
+-- =============================================================================
+-- 25. Category "Remove icon" — picture-only tiles
+-- (migration 20261038000000_category_no_icon.sql)
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+--  CATEGORY "NO ICON"
+--
+--  A category that has a picture normally shows an icon badge on top of it
+--  (the default shopping bag when the admin never picked one). `icon_disabled`
+--  is the admin's "Remove icon" answer: the tile uses the picture alone.
+--  Only meaningful when the category has an image – without one the tile still
+--  needs an icon, so the shopping bag stays.
+-- -----------------------------------------------------------------------------
+
+alter table public.categories
+  add column if not exists icon_disabled boolean not null default false;
+
+comment on column public.categories.icon_disabled is 'True when the admin removed the icon of a category that has a picture – the tile shows the image alone. Ignored without an image.';
 
 
 -- =============================================================================

@@ -18,6 +18,11 @@ export type Category = {
   icon?: string | null;
   /** Icon fill (#rrggbb) picked in the admin; null = the theme primary colour. */
   icon_color?: string | null;
+  /**
+   * The admin removed the icon ("Remove icon") of a category that has a picture,
+   * so its tile shows the image alone. Ignored when there is no image.
+   */
+  icon_disabled?: boolean;
   /** Only present in admin queries (`products(count)`). */
   product_count?: number;
 };
