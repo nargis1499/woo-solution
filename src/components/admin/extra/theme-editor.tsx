@@ -289,38 +289,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                   })}
                 </div>
               </FieldSet>
-
-              <FieldError>{state?.error}</FieldError>
             </CardContent>
-            <CardFooter className="justify-between gap-3 border-t">
-              <div className="flex items-center gap-3">
-                <SubmitButton pendingLabel="Saving…" pending={isPending}>
-                  Save changes
-                </SubmitButton>
-                <AlertDialogTrigger isOpen={resetOpen} onOpenChange={setResetOpen}>
-                  <Button type="button" variant="outline" data-testid="theme-reset">
-                    <RotateCcwIcon /> Reset to defaults
-                  </Button>
-                  <AlertDialog data-testid="theme-reset-dialog">
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Reset the theme?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Every colour and gradient goes back to the template palette – in both modes. Save afterwards to publish it.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <Button type="button" variant="destructive" onPress={resetAll} data-testid="theme-reset-confirm">
-                        Reset colors
-                      </Button>
-                    </AlertDialogFooter>
-                  </AlertDialog>
-                </AlertDialogTrigger>
-              </div>
-              <p className="text-xs text-muted-foreground" data-testid="theme-dirty">
-                {isPending ? "Saving…" : state?.success ? "Saved" : "Unsaved changes stay local until you save"}
-              </p>
-            </CardFooter>
           </Card>
 
           <Card data-testid="theme-header-footer">
@@ -587,7 +556,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
             <CardHeader>
               <CardTitle>Defaults</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-2">
               <div className="flex items-center gap-2">
                 {THEME_COLOR_FIELDS.map((field) => (
                   <span
@@ -599,7 +568,37 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">{mode === "light" ? "Light" : "Dark"} template palette</p>
+              <FieldError>{state?.error}</FieldError>
             </CardContent>
+            <CardFooter className="flex-col items-stretch gap-2.5 border-t">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <SubmitButton pendingLabel="Saving…" pending={isPending}>
+                  Save changes
+                </SubmitButton>
+                <AlertDialogTrigger isOpen={resetOpen} onOpenChange={setResetOpen}>
+                  <Button type="button" variant="outline" data-testid="theme-reset">
+                    <RotateCcwIcon /> Reset to defaults
+                  </Button>
+                  <AlertDialog data-testid="theme-reset-dialog">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Reset the theme?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Every colour and gradient goes back to the template palette – in both modes. Save afterwards to publish it.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <Button type="button" variant="destructive" onPress={resetAll} data-testid="theme-reset-confirm">
+                        Reset colors
+                      </Button>
+                    </AlertDialogFooter>
+                  </AlertDialog>
+                </AlertDialogTrigger>
+              </div>
+              <p className="text-xs text-muted-foreground" data-testid="theme-dirty">
+                {isPending ? "Saving…" : state?.success ? "Saved" : "Unsaved changes stay local until you save"}
+              </p>
+            </CardFooter>
           </Card>
         </div>
       </div>
