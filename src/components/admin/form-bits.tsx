@@ -146,6 +146,63 @@ export function DeleteButton({
   );
 }
 
+/**
+ * "Delete all" – the destructive button that wipes the whole list. Same confirmation
+ * pattern as DeleteButton, but the action receives only `return_to`; the server decides
+ * what "all" means (so it also works from page 3).
+ */
+export function DeleteAllButton({
+  action,
+  returnTo,
+  title,
+  description,
+  label,
+  count,
+  testId = "delete-all",
+}: {
+  action: (formData: FormData) => void | Promise<void>;
+  returnTo?: string;
+  title: string;
+  description: string;
+  label: string;
+  /** Disabled when the list is already empty. */
+  count: number;
+  testId?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function confirm() {
+    startTransition(async () => {
+      const formData = new FormData();
+      if (returnTo) formData.set("return_to", returnTo);
+      await action(formData);
+      setOpen(false);
+    });
+  }
+
+  return (
+    <AlertDialogTrigger isOpen={open} onOpenChange={setOpen}>
+      <Button variant="outline" size="sm" aria-label={label} isDisabled={count === 0} data-testid={`${testId}-trigger`}>
+        <Trash2Icon /> {label}
+      </Button>
+      <AlertDialog isDismissable={!pending}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel isDisabled={pending}>Cancel</AlertDialogCancel>
+          <Button variant="destructive" onPress={confirm} isPending={pending} aria-busy={pending} data-testid={`${testId}-confirm`}>
+            {pending && <Spinner />}
+            {pending ? "Deleting…" : "Delete all"}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialog>
+    </AlertDialogTrigger>
+  );
+}
+
 /** Labelled checkbox card (`name` is submitted as "on" when selected). */
 export function CheckboxField({
   name,

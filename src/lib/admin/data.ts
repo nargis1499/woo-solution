@@ -212,6 +212,43 @@ export async function adminListTags(): Promise<Tag[]> {
 
 // ─── Categories ─────────────────────────────────────────────────────────────
 
+/**
+ * One page of the categories list plus the total for the same rows (drives the pager).
+ * Everything that needs *all* categories (product form dropdown, shop filters, the
+ * storefront) keeps using `adminListCategories()` below.
+ */
+export async function adminListCategoriesPage(options: PageRequest = {}): Promise<ListPage<Category>> {
+  await requireAdmin();
+  const supabase = await createClient();
+  type Row = Category & { products?: { count: number }[] };
+
+  // count first, so a page number past the end can be clamped before fetching
+  const counted = await supabase.from("categories").select("id", { count: "exact", head: true });
+  if (counted.error) throw new Error(`Failed to load categories: ${counted.error.message}`);
+  const { perPage, page, from, to } = pageWindow(options, counted.count ?? 0);
+
+  type Result = { data: unknown; error: { message: string; code?: string } | null };
+  let result: Result = { data: null, error: null };
+  for (const columns of categoryColumnSets(", products(count)")) {
+    result = (await supabase
+      .from("categories")
+      .select(columns, { count: "exact" })
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true })
+      .range(from, to)) as Result;
+    if (!result.error) break;
+    if (!isMissingCategoryColumn(result.error)) break;
+  }
+  if (result.error) throw new Error(`Failed to load categories: ${result.error.message}`);
+  const rows = (result.data ?? []) as Row[];
+  return {
+    items: rows.map(({ products, ...c }) => ({ ...c, product_count: products?.[0]?.count ?? 0 })),
+    total: counted.count ?? 0,
+    page,
+    perPage,
+  };
+}
+
 export async function adminListCategories(): Promise<Category[]> {
   await requireAdmin();
   const supabase = await createClient();

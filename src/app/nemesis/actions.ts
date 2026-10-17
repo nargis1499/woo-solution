@@ -603,6 +603,47 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
   }
 }
 
+/** Bulk delete from the categories table ("N selected → Delete"). */
+export async function deleteCategories(formData: FormData): Promise<void> {
+  const back = returnTo(formData, "/nemesis/categories");
+  const ids = idsFrom(formData);
+  if (ids.length === 0) redirect(failure(back, "Select at least one category first."));
+  try {
+    const { supabase } = await adminClient();
+    // products.category_id is `on delete set null` → products survive, uncategorised
+    const { data, error } = await supabase.from("categories").delete().in("id", ids).select("id");
+    if (error) throw error;
+    const deleted = data ?? [];
+    if (deleted.length === 0) redirect(failure(back, "Those categories no longer exist."));
+
+    updateTag(MENU_TAG); // menu items that link to a deleted category go with it
+    revalidateStore();
+    redirect(notice(back, `${count(deleted.length, "category", "categories")} deleted. Their products are now uncategorised.`));
+  } catch (e) {
+    if (isRedirectError(e)) throw e;
+    redirect(failure(back, friendlyError(e)));
+  }
+}
+
+/** "Delete all" – every category at once, from any page of the list. */
+export async function deleteAllCategories(formData: FormData): Promise<void> {
+  const back = returnTo(formData, "/nemesis/categories");
+  try {
+    const { supabase } = await adminClient();
+    const { data, error } = await supabase.from("categories").delete().neq("id", "00000000-0000-0000-0000-000000000000").select("id");
+    if (error) throw error;
+    const deleted = data ?? [];
+    if (deleted.length === 0) redirect(failure(back, "There are no categories to delete."));
+
+    updateTag(MENU_TAG); // every menu item that linked to a category is gone with it
+    revalidateStore();
+    redirect(notice(back, `${count(deleted.length, "category", "categories")} deleted. Their products are now uncategorised.`));
+  } catch (e) {
+    if (isRedirectError(e)) throw e;
+    redirect(failure(back, friendlyError(e)));
+  }
+}
+
 /**
  * Store the order the admin dragged the categories into: `sort_order` becomes the row's
  * position in `ids`. Everything that lists categories (header menu, filters, sitemap)
