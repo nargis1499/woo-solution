@@ -709,6 +709,14 @@ export async function updateUser(_prev: AdminFormState, formData: FormData): Pro
     if (error) throw error;
     if (!data) return { error: "User not found.", values };
 
+    // Keep the auth metadata in step with the profile, so anything reading the token
+    // (Supabase tooling, a fresh client) sees the same name. Best effort: without the
+    // service key the profile is still the source of truth for the app.
+    const service = createServiceClient();
+    if (service) {
+      await service.auth.admin.updateUserById(id, { user_metadata: { full_name: fullName || null } }).catch(() => undefined);
+    }
+
     revalidateStore();
     return { success: "User updated." };
   } catch (e) {

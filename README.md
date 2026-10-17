@@ -180,6 +180,7 @@ Every action reports back through a toast notification (bottom-right corner of t
 | Created | through `auth.admin.createUser()` on the Supabase Admin API (service-role key, server-side only) with the address already confirmed – the admin sets the password by hand, so there is nothing to confirm by e-mail. The `on_auth_user_created` trigger writes the profile row, then name / phone / role are filled in |
 | Validation | missing name, a malformed e-mail, a short password or an address that already has an account each show **under their own field**; the dialog stays open with everything you typed (except the password, which is never echoed back). Success closes it, toasts, and the new row is in the list |
 | Closing | the **Create user** / **Cancel** buttons, the **×** or **Escape** – reopening always starts from a clean form |
+| Name in the header | the moment they sign in, the storefront header shows their **avatar initial + first name** (*H Hasib*) and the account menu the full name and e-mail; the dashboard sidebar shows the full name too. The name is read from the **profile row**, so renaming the account later under Users → *Edit* (which only writes `profiles`) changes the header at the next render – the auth metadata is updated alongside it when the service key is set |
 
 
 #### Variable products
