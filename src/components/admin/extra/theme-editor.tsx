@@ -178,46 +178,98 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
       {/* minmax(0,1fr) + min-w-0: a grid item may never grow past its column (mobile overflow) */}
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-5">
-          <Card>
-            <CardHeader>
-              <CardTitle>Theme Customization</CardTitle>
-              <CardDescription>Colours and gradients of the whole store.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <ToggleGroup
-                  aria-label="Color mode"
-                  selectionMode="single"
-                  disallowEmptySelection
-                  selectedKeys={new Set([mode])}
-                  onSelectionChange={(keys: Set<Key>) => {
-                    const next = [...keys][0];
-                    if (next === "light" || next === "dark") setMode(next);
-                  }}
-                  className="rounded-md border p-1"
-                  data-testid="theme-mode"
-                >
-                  {MODES.map((m) => (
-                    <ToggleGroupItem key={m.id} id={m.id} size="sm" className="gap-2 data-[selected]:bg-primary data-[selected]:text-primary-foreground" data-testid={`theme-mode-${m.id}`}>
-                      {m.label}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-                <span className="text-xs text-muted-foreground" data-testid="theme-mode-active">
-                  Editing {mode === "light" ? "Light" : "Dark"} mode
-                </span>
+          <Card className="gap-0 overflow-visible py-0">
+            <div
+              className="sticky top-14 z-20 rounded-t-xl border-b bg-card/95 px-6 py-5 backdrop-blur supports-[backdrop-filter]:bg-card/85"
+              data-testid="theme-sticky-header"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <CardTitle className="text-xl font-bold tracking-tight">Theme Customization</CardTitle>
+                  <CardDescription>Colours and gradients of the whole store.</CardDescription>
+                </div>
+                <div className="flex flex-col items-end gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <SubmitButton pendingLabel="Saving…" pending={isPending}>
+                      Save changes
+                    </SubmitButton>
+                    <AlertDialogTrigger isOpen={resetOpen} onOpenChange={setResetOpen}>
+                      <Button type="button" variant="outline" data-testid="theme-reset">
+                        <RotateCcwIcon /> Reset to defaults
+                      </Button>
+                      <AlertDialog data-testid="theme-reset-dialog">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Reset the theme?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Every colour and gradient goes back to the template palette – in both modes. Save afterwards to publish it.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <Button type="button" variant="destructive" onPress={resetAll} data-testid="theme-reset-confirm">
+                            Reset colors
+                          </Button>
+                        </AlertDialogFooter>
+                      </AlertDialog>
+                    </AlertDialogTrigger>
+                  </div>
+                  <p className="text-right text-xs text-muted-foreground" data-testid="theme-dirty">
+                    {isPending ? "Saving…" : state?.success ? "Saved" : "Unsaved changes stay local"}
+                  </p>
+                  <FieldError>{state?.error}</FieldError>
+                </div>
               </div>
 
-              <CheckboxField
-                name="theme_sync"
-                id="theme_sync"
-                label="Use the same colors for both Light & Dark modes"
-                defaultChecked={sync}
-                onChange={(checked) => {
-                  setSync(checked);
-                  if (checked) setDark(light);
-                }}
-              />
+              <div className="my-4 border-t" />
+
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <ToggleGroup
+                    aria-label="Color mode"
+                    selectionMode="single"
+                    disallowEmptySelection
+                    selectedKeys={new Set([mode])}
+                    onSelectionChange={(keys: Set<Key>) => {
+                      const next = [...keys][0];
+                      if (next === "light" || next === "dark") setMode(next);
+                    }}
+                    className="w-fit rounded-lg border bg-muted/20 p-1"
+                    data-testid="theme-mode"
+                  >
+                    {MODES.map((m) => (
+                      <ToggleGroupItem
+                        key={m.id}
+                        id={m.id}
+                        size="sm"
+                        className="gap-2 rounded-md px-3 data-[selected]:bg-secondary data-[selected]:text-secondary-foreground data-[selected]:shadow-xs"
+                        data-testid={`theme-mode-${m.id}`}
+                      >
+                        {m.label}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-500" data-testid="theme-mode-active">
+                    <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
+                    Editing {mode === "light" ? "Light" : "Dark"} mode
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-muted/15 px-3.5 py-2.5">
+                  <CheckboxField
+                    name="theme_sync"
+                    id="theme_sync"
+                    label="Use the same colors for both Light & Dark modes"
+                    defaultChecked={sync}
+                    onChange={(checked) => {
+                      setSync(checked);
+                      if (checked) setDark(light);
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <CardContent className="space-y-4 pt-5 pb-6">
 
               <FieldSet className="rounded-lg border p-3.5" data-testid="theme-section-colors">
                 <button
@@ -348,105 +400,97 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                   </div>
                 </SmoothCollapse>
               </FieldSet>
-            </CardContent>
-          </Card>
 
-          <Card className="gap-0 py-0" data-testid="theme-header-footer">
-            <button
-              type="button"
-              aria-expanded={headerFooterOpen}
-              onClick={() => setHeaderFooterOpen((v) => !v)}
-              className="flex w-full items-center justify-between gap-3 rounded-xl px-6 py-5 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-              data-testid="theme-section-header-footer-toggle"
-            >
-              <CardHeader className="w-full p-0">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle>Header &amp; Footer</CardTitle>
-                  <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground" data-testid="theme-header-footer-mode">
-                    {mode === "light" ? <SunIcon className="size-3.5" aria-hidden /> : <MoonIcon className="size-3.5" aria-hidden />}
-                    {mode === "light" ? "Light" : "Dark"} mode
-                  </span>
-                </div>
-                <CardDescription>Background and foreground text colours stay synced for readable contrast.</CardDescription>
-              </CardHeader>
-              <ChevronDownIcon className={cn("size-5 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]", headerFooterOpen && "rotate-180")} aria-hidden />
-            </button>
-            <SmoothCollapse open={headerFooterOpen}>
-              <CardContent className="space-y-4 border-t pt-5 pb-6">
-                {THEME_CHROME_SECTIONS.map((section) => {
-                  const bg = colors[section.bgKey] ?? defaults[section.bgKey] ?? "#ffffff";
-                  const fg = colors[section.fgKey] ?? (colors[section.bgKey] ? syncedForeground(bg) : defaults[section.fgKey] ?? "#0f172a");
-                  return (
-                    <div key={section.id} className="space-y-3 rounded-md border p-3" data-testid={`theme-chrome-${section.id}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="min-w-40">
-                          <p className="text-sm font-medium">{section.label}</p>
-                          <p className="text-xs text-muted-foreground">{section.description}</p>
+              <FieldSet className="rounded-lg border p-3.5" data-testid="theme-header-footer">
+                <button
+                  type="button"
+                  aria-expanded={headerFooterOpen}
+                  onClick={() => setHeaderFooterOpen((v) => !v)}
+                  className="flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  data-testid="theme-section-header-footer-toggle"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">Header &amp; Footer</span>
+                    <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs text-muted-foreground" data-testid="theme-header-footer-mode">
+                      {mode === "light" ? <SunIcon className="size-3" aria-hidden /> : <MoonIcon className="size-3" aria-hidden />}
+                      {mode === "light" ? "Light" : "Dark"} mode
+                    </span>
+                  </div>
+                  <ChevronDownIcon className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]", headerFooterOpen && "rotate-180")} aria-hidden />
+                </button>
+                <SmoothCollapse open={headerFooterOpen}>
+                  <div className="mt-3 space-y-4 border-t pt-3">
+                    {THEME_CHROME_SECTIONS.map((section) => {
+                      const bg = colors[section.bgKey] ?? defaults[section.bgKey] ?? "#ffffff";
+                      const fg = colors[section.fgKey] ?? (colors[section.bgKey] ? syncedForeground(bg) : defaults[section.fgKey] ?? "#0f172a");
+                      return (
+                        <div key={section.id} className="space-y-3 rounded-md border p-3" data-testid={`theme-chrome-${section.id}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="min-w-40">
+                              <p className="text-sm font-medium">{section.label}</p>
+                              <p className="text-xs text-muted-foreground">{section.description}</p>
+                            </div>
+                            <span
+                              className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-medium shadow-2xs"
+                              style={{ backgroundColor: bg, color: fg }}
+                              data-testid={`theme-color-${section.id}-contrast`}
+                            >
+                              <span>Synced preview</span>
+                              <span className="font-mono text-[11px] opacity-85">{fg}</span>
+                            </span>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5">
+                              <span className="text-xs font-medium">Background</span>
+                              <ThemeColorField
+                                id={`${mode}-${section.bgKey}`}
+                                label={`${section.label} background (${mode})`}
+                                value={colors[section.bgKey]}
+                                fallback={defaults[section.bgKey] ?? "#ffffff"}
+                                onChange={(value) => setColor(section.bgKey, value)}
+                                onClear={() => setColor(section.bgKey, null)}
+                                testId={`theme-color-${section.bgKey}`}
+                              />
+                            </div>
+                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5">
+                              <span className="text-xs font-medium">Foreground text</span>
+                              <ThemeColorField
+                                id={`${mode}-${section.fgKey}`}
+                                label={`${section.label} foreground text (${mode})`}
+                                value={colors[section.fgKey]}
+                                fallback={fg}
+                                onChange={(value) => setColor(section.fgKey, value)}
+                                onClear={() => setColor(section.fgKey, colors[section.bgKey] ? syncedForeground(bg) : null)}
+                                testId={`theme-color-${section.fgKey}`}
+                              />
+                            </div>
+                          </div>
                         </div>
-                        <span
-                          className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-medium shadow-2xs"
-                          style={{ backgroundColor: bg, color: fg }}
-                          data-testid={`theme-color-${section.id}-contrast`}
-                        >
-                          <span>Synced preview</span>
-                          <span className="font-mono text-[11px] opacity-85">{fg}</span>
-                        </span>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5">
-                          <span className="text-xs font-medium">Background</span>
-                          <ThemeColorField
-                            id={`${mode}-${section.bgKey}`}
-                            label={`${section.label} background (${mode})`}
-                            value={colors[section.bgKey]}
-                            fallback={defaults[section.bgKey] ?? "#ffffff"}
-                            onChange={(value) => setColor(section.bgKey, value)}
-                            onClear={() => setColor(section.bgKey, null)}
-                            testId={`theme-color-${section.bgKey}`}
-                          />
-                        </div>
-                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5">
-                          <span className="text-xs font-medium">Foreground text</span>
-                          <ThemeColorField
-                            id={`${mode}-${section.fgKey}`}
-                            label={`${section.label} foreground text (${mode})`}
-                            value={colors[section.fgKey]}
-                            fallback={fg}
-                            onChange={(value) => setColor(section.fgKey, value)}
-                            onClear={() => setColor(section.fgKey, colors[section.bgKey] ? syncedForeground(bg) : null)}
-                            testId={`theme-color-${section.fgKey}`}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </SmoothCollapse>
-          </Card>
+                      );
+                    })}
+                  </div>
+                </SmoothCollapse>
+              </FieldSet>
 
-          <Card className="gap-0 py-0" data-testid="theme-section-gradients">
-            <button
-              type="button"
-              aria-expanded={gradientsOpen}
-              onClick={() => setGradientsOpen((v) => !v)}
-              className="flex w-full items-center justify-between gap-3 rounded-xl px-6 py-5 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-              data-testid="theme-section-gradients-toggle"
-            >
-              <CardHeader className="w-full p-0">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle>Gradients</CardTitle>
-                  <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground" data-testid="theme-gradients-mode">
-                    {mode === "light" ? <SunIcon className="size-3.5" aria-hidden /> : <MoonIcon className="size-3.5" aria-hidden />}
-                    {mode === "light" ? "Light" : "Dark"} mode
-                  </span>
-                </div>
-                <CardDescription>Linear or radial, two or three stops.</CardDescription>
-              </CardHeader>
-              <ChevronDownIcon className={cn("size-5 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]", gradientsOpen && "rotate-180")} aria-hidden />
-            </button>
-            <SmoothCollapse open={gradientsOpen}>
-              <CardContent className="space-y-4 border-t pt-5 pb-6">
+              <FieldSet className="rounded-lg border p-3.5" data-testid="theme-section-gradients">
+                <button
+                  type="button"
+                  aria-expanded={gradientsOpen}
+                  onClick={() => setGradientsOpen((v) => !v)}
+                  className="flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  data-testid="theme-section-gradients-toggle"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">Gradients</span>
+                    <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs text-muted-foreground" data-testid="theme-gradients-mode">
+                      {mode === "light" ? <SunIcon className="size-3" aria-hidden /> : <MoonIcon className="size-3" aria-hidden />}
+                      {mode === "light" ? "Light" : "Dark"} mode
+                    </span>
+                  </div>
+                  <ChevronDownIcon className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]", gradientsOpen && "rotate-180")} aria-hidden />
+                </button>
+                <SmoothCollapse open={gradientsOpen}>
+                  <div className="mt-3 space-y-4 border-t pt-3">
               {THEME_GRADIENT_FIELDS.map((field) => {
                 const g = modeGradients[field.key];
                 return (
@@ -572,17 +616,19 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                   </div>
                 );
               })}
-              </CardContent>
-            </SmoothCollapse>
+                  </div>
+                </SmoothCollapse>
+              </FieldSet>
+            </CardContent>
           </Card>
         </div>
 
         {/* ── live preview ─────────────────────────────────────────────── */}
-        <div className="min-w-0 space-y-5 lg:sticky lg:top-6 lg:self-start">
+        <div className="min-w-0 space-y-4 lg:sticky lg:top-16 lg:self-start">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Preview</CardTitle>
-              <CardDescription>{sync ? "Both modes" : mode === "light" ? "Light mode" : "Dark mode"}</CardDescription>
+              <CardDescription className="text-xs">{sync ? "Both Modes" : mode === "light" ? "Light Mode" : "Dark Mode"}</CardDescription>
             </CardHeader>
             <CardContent>
               <div
@@ -633,8 +679,8 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
             </CardContent>
           </Card>
 
-          <Card size="sm" className="gap-2.5 py-3">
-            <CardContent className="space-y-2.5 px-4">
+          <Card size="sm" className="py-3">
+            <CardContent className="px-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-semibold">Defaults</span>
@@ -645,41 +691,11 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                     <span
                       key={field.key}
                       title={`${field.label}: ${TEMPLATE_DEFAULTS[mode][field.key]}`}
-                      className="size-4.5 rounded-[4px] border"
+                      className="size-4 rounded-full border"
                       style={{ backgroundColor: TEMPLATE_DEFAULTS[mode][field.key] || "#000000" }}
                     />
                   ))}
                 </div>
-              </div>
-              <FieldError>{state?.error}</FieldError>
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <SubmitButton pendingLabel="Saving…" pending={isPending}>
-                    Save changes
-                  </SubmitButton>
-                  <AlertDialogTrigger isOpen={resetOpen} onOpenChange={setResetOpen}>
-                    <Button type="button" variant="outline" data-testid="theme-reset">
-                      <RotateCcwIcon /> Reset to defaults
-                    </Button>
-                    <AlertDialog data-testid="theme-reset-dialog">
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Reset the theme?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Every colour and gradient goes back to the template palette – in both modes. Save afterwards to publish it.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <Button type="button" variant="destructive" onPress={resetAll} data-testid="theme-reset-confirm">
-                          Reset colors
-                        </Button>
-                      </AlertDialogFooter>
-                    </AlertDialog>
-                  </AlertDialogTrigger>
-                </div>
-                <p className="text-[11px] text-muted-foreground" data-testid="theme-dirty">
-                  {isPending ? "Saving…" : state?.success ? "Saved" : "Unsaved changes stay local"}
-                </p>
               </div>
             </CardContent>
           </Card>
