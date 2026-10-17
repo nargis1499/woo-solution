@@ -7,11 +7,11 @@ import { FREE_SHIPPING_THRESHOLD_MICROS } from "@/lib/config";
 import { getSiteSettings } from "@/lib/site-settings";
 import { canonicalFor } from "@/lib/seo";
 import { formatMoney, moneyFromSettings } from "@/lib/money";
+import { CategoryThumb } from "@/components/category-thumb";
 import { HomeProductFilter } from "@/components/home-product-filter";
 import { ProductGrid, ProductGridSkeleton } from "@/components/product-grid";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
-import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -102,14 +102,21 @@ async function CategoryTiles() {
   const categories = await getCategories();
   if (categories.length === 0) return null;
   return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-      {categories.map((c) => (
-        <Card key={c.id} size="sm" className="py-0 transition-colors hover:bg-accent">
-          <Link href={`/shop?category=${c.slug}`} className="flex items-center justify-between px-5 py-6 font-medium">
-            {c.name}
-            <ArrowRightIcon className="size-4 text-muted-foreground" aria-hidden />
-          </Link>
-        </Card>
+    <div className="grid grid-cols-3 gap-x-4 gap-y-6 sm:grid-cols-4 lg:grid-cols-6">
+      {categories.map((c, index) => (
+        <Link
+          key={c.id}
+          href={`/shop?category=${c.slug}`}
+          data-testid="home-category-tile"
+          className="group flex flex-col items-center gap-3 rounded-xl p-2 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <CategoryThumb
+            category={c}
+            index={index}
+            className="transition duration-200 group-hover:scale-105 group-hover:ring-2 group-hover:ring-primary/40"
+          />
+          <span className="text-sm font-medium group-hover:text-primary">{c.name}</span>
+        </Link>
       ))}
     </div>
   );
@@ -117,9 +124,12 @@ async function CategoryTiles() {
 
 function CategoryTilesSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-4" aria-hidden>
+    <div className="grid grid-cols-3 gap-x-4 gap-y-6 sm:grid-cols-4 lg:grid-cols-6" aria-hidden>
       {Array.from({ length: 4 }).map((_, i) => (
-        <Skeleton key={i} className="h-[72px] rounded-xl" />
+        <div key={i} className="flex flex-col items-center gap-3 p-2">
+          <Skeleton className="size-20 rounded-full sm:size-24" />
+          <Skeleton className="h-4 w-16 rounded-md" />
+        </div>
       ))}
     </div>
   );

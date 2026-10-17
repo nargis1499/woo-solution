@@ -507,6 +507,45 @@ export async function deleteProducts(formData: FormData): Promise<void> {
  * Categories
  * ────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * One image column pair (`<name>_mode` = keep | media | url | remove,
+ * `<name>_media_id`, `<name>_url`) → the `image_url` / `image_media_id` to write.
+ * The library id is resolved server-side; nothing the browser sends is trusted.
+ */
+async function resolveImageChoice(
+  formData: FormData,
+  name: string,
+  fieldErrors: Record<string, string>,
+): Promise<{ image_url?: string | null; image_media_id?: string | null }> {
+  const mode = str(formData, `${name}_mode`, 10) || "keep";
+  const mediaId = str(formData, `${name}_media_id`, 40);
+  const url = str(formData, `${name}_url`, 2000);
+
+  if (mode === "remove") return { image_url: null, image_media_id: null };
+  if (mode === "url") {
+    if (!/^https?:\/\/\S+$/i.test(url)) {
+      fieldErrors[`${name}_url`] = "Enter a full image URL starting with http:// or https://.";
+      return {};
+    }
+    return { image_url: url, image_media_id: null };
+  }
+  if (mode !== "media") return {};
+  if (!UUID_RE.test(mediaId)) {
+    fieldErrors[`${name}_media_id`] = "Pick an image from the Media Library.";
+    return {};
+  }
+
+  const { supabase } = await adminClient();
+  const { data, error } = await supabase.from("media").select("id, path, kind, deleted_at").eq("id", mediaId).maybeSingle();
+  if (error) throw error;
+  const item = data as { id: string; path: string; kind: string; deleted_at: string | null } | null;
+  if (!item || item.deleted_at || item.kind !== "image") {
+    fieldErrors[`${name}_media_id`] = "That image is no longer in the Media Library – pick another one.";
+    return {};
+  }
+  return { image_url: mediaUrl(item.path), image_media_id: item.id };
+}
+
 export async function saveCategory(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
   const values = echo(formData);
   const id = str(formData, "id", 40);
@@ -523,7 +562,10 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
 
   try {
     const { supabase } = await adminClient();
-    const row = { name, slug };
+    const image = await resolveImageChoice(formData, "image", fieldErrors);
+    if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
+
+    const row = { name, slug, ...image };
     let result;
     if (isEdit) {
       result = await supabase.from("categories").update(row).eq("id", id).select("id").single();

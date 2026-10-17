@@ -214,11 +214,16 @@ export async function adminListTags(): Promise<Tag[]> {
 export async function adminListCategories(): Promise<Category[]> {
   await requireAdmin();
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("categories")
-    .select("id, name, slug, sort_order, products(count)")
-    .order("sort_order", { ascending: true })
-    .order("name", { ascending: true });
+  const run = (columns: string) =>
+    supabase
+      .from("categories")
+      .select(columns)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+
+  let { data, error } = await run(`id, name, slug, sort_order, image_url, image_media_id, image_media:media!categories_image_media_id_fkey(${MEDIA_REF_COLUMNS}), products(count)`);
+  // A database that has not run the category-images migration yet: list the categories without pictures.
+  if (error && isMissingMediaSchema(error.message)) ({ data, error } = await run("id, name, slug, sort_order, products(count)"));
   if (error) throw new Error(`Failed to load categories: ${error.message}`);
   type Row = Category & { products?: { count: number }[] };
   return ((data ?? []) as unknown as Row[]).map(({ products, ...c }) => ({
@@ -231,11 +236,10 @@ export async function adminGetCategory(id: string): Promise<Category | null> {
   await requireAdmin();
   if (!isUuid(id)) return null;
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("categories")
-    .select("id, name, slug, sort_order, products(count)")
-    .eq("id", id)
-    .maybeSingle();
+  const run = (columns: string) => supabase.from("categories").select(columns).eq("id", id).maybeSingle();
+
+  let { data, error } = await run(`id, name, slug, sort_order, image_url, image_media_id, image_media:media!categories_image_media_id_fkey(${MEDIA_REF_COLUMNS}), products(count)`);
+  if (error && isMissingMediaSchema(error.message)) ({ data, error } = await run("id, name, slug, sort_order, products(count)"));
   if (error) throw new Error(`Failed to load category: ${error.message}`);
   if (!data) return null;
   const { products, ...c } = data as unknown as Category & { products?: { count: number }[] };

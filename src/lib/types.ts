@@ -9,6 +9,11 @@ export type Category = {
   name: string;
   slug: string;
   sort_order: number;
+  /** Tile image shown on "Shop by category" (library file or an external URL). */
+  image_url?: string | null;
+  /** Library file behind `image_url` (null for external URLs / no image). */
+  image_media_id?: string | null;
+  image_media?: MediaRef | null;
   /** Only present in admin queries (`products(count)`). */
   product_count?: number;
 };

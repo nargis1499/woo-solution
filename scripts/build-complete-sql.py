@@ -38,6 +38,7 @@ TITLES = {
     "20261032000000_order_message_receipts.sql": "19. The narrow UPDATE policy + trigger behind ✓ / ✓✓",
     "20261033000000_customer_visibility.sql": "20. Per-customer visibility + store_presence_for()",
     "20261034000000_notifications.sql": "21. Notifications — the table, RLS and the six order / message triggers",
+    "20261035000000_category_images.sql": "22. Category images — the picture behind the \"Shop by category\" tiles",
 }
 
 HEADER = """-- =============================================================================
@@ -57,7 +58,7 @@ HEADER = """-- =================================================================
 --      Everything (dashboard, order chat, notifications, media, pages …) works from there.
 --
 --  WHAT IS IN HERE
---   • All 21 migrations in order — schema, RLS, triggers, functions, storage bucket.
+--   • All {count} migrations in order — schema, RLS, triggers, functions, storage bucket.
 --   • API role grants (Supabase normally sets these up; stated here so the file is
 --     self-contained).
 --   • OPTIONAL demo catalog at the very end (categories + products + header menu).
@@ -113,7 +114,7 @@ def main() -> None:
     if not files:
         raise SystemExit(f"no migrations found in {MIGRATIONS}")
 
-    parts = [HEADER, GUARD]
+    parts = [HEADER.replace("{count}", str(len(files))), GUARD]
     for path in files:
         title = TITLES.get(path.name, path.name)
         parts.append("\n-- " + "=" * 77 + "\n")

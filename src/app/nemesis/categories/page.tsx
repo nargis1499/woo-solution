@@ -3,6 +3,7 @@ import Link from "next/link";
 import { adminListCategories } from "@/lib/admin/data";
 import { deleteCategory, reorderCategories } from "@/app/nemesis/actions";
 import { CategoryForm } from "@/components/admin/category-form";
+import { CategoryThumb } from "@/components/category-thumb";
 import { DeleteButton } from "@/components/admin/form-bits";
 import { DataTable, EmptyState, PageHeader, Section } from "@/components/admin/ui";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -34,11 +35,12 @@ export default async function AdminCategoriesPage() {
             { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
           ]}
           reorder={{ action: reorderCategories, savedMessage: "Category order saved." }}
-          rows={categories.map((c) => ({
+          rows={categories.map((c, index) => ({
             id: c.id,
             label: c.name,
             cells: [
-              <Link key="n" href={`/nemesis/categories/${c.id}`} className="font-medium hover:underline">
+              <Link key="n" href={`/nemesis/categories/${c.id}`} className="flex items-center gap-3 font-medium hover:underline">
+                <CategoryThumb category={c} index={index} size="sm" />
                 {c.name}
               </Link>,
               <Link key="s" href={`/shop?category=${c.slug}`} target="_blank" className="hover:underline">

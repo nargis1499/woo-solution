@@ -15,7 +15,7 @@
 --      Everything (dashboard, order chat, notifications, media, pages …) works from there.
 --
 --  WHAT IS IN HERE
---   • All 21 migrations in order — schema, RLS, triggers, functions, storage bucket.
+--   • All 22 migrations in order — schema, RLS, triggers, functions, storage bucket.
 --   • API role grants (Supabase normally sets these up; stated here so the file is
 --     self-contained).
 --   • OPTIONAL demo catalog at the very end (categories + products + header menu).
@@ -3249,6 +3249,30 @@ drop trigger if exists order_messages_notify on public.order_messages;
 create trigger order_messages_notify
   after insert on public.order_messages
   for each row execute function public.order_messages_notify();
+
+-- =============================================================================
+-- 22. Category images — the picture behind the "Shop by category" tiles
+-- (migration 20261035000000_category_images.sql)
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+--  CATEGORY IMAGES
+--
+--  A category can carry a picture that the storefront shows on its
+--  "Shop by category" tiles (the grid falls back to a gradient icon otherwise).
+--  The file itself lives in the Media Library; `image_url` mirrors its public
+--  URL so public pages never have to join `media`. A plain external URL is
+--  allowed too — `image_media_id` simply stays null then.
+-- -----------------------------------------------------------------------------
+
+alter table public.categories
+  add column if not exists image_url text,
+  add column if not exists image_media_id uuid references public.media (id) on delete set null;
+
+create index if not exists categories_image_media_id_idx on public.categories (image_media_id);
+
+comment on column public.categories.image_url is 'Public URL of the tile image (Media Library file or an external URL).';
+comment on column public.categories.image_media_id is 'Media Library file behind image_url; null for external URLs.';
 
 
 -- =============================================================================

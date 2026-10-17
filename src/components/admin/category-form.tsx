@@ -6,6 +6,7 @@ import type { Category } from "@/lib/types";
 import { LinkButton } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { MediaRefField } from "./media/media-ref-field";
 import { useFormToast } from "./flash-toast";
 import { SubmitButton } from "./form-bits";
 
@@ -24,12 +25,15 @@ export function CategoryForm({ category, compact }: { category?: Category | null
 
   // The quick-add form stays on the list page: once an add succeeded, React resets the
   // uncontrolled inputs and the controlled slug starts over here (state keyed by the result).
+  // `formRun` remounts the image field so a picked file starts over as well.
   const [seen, setSeen] = useState<AdminFormState>(state);
+  const [formRun, setFormRun] = useState(0);
   if (seen !== state) {
     setSeen(state);
     if (state?.success) {
       setSlug("");
       setSlugTouched(false);
+      setFormRun((run) => run + 1);
     }
   }
 
@@ -58,6 +62,17 @@ export function CategoryForm({ category, compact }: { category?: Category | null
           <FieldError>{err.slug}</FieldError>
         </Field>
       </div>
+      <MediaRefField
+        key={`image:${formRun}`}
+        name="image"
+        label="Category image"
+        currentUrl={category?.image_url ?? null}
+        currentMedia={category?.image_media ?? null}
+        error={err.image_media_id ?? err.image_url}
+        allowUrl
+        chooseLabel="Choose image"
+        picker={{ kind: "image", title: "Category image", confirmLabel: "Use as category image", uploadFolderName: "categories" }}
+      />
       <div className={compact ? "flex justify-end gap-2" : "flex gap-2"}>
         <SubmitButton pendingLabel={category ? "Saving…" : "Adding…"}>{category ? "Save changes" : "Add category"}</SubmitButton>
         {!compact && (

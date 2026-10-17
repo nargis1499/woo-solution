@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
+import { MEDIA_REF_COLUMNS, isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
 import { isMissingVariationSchema } from "@/lib/data/product-columns";
 import { PRODUCT_COLUMNS, PRODUCT_DETAIL_COLUMNS, PRODUCT_DETAIL_COLUMNS_LEGACY, PRODUCT_COLUMNS_LEGACY } from "@/lib/data/product-columns";
 import { withSortedVariations } from "@/lib/variations";
@@ -8,16 +8,25 @@ import { PRODUCTS_PER_PAGE } from "@/lib/catalog";
 import { pageCount } from "@/lib/pagination";
 import type { Category, Product } from "@/lib/types";
 
+const CATEGORY_COLUMNS = "id, name, slug, sort_order";
+/** Migration 22 (`20261035000000_category_images.sql`) adds the tile image. */
+const CATEGORY_IMAGE_COLUMNS = `image_url, image_media_id, image_media:media!categories_image_media_id_fkey(${MEDIA_REF_COLUMNS})`;
+
 export async function getCategories(): Promise<Category[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("categories")
-    .select("id, name, slug, sort_order")
-    .order("sort_order", { ascending: true })
-    .order("name", { ascending: true });
+  const run = (columns: string) =>
+    supabase
+      .from("categories")
+      .select(columns)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
 
+  let { data, error } = await run(`${CATEGORY_COLUMNS}, ${CATEGORY_IMAGE_COLUMNS}`);
+  // A database that has not run the category-images migration yet simply has
+  // no pictures: keep the storefront up and let the tiles use their icons.
+  if (error) ({ data, error } = await run(CATEGORY_COLUMNS));
   if (error) throw new Error(`Failed to load categories: ${error.message}`);
-  return (data ?? []) as Category[];
+  return (data ?? []) as unknown as Category[];
 }
 
 export async function getProducts(options: {
