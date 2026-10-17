@@ -53,8 +53,13 @@ export function MediaRefField({
   allowUrl?: boolean;
   /** Fired when the admin picks or removes a file (true = a file is selected). */
   onChange?: (hasImage: boolean) => void;
-  /** Rendered under the buttons — e.g. the matching icon picker for a category. */
-  extra?: React.ReactNode;
+  /**
+   * Rendered under the buttons — e.g. the matching icon picker for a category.
+   * A function gets the live state of this field (`hasImage` is true whenever a
+   * picture would be saved), so the extra UI can never disagree with the
+   * preview right above it.
+   */
+  extra?: React.ReactNode | ((state: { hasImage: boolean }) => React.ReactNode);
 }) {
   const external = Boolean(currentUrl && !currentMedia); // stored value is an external URL
   const [mode, setMode] = useState<Mode>("keep");
@@ -85,6 +90,9 @@ export function MediaRefField({
         : "Current file"
       : null;
   const showUrlInput = mode === "url" || (mode === "keep" && external);
+  // What this field would save right now – the single source of truth for the
+  // "Remove icon" switch under it.
+  const hasImage = Boolean(previewUrl);
 
   return (
     <Field data-invalid={Boolean(error) || undefined} data-testid={`media-ref-${name}`}>
@@ -148,7 +156,7 @@ export function MediaRefField({
               </Button>
             )}
           </div>
-          {extra}
+          {typeof extra === "function" ? extra({ hasImage }) : extra}
           {showUrlInput && (
             <Input
               type="url"

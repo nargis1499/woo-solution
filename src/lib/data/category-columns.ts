@@ -23,6 +23,23 @@ export const CATEGORY_ICON_COLOR_COLUMN = "icon_color";
 /** Migration 25 — the admin's "Remove icon" switch (image-only tiles). */
 export const CATEGORY_ICON_DISABLED_COLUMN = "icon_disabled";
 
+/**
+ * True when the error only means the database is a migration behind: a column
+ * from the newest set is not there yet (PostgREST reports a missing column as
+ * `column … does not exist` or with a stale schema cache). Anything else – a
+ * timeout, a dropped connection – must not silently drop columns, because the
+ * page would then render an older shape of the row (and, say, ignore the
+ * admin's "Remove icon" choice while the admin form still sees it).
+ */
+export function isMissingCategoryColumn(error: { message?: string; code?: string } | null | undefined): boolean {
+  if (!error) return false;
+  return (
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /column .* does not exist|Could not find the '.*' column|schema cache/i.test(error.message ?? "")
+  );
+}
+
 /** `suffix` is for extra selects such as `, products(count)`. */
 export function categoryColumnSets(suffix = ""): string[] {
   return [

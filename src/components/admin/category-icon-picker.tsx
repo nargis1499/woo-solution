@@ -42,6 +42,10 @@ export function iconFillStyle(color: string | null | undefined): React.CSSProper
  * gets "Remove icon" there: it switches the icon off entirely (`icon_disabled`)
  * and the storefront shows the image alone. Without a picture the button is
  * hidden – a tile with neither an icon nor a picture would be empty.
+ *
+ * A picked icon always wins over the switch: a row can carry both (the switch
+ * left on, an icon picked later), and then this shows the icon the storefront
+ * draws – never an empty "removed" badge that hides it.
  */
 export function CategoryIconPicker({
   value,
@@ -68,8 +72,10 @@ export function CategoryIconPicker({
   const [fill, setFill] = useState<string | null>(color ?? null);
   const [removed, setRemoved] = useState(disabled);
   const [open, setOpen] = useState(false);
-  // Without a picture the switch is meaningless, so it never reaches the server.
-  const noIcon = hasImage && removed;
+  // A picked icon always shows (and can be removed again); the switch alone only
+  // means "image only" while no icon is picked. Without a picture the switch is
+  // meaningless, so it never reaches the server.
+  const noIcon = hasImage && removed && !selected;
   const Current = (selected && CATEGORY_ICON_BY_ID[selected]) || DEFAULT_CATEGORY_ICON;
 
   return (

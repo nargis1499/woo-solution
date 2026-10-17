@@ -32,14 +32,19 @@ function badgeStyle(color: string | null | undefined): React.CSSProperties {
  *                the icon sits in the badge, the name turns white. A category
  *                with a picture but no picked icon counts too – its badge shows
  *                the default shopping bag;
- *   image only → the admin pressed "Remove icon" (`icon_disabled`): the
- *                picture, alone, in the round badge, plain card, no watermark.
+ *   image only → the admin pressed "Remove icon" (`icon_disabled`) and no icon
+ *                is picked: the picture, alone, in the round badge, plain card,
+ *                no watermark.
+ *
+ * `icon_disabled` never hides an icon that is actually picked – the admin form
+ * shows that icon too, so the tile and the form always agree.
  */
 export function CategoryCard({ category }: { category: Category }) {
   const photo = categoryImageUrl(category, "large");
   const chosenIcon = category.icon ? CATEGORY_ICON_BY_ID[category.icon] : null;
   const Icon = chosenIcon ?? DEFAULT_CATEGORY_ICON;
-  const variant: "icon" | "image" | "both" = !photo ? "icon" : category.icon_disabled ? "image" : "both";
+  const showIcon = Boolean(chosenIcon) || !category.icon_disabled;
+  const variant: "icon" | "image" | "both" = !photo ? "icon" : showIcon ? "both" : "image";
 
   return (
     <Link

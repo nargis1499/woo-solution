@@ -22,9 +22,6 @@ export function CategoryForm({ category, compact }: { category?: Category | null
   const err = state?.fieldErrors ?? {};
   const [slugTouched, setSlugTouched] = useState(Boolean(category?.slug));
   const [slug, setSlug] = useState(v.slug ?? category?.slug ?? "");
-  // Drives "Remove icon": it only makes sense while the category has a picture,
-  // and it follows the image field live (pick / paste / remove).
-  const [hasImage, setHasImage] = useState(Boolean(category?.image_url));
   const prefix = compact ? "new-" : "";
 
   // The quick-add form stays on the list page: once an add succeeded, React resets the
@@ -73,11 +70,13 @@ export function CategoryForm({ category, compact }: { category?: Category | null
         currentUrl={category?.image_url ?? null}
         currentMedia={category?.image_media ?? null}
         error={err.image_media_id ?? err.image_url}
-        onChange={setHasImage}
         allowUrl
         chooseLabel="Choose image"
         picker={{ kind: "image", title: "Category image", confirmLabel: "Use as category image", uploadFolderName: "categories" }}
-        extra={
+        extra={({ hasImage }) => (
+          // `hasImage` comes from the field itself, so "Remove icon" tracks the
+          // picture shown right above it – an uploaded file, a pasted URL, a
+          // stored library file or nothing at all.
           <CategoryIconPicker
             key={`icon:${formRun}`}
             value={category?.icon ?? null}
@@ -86,7 +85,7 @@ export function CategoryForm({ category, compact }: { category?: Category | null
             disabled={category?.icon_disabled ?? false}
             error={err.icon ?? err.icon_color}
           />
-        }
+        )}
       />
       <div className={compact ? "flex justify-end gap-2" : "flex gap-2"}>
         <SubmitButton pendingLabel={category ? "Saving…" : "Adding…"}>{category ? "Save changes" : "Add category"}</SubmitButton>

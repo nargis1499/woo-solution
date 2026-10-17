@@ -9,7 +9,7 @@ import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { pageCount } from "@/lib/admin/pagination";
 import { normaliseSiteSettings } from "@/lib/site-settings";
 import { PAGE_COLUMNS, PAGE_DETAIL_COLUMNS, withTags } from "@/lib/data/pages";
-import { categoryColumnSets } from "@/lib/data/category-columns";
+import { categoryColumnSets, isMissingCategoryColumn } from "@/lib/data/category-columns";
 import type { PageSort } from "@/lib/pages/shared";
 import type { AdminStats, Category, MediaRef, MenuItem, MenuLocation, Order, OrderStatus, Page, PageStatus, Product, Profile, SettingsMedia, SiteSettingsRow, Tag } from "@/lib/types";
 
@@ -227,6 +227,7 @@ export async function adminListCategories(): Promise<Category[]> {
       .order("name", { ascending: true });
     error = result.error;
     if (!error) { rows = (result.data ?? []) as unknown as Row[]; break; }
+    if (!isMissingCategoryColumn(error)) break;
   }
   if (error) throw new Error(`Failed to load categories: ${error.message}`);
   return (rows ?? []).map(({ products, ...c }) => ({ ...c, product_count: products?.[0]?.count ?? 0 }));
@@ -244,6 +245,7 @@ export async function adminGetCategory(id: string): Promise<Category | null> {
     const result = await supabase.from("categories").select(columns).eq("id", id).maybeSingle();
     error = result.error;
     if (!error) { row = (result.data ?? null) as Row | null; break; }
+    if (!isMissingCategoryColumn(error)) break;
   }
   if (error) throw new Error(`Failed to load category: ${error.message}`);
   if (!row) return null;

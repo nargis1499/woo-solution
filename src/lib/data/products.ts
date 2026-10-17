@@ -6,7 +6,7 @@ import { PRODUCT_COLUMNS, PRODUCT_DETAIL_COLUMNS, PRODUCT_DETAIL_COLUMNS_LEGACY,
 import { withSortedVariations } from "@/lib/variations";
 import { PRODUCTS_PER_PAGE } from "@/lib/catalog";
 import { pageCount } from "@/lib/pagination";
-import { categoryColumnSets } from "@/lib/data/category-columns";
+import { categoryColumnSets, isMissingCategoryColumn } from "@/lib/data/category-columns";
 import type { Category, Product } from "@/lib/types";
 
 export async function getCategories(): Promise<Category[]> {
@@ -23,6 +23,8 @@ export async function getCategories(): Promise<Category[]> {
   for (const columns of categoryColumnSets()) {
     ({ data, error } = await run(columns));
     if (!error) break;
+    // Only a database that is a migration behind may lose columns – a failed request must not.
+    if (!isMissingCategoryColumn(error)) break;
   }
   if (error) throw new Error(`Failed to load categories: ${error.message}`);
   return (data ?? []) as Category[];
