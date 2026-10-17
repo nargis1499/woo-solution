@@ -345,21 +345,25 @@ export function themeVars(colors: ThemeColors, gradients?: ThemeGradients): Reco
     vars["--accent-foreground"] = `color-mix(in oklab, ${primary} 70%, var(--foreground))`;
     vars["--sidebar-primary"] = primary;
     vars["--sidebar-primary-foreground"] = onPrimary;
-    vars["--sidebar-accent"] = `color-mix(in oklab, ${primary} 12%, var(--background))`;
-    vars["--sidebar-accent-foreground"] = `color-mix(in oklab, ${primary} 70%, var(--foreground))`;
     vars["--sidebar-ring"] = `color-mix(in oklab, ${primary} 70%, var(--background))`;
     vars["--chart-1"] = primary;
   }
 
   if (secondary) {
+    const onSecondary = contrastForeground(secondary);
     vars["--secondary"] = secondary;
-    vars["--secondary-foreground"] = contrastForeground(secondary);
+    vars["--secondary-foreground"] = onSecondary;
+    vars["--sidebar-accent"] = secondary;
+    vars["--sidebar-accent-foreground"] = onSecondary;
   }
 
   const buttonColor = button ?? primary;
   if (buttonColor) {
+    const onButton = contrastForeground(buttonColor);
     vars["--button"] = buttonColor;
-    vars["--button-foreground"] = contrastForeground(buttonColor);
+    vars["--button-foreground"] = onButton;
+    vars["--sidebar-primary"] = buttonColor;
+    vars["--sidebar-primary-foreground"] = onButton;
     // Legacy look: `hover:bg-primary/80` – only when the admin set no hover colour of their own.
     vars["--button-hover"] = button_hover ?? `color-mix(in oklab, ${buttonColor} 80%, transparent)`;
     vars["--button-hover-foreground"] = contrastForeground(button_hover ?? buttonColor);
