@@ -58,6 +58,7 @@ cp .env.example .env.local
    18. [`supabase/migrations/20261031000000_presence.sql`](supabase/migrations/20261031000000_presence.sql) – **Presence & receipts**: `profiles.last_active_at` (the heartbeat stamp), the admin-only `profiles.presence_visibility` switch (`online` / `last_seen_only` / `offline`), `presence_status()` (online = active within 45 s), the `store_presence()` helper that applies an admin's privacy mode *inside the database* before a customer ever sees it, and `order_messages.delivered_at` / `seen_at` for the ✓ / ✓✓ receipts. Safe to run on an existing project
    19. [`supabase/migrations/20261032000000_order_message_receipts.sql`](supabase/migrations/20261032000000_order_message_receipts.sql) – **Receipt writes**: migration 17 made the thread immutable (SELECT + INSERT only), which also blocked the receipts added in 18. This adds one narrow UPDATE policy – the *recipient* may stamp `delivered_at` / `seen_at` on the other side's messages – plus the `order_messages_receipts_only` trigger that rejects every other change, so messages stay otherwise untouchable
    20. [`supabase/migrations/20261033000000_customer_visibility.sql`](supabase/migrations/20261033000000_customer_visibility.sql) – **Per-customer visibility**: `admin_customer_visibility` (one row per admin + customer, `online` / `last_seen_only` / `offline`, RLS for the owning admin only) with a trigger that seeds **`last_seen_only`** when a customer places an order, a backfill for customers that already ordered, and `store_presence_for(customer)` – `store_presence()` resolved against that customer's override, falling back to the admin's global switch when no row exists. Safe to run on an existing project
+   21. [`supabase/migrations/20261034000000_notifications.sql`](supabase/migrations/20261034000000_notifications.sql) – **Notifications**: `notifications` (one row per recipient – `kind`, `title`, `body`, `href`, the order it is about, an author snapshot, `read_at`), RLS that lets a user read / stamp / delete **only their own** rows (there is deliberately no insert policy – only triggers write) and `notification_admins(actor)`; six triggers turn order events into notifications (new order → every admin, status change → the buyer, cancellation → the admins, payment → the admins, customer message → the admins, admin reply → the buyer). Safe to run on an existing project
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -152,6 +153,7 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Products | Create, edit, delete; search & filter; draft/active, featured, stock, **regular price** (+ optional **sale price**); **main image** + **gallery** picked from the Media Library (upload a new file or select an existing one – see [Media](#media)), or paste any image URL. Each product is **Simple** or **Variable** – see [Variable products](#variable-products) |
 | Categories | Create, rename, delete (products become uncategorised); **drag the handle** (mouse, touch long-press, or ↑/↓ on a focused handle) to reorder – the shop's category filter and the sitemap follow the saved order. Which categories appear in the storefront navigation is decided under **UI → Menu** |
 | Orders | Filter by status, view items & shipping address, reply in the **order inquiry thread** (see [Order inquiries](#order-inquiries)), change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
+| Notifications | The admin bell’s full page (see [Notifications](#notifications)): All / Unread / Orders / Messages, per-page selector, bulk mark-read / delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
 | Media | The Media Library – see [Media](#media) below: uploads, grid / list browsing, search, filters, folders, trash, bulk actions, image optimisation / WebP conversion / editing, alt text, usage tracking and the reusable **media picker** |
 | Extra | Three tabs. **Menu** – see [Menus](#menus) below: build the storefront **header** and **footer** navigation from pages, categories and custom links, drag to reorder, edit link text, open in a new tab. **Home page** – see [Home page](#home-page) below: switch the home-page sections on and off, including a filtered product list with its own title. **Extra** – see [Theme customization](#theme-customization) below: colours and gradients for light **and** dark mode, presets, reset |
@@ -271,6 +273,31 @@ Both the customer's order page (`/orders/[id]`) and the admin's (`/nemesis/order
 
 The thread is one row per message in `order_messages` with a snapshot of the author's name / avatar, so it keeps rendering after a profile edit or a deleted account. There is no update or delete policy – messages are immutable, and deleting an order deletes its thread (cascade) – which the dashboard's *Delete order* button (and bulk delete) both use. Sign in as the customer and the admin in two windows to see a message cross over in about a second – as do the ✓ / ✓✓ receipts and the "Online" / "Last seen" state.
 
+#### Notifications
+
+Every signed-in tab keeps **one** Server-Sent Events connection (`GET /api/notifications/stream`) and gets a bell in its header – the same `NotificationBell` component on the storefront and in the dashboard top bar. There is no polling and no WebSocket anywhere in the feature.
+
+| | Customer bell | Admin bell |
+| --- | --- | --- |
+| Fires on | order status **Processing / Completed / Cancelled**, an **admin reply** in the order thread | a **new order** from any customer, a **new customer message / inquiry**, **payment received**, an order **cancelled** |
+| Click | the order page `/orders/<id>` | the dashboard order page `/nemesis/orders/<id>` – the thread is right there |
+| Badge | the unread count, rendered on the server for the first paint, then kept live over SSE | same |
+
+**How the stream works.** The connection opens with `EventSource` for every signed-in tab (opened by the first component that subscribes, closed when the last one unmounts – which is what signing out does), sends `retry: 3000` for the browser's own reconnect, a `snapshot` frame with the newest notifications and the unread count, then one `notification` frame per new row plus `unread` when the count moves. A `: ping` comment every 20 s keeps proxies from closing the idle connection, and the loop re-reads the table every 2 s so an event written by another process is never missed. Frames are small JSON objects – the row itself and nothing else. A reconnect replays what the tab missed (the snapshot carries the newest rows, the client keeps the list deduplicated by id), and coming back to a background tab re-reads once.
+
+**The bell.** A popover with the six newest rows – kind tile, title, body, actor, *just now / 14 min ago / 2 days ago*, unread dot – a **Mark all read** shortcut, a live dot (green = connected, grey = reconnecting) and **View all notifications**. It is a non-modal popover, so the page behind it stays clickable. Rows are links: clicking one marks it read and goes to its `href`.
+
+**The pages.** `/notifications` (customer) and `/nemesis/notifications` (admin) are the same board component: tabs **All / Unread / Orders / Messages** (`?tab=`), 12 per page with `?page=` (the dashboard adds its usual `?per=` selector), checkboxes with *Select all*, and a floating bulk bar – **Mark as read** and **Delete** (with a confirmation dialog). A deep link keeps the filter, and every row is a link to its own target, so the redirect never needs to know which role is looking.
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /api/notifications` | `?preview=1&limit=8` → `{ items, unread }` for the bell; `?filter=all\|unread\|orders\|messages&page=&per=` → `{ items, total, page, pageCount, unread }` for the board |
+| `POST /api/notifications/read` | `{ ids: [...] }` or `{ all: true }` → `{ ok, unread }` (RLS makes another user's ids a no-op) |
+| `POST /api/notifications/delete` | `{ ids: [...] }` → `{ ok, unread, deleted }` |
+| `GET /api/notifications/stream` | `text/event-stream`: `retry: 3000`, `snapshot`, `notification`, `unread`, `refresh`, `: ping` |
+
+The triggers are the only writer, which is why the browser can never fabricate a notification: `notifications` has SELECT / UPDATE / DELETE policies for `recipient_id = auth.uid()` and **no INSERT policy at all**.
+
 #
 ### Pages
 
@@ -330,9 +357,10 @@ woo-solution/
 │   ├── migrations/20261031000000_presence.sql      # presence (heartbeat + admin visibility) and read receipts
 │   ├── migrations/20261032000000_order_message_receipts.sql  # the narrow UPDATE policy + trigger behind ✓/✓✓
 │   ├── migrations/20261033000000_customer_visibility.sql  # per-customer online visibility + store_presence_for()
+│   ├── migrations/20261034000000_notifications.sql  # notifications + the six order/message triggers
 │   └── seed.sql                             # demo categories + products
 ├── src/
-│   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout & /orders
+│   ├── proxy.ts                             # refreshes the Supabase session, guards /checkout, /orders, /account & /notifications
 │   ├── app/
 │   │   ├── layout.tsx                       # root: fonts, theme + React Aria router providers, toaster, SEO metadata
 │   │   ├── robots.ts, sitemap.ts            # /robots.txt + /sitemap.xml from Settings → SEO
@@ -363,6 +391,8 @@ woo-solution/
 │   │   │   ├── menu/                        # Extra → Menu: location switch, add panel, item table, edit dialog
 │   │   │   ├── home/                        # Extra → Home page: section switches + filter title form
 │   │   │   └── extra/                       # Extra → Theme Customization: colour fields (HEX/RGB/HSL), gradients, presets
+│   │   ├── notifications/                    # NotificationBell + live provider (shared by both headers),
+│   │   │                                     #   the board for /notifications and /nemesis/notifications, rows, mutations
 │   │   ├── order-chat/order-chat.tsx        # the inquiry thread (same component on the customer + admin order page)
 │   │   ├── page-article.tsx                 # storefront template for CMS pages (also used by the admin preview)
 │   │   ├── data-grid.tsx, page-breadcrumbs.tsx  # client wrappers around the React Aria Table (selection, bulk bar, dnd-kit row reordering) / Breadcrumbs
@@ -378,6 +408,7 @@ woo-solution/
 │       ├── home-sections.ts                 # home-page section ids, labels and the filter-title limit (shared by admin + storefront)
 │       ├── order-chat.ts, order-chat-bus.ts, order-messages.ts  # chat rules (statuses, turn, 200 chars), SSE fan-out, queries + receipts
 │       ├── presence.ts, presence.server.ts  # online window / idle window / visibility modes (shared) and store_presence_for() / profile reads
+│       ├── notifications.ts, notifications.server.ts, notification-bus.ts  # kinds / filters / labels, queries, SSE fan-out
 │       ├── catalog.ts, pagination.ts        # PRODUCTS_PER_PAGE, /shop URL builder, count label / page arithmetic shared with the admin
 │       ├── menu-config.ts                   # menu locations, URL rules, href resolution (shared by storefront, admin and actions)
 │       ├── seo.ts                           # metadata, robots/sitemap entries, JSON-LD built from the SEO tab
@@ -487,6 +518,7 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 - [x] **Single `media` bucket** – favicon / share image picked from the library, one-click import of the legacy `product-images` / `site-media` buckets
 - [x] **Pages** – rich-text content pages at `/<slug>` with drafts, preview, tags, featured image and per-page SEO
 - [x] **Order inquiries** – turn-based customer ⇄ admin chat on the order pages, live over Server-Sent Events (pending & cancelled orders), with **presence** (Online / Last seen / Offline, per-customer visibility + a global fallback, real presence only – an idle or closed tab is never "Online") and **read receipts** (✓ / ✓✓, masked to *Delivered* for the customer until the admin answers)
+- [x] **Notifications** – a bell in both headers and a page for each role, fed by one SSE connection per tab (order status, new orders, payments, inquiries; bulk mark-read / delete)
 - [ ] Admin extras – CSV export, audit log, per-section roles
 - [ ] **Server-side cart** (`cart_items` table) synced across devices, merged on login
 - [ ] **Coupons & discounts**, tax rules, multiple shipping methods

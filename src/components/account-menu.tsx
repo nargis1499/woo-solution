@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { ChevronDownIcon, LogOutIcon, PackageIcon, ShieldCheckIcon, UserIcon } from "lucide-react";
+import { BellIcon, ChevronDownIcon, LogOutIcon, PackageIcon, ShieldCheckIcon, UserIcon } from "lucide-react";
 import { signOut } from "@/app/auth/actions";
 import type { CurrentUser } from "@/lib/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -42,6 +42,9 @@ export function AccountMenu({ user, isAdmin }: { user: CurrentUser; isAdmin: boo
         </DropdownMenuItem>
         <DropdownMenuItem href="/checkout">
           <UserIcon /> Checkout
+        </DropdownMenuItem>
+        <DropdownMenuItem href="/notifications">
+          <BellIcon /> Notifications
         </DropdownMenuItem>
         {isAdmin && (
           <DropdownMenuItem href="/nemesis">

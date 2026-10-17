@@ -40,6 +40,7 @@ export const RESERVED_SLUGS = new Set([
   "login",
   "signup",
   "orders",
+  "notifications",
   "shop",
   "products",
   "categories",

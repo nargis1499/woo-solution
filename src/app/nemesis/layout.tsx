@@ -6,6 +6,7 @@ import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { moneyFromSettings } from "@/lib/money";
 import { MoneyProvider } from "@/components/money-provider";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { NotificationBellGate, NotificationBellSkeleton } from "@/components/notifications/notification-bell-gate";
 import { PresenceHeartbeat } from "@/components/presence-heartbeat";
 import { AdminSidebar } from "@/components/admin/app-sidebar";
 import { FlashToast } from "@/components/admin/flash-toast";
@@ -59,7 +60,12 @@ async function AdminGate({ children }: { children: ReactNode }) {
       <SidebarProvider defaultOpen={defaultOpen}>
         <AdminSidebar user={user} storeName={store_name} />
         <SidebarInset>
-          <AdminHeader />
+          {/* the bell is a server island: unread count rendered here, streamed into the header */}
+          <AdminHeader bell={
+            <Suspense fallback={<NotificationBellSkeleton />}>
+              <NotificationBellGate basePath="/nemesis/notifications" />
+            </Suspense>
+          } />
           <div className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">{children}</div>
         </SidebarInset>
       </SidebarProvider>

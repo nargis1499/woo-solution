@@ -4,6 +4,7 @@ import { ShoppingBag } from "lucide-react";
 import { getSiteSettings } from "@/lib/site-settings";
 import { getMenu } from "@/lib/menu";
 import { buttonVariants } from "@/components/ui/button-variants";
+import { NotificationBellGate, NotificationBellSkeleton } from "@/components/notifications/notification-bell-gate";
 import { CartBadge } from "./cart-badge";
 import { PresenceGate } from "./presence-gate";
 import { MobileNav } from "./mobile-nav";
@@ -43,6 +44,10 @@ export async function Header() {
           {/* presence heartbeat for signed-in visitors (same request-scoped user lookup) */}
           <Suspense fallback={null}>
             <PresenceGate />
+          </Suspense>
+          {/* the live bell – a server island: count on first paint, live after it (nothing for guests) */}
+          <Suspense fallback={<NotificationBellSkeleton />}>
+            <NotificationBellGate basePath="/notifications" />
           </Suspense>
           <ThemeToggle />
           <CartBadge />

@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
 import {
+  BellIcon,
   ChevronsUpDownIcon,
   ExternalLinkIcon,
   FileTextIcon,
@@ -42,6 +43,7 @@ export const ADMIN_NAV = [
   { href: "/nemesis/products", label: "Products", icon: PackageIcon },
   { href: "/nemesis/categories", label: "Categories", icon: TagsIcon },
   { href: "/nemesis/orders", label: "Orders", icon: ShoppingCartIcon },
+  { href: "/nemesis/notifications", label: "Notifications", icon: BellIcon },
   { href: "/nemesis/users", label: "Users", icon: UsersIcon },
   { href: "/nemesis/media", label: "Media", icon: ImagesIcon },
   // The UI page (tabs: Menu · Home page · Extra). Plain href: the sidebar entry always opens
