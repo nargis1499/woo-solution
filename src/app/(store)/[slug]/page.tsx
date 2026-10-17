@@ -22,7 +22,7 @@ import { PageArticle } from "@/components/page-article";
  * turned into a real 404 response by the proxy (`lib/pages/proxy-guard.ts`)
  * before they reach this file; `notFound()` below is the safety net.
  */
-export const instant = false;
+export const dynamic = "force-dynamic";
 
 type Params = Promise<{ slug: string }>;
 

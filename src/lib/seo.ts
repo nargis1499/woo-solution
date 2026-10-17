@@ -1,6 +1,6 @@
 import "server-only";
 import type { Metadata } from "next";
-import { cacheLife, cacheTag } from "next/cache";
+import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { getPublishedPagesForSitemap } from "@/lib/data/pages";
 import { getSiteSettings, resolveSiteUrl, telegramHref, whatsappHref } from "@/lib/site-settings";
@@ -84,36 +84,40 @@ export type SitemapEntry = { path: string; lastModified?: string; changeFrequenc
  * Relative sitemap entries (home, shop, categories, active products). Cached
  * and tagged – every admin write calls `updateTag(SITEMAP_TAG)`.
  */
+const getCachedSitemapEntries = unstable_cache(
+  async (): Promise<SitemapEntry[]> => {
+    const entries: SitemapEntry[] = [
+      { path: "/", changeFrequency: "daily", priority: 1 },
+      { path: "/shop", changeFrequency: "daily", priority: 0.9 },
+    ];
+
+    try {
+      const supabase = createPublicClient();
+      const [categories, products, pages] = await Promise.all([
+        supabase.from("categories").select("slug").order("sort_order", { ascending: true }),
+        supabase.from("products").select("slug, updated_at").eq("is_active", true).order("created_at", { ascending: false }).limit(5000),
+        getPublishedPagesForSitemap(),
+      ]);
+      for (const c of categories.data ?? []) {
+        entries.push({ path: `/shop?category=${encodeURIComponent(c.slug)}`, changeFrequency: "weekly", priority: 0.7 });
+      }
+      for (const p of products.data ?? []) {
+        entries.push({ path: `/products/${encodeURIComponent(p.slug)}`, lastModified: p.updated_at ?? undefined, changeFrequency: "weekly", priority: 0.8 });
+      }
+      for (const page of pages) {
+        entries.push({ path: `/${encodeURIComponent(page.slug)}`, lastModified: page.updated_at, changeFrequency: "monthly", priority: 0.6 });
+      }
+    } catch {
+      // keep the static pages – a flaky database should not blank the sitemap
+    }
+    return entries;
+  },
+  ["sitemap-entries"],
+  { tags: [SITEMAP_TAG], revalidate: 3600 },
+);
+
 export async function getSitemapEntries(): Promise<SitemapEntry[]> {
-  "use cache";
-  cacheTag(SITEMAP_TAG);
-  cacheLife("hours");
-
-  const entries: SitemapEntry[] = [
-    { path: "/", changeFrequency: "daily", priority: 1 },
-    { path: "/shop", changeFrequency: "daily", priority: 0.9 },
-  ];
-
-  try {
-    const supabase = createPublicClient();
-    const [categories, products, pages] = await Promise.all([
-      supabase.from("categories").select("slug").order("sort_order", { ascending: true }),
-      supabase.from("products").select("slug, updated_at").eq("is_active", true).order("created_at", { ascending: false }).limit(5000),
-      getPublishedPagesForSitemap(),
-    ]);
-    for (const c of categories.data ?? []) {
-      entries.push({ path: `/shop?category=${encodeURIComponent(c.slug)}`, changeFrequency: "weekly", priority: 0.7 });
-    }
-    for (const p of products.data ?? []) {
-      entries.push({ path: `/products/${encodeURIComponent(p.slug)}`, lastModified: p.updated_at ?? undefined, changeFrequency: "weekly", priority: 0.8 });
-    }
-    for (const page of pages) {
-      entries.push({ path: `/${encodeURIComponent(page.slug)}`, lastModified: page.updated_at, changeFrequency: "monthly", priority: 0.6 });
-    }
-  } catch {
-    // keep the static pages – a flaky database should not blank the sitemap
-  }
-  return entries;
+  return getCachedSitemapEntries();
 }
 
 /** Organization + WebSite structured data for the storefront <head>. */

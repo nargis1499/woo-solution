@@ -4,8 +4,6 @@ import { OPTIMIZED_IMAGE_HOSTS, supabaseImageHost } from "./src/lib/image-hosts"
 const supabaseHost = supabaseImageHost();
 
 const nextConfig: NextConfig = {
-  cacheComponents: true,
-  partialPrefetching: true,
   serverExternalPackages: ["sharp"],
   turbopack: {
     rules: {

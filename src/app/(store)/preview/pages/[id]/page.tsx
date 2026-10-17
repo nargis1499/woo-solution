@@ -16,7 +16,7 @@ import { buttonVariants } from "@/components/ui/button-variants";
  */
 
 export const metadata: Metadata = { title: "Page preview", robots: NOINDEX };
-export const instant = false; // admin-only, rendered per request
+export const dynamic = "force-dynamic"; // admin-only, rendered per request
 export default async function PagePreview({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   await requireAdmin(`/preview/pages/${id}`);

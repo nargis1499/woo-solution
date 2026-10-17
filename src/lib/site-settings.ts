@@ -1,5 +1,5 @@
 import "server-only";
-import { cacheLife, cacheTag } from "next/cache";
+import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { STORE_NAME } from "@/lib/config";
 import { isCurrencyCode, moneyFromSettings, type Money } from "@/lib/money";
@@ -97,27 +97,29 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
  * reachable (e.g. the migration hasn't been run yet) – with a short lifetime so
  * we retry soon.
  */
-export async function getSiteSettings(): Promise<SiteSettings> {
-  "use cache";
-  cacheTag(SITE_SETTINGS_TAG);
+const getCachedSiteSettings = unstable_cache(
+  async (): Promise<SiteSettings> => {
+    try {
+      const supabase = createPublicClient();
+      // `*` instead of a column list: unknown columns would make the whole query
+      // fail on a database that has not run the latest migration yet.
+      const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
 
-  try {
-    const supabase = createPublicClient();
-    // `*` instead of a column list: unknown columns would make the whole query
-    // fail on a database that has not run the latest migration yet.
-    const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
+      if (error || !data) {
+        return DEFAULT_SITE_SETTINGS;
+      }
 
-    if (error || !data) {
-      cacheLife("seconds");
+      return normaliseSiteSettings(data as Record<string, unknown>);
+    } catch {
       return DEFAULT_SITE_SETTINGS;
     }
+  },
+  ["site-settings"],
+  { tags: [SITE_SETTINGS_TAG], revalidate: 3600 },
+);
 
-    cacheLife("days");
-    return normaliseSiteSettings(data as Record<string, unknown>);
-  } catch {
-    cacheLife("seconds");
-    return DEFAULT_SITE_SETTINGS;
-  }
+export async function getSiteSettings(): Promise<SiteSettings> {
+  return getCachedSiteSettings();
 }
 
 /**

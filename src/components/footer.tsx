@@ -1,14 +1,11 @@
-import { cacheLife } from "next/cache";
 import { MailIcon, MessageCircleIcon, SendIcon } from "lucide-react";
 import { getMenu } from "@/lib/menu";
 import { getSiteSettings, telegramHref, whatsappHref } from "@/lib/site-settings";
 import { Separator } from "@/components/ui/separator";
 import { NavLink } from "./nav-link";
 
-/** Current year, cached per day so the static shell can be prerendered (Cache Components forbid bare `new Date()`). */
+/** Current year for the footer copyright line. */
 async function copyrightYear() {
-  "use cache";
-  cacheLife("days");
   return new Date().getFullYear();
 }
 

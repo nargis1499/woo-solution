@@ -1,5 +1,5 @@
 import "server-only";
-import { cacheLife, cacheTag } from "next/cache";
+import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { isExternalHref, menuItemHref } from "@/lib/menu-config";
 import type { MenuItemKind, MenuLocation, PageStatus } from "@/lib/types";
@@ -38,32 +38,32 @@ type Row = {
  * reached, so a storefront never breaks because of its navigation.
  */
 export async function getMenu(location: MenuLocation): Promise<MenuLink[]> {
-  "use cache";
-  cacheTag(MENU_TAG);
+  return unstable_cache(
+    async (): Promise<MenuLink[]> => {
+      try {
+        const supabase = createPublicClient();
+        const { data, error } = await supabase
+          .from("menu_items")
+          .select("id, kind, title, url, open_in_new_tab, page:pages(slug, status), category:categories(slug)")
+          .eq("location", location)
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true })
+          .limit(50);
 
-  try {
-    const supabase = createPublicClient();
-    const { data, error } = await supabase
-      .from("menu_items")
-      .select("id, kind, title, url, open_in_new_tab, page:pages(slug, status), category:categories(slug)")
-      .eq("location", location)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true })
-      .limit(50);
-
-    if (error) {
-      cacheLife("seconds");
-      return [];
-    }
-    cacheLife("days");
-    return ((data ?? []) as unknown as Row[]).flatMap((item) => {
-      if (item.kind === "page" && item.page?.status !== "published") return [];
-      const href = menuItemHref(item);
-      if (!href) return [];
-      return [{ id: item.id, label: item.title, href, newTab: item.open_in_new_tab, external: isExternalHref(href) }];
-    });
-  } catch {
-    cacheLife("seconds");
-    return [];
-  }
+        if (error) {
+          return [];
+        }
+        return ((data ?? []) as unknown as Row[]).flatMap((item) => {
+          if (item.kind === "page" && item.page?.status !== "published") return [];
+          const href = menuItemHref(item);
+          if (!href) return [];
+          return [{ id: item.id, label: item.title, href, newTab: item.open_in_new_tab, external: isExternalHref(href) }];
+        });
+      } catch {
+        return [];
+      }
+    },
+    ["menu", location],
+    { tags: [MENU_TAG], revalidate: 3600 },
+  )();
 }

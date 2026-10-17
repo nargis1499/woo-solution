@@ -12,6 +12,8 @@ import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
+export const dynamic = "force-dynamic";
+
 /** Title, description, robots, verification codes, Open Graph & favicon – all driven by Settings → SEO / General. */
 export async function generateMetadata(): Promise<Metadata> {
   return buildSiteMetadata(await getSiteSettings());

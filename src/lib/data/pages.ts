@@ -1,5 +1,5 @@
 import "server-only";
-import { cacheLife, cacheTag } from "next/cache";
+import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { MEDIA_REF_COLUMNS } from "@/lib/media/shared";
 import type { Page, Tag } from "@/lib/types";
@@ -34,18 +34,20 @@ export function withTags<T extends { tags?: unknown }>(row: T): T & { tags: Tag[
 
 /** Published page by slug – null for drafts and unknown slugs (RLS hides drafts from the anon key anyway). */
 export async function getPublishedPage(slug: string): Promise<Page | null> {
-  "use cache";
-  cacheTag(PAGES_TAG, pageTag(slug));
-  cacheLife("hours");
-
-  const supabase = createPublicClient();
-  const { data, error } = await supabase.from("pages").select(PAGE_DETAIL_COLUMNS).eq("slug", slug).eq("status", "published").maybeSingle();
-  if (error) {
-    // Before the pages migration ran there is nothing to show – behave like "no such page".
-    if (/relation .* does not exist|schema cache|Could not find the table/i.test(error.message)) return null;
-    throw new Error(`Failed to load page: ${error.message}`);
-  }
-  return data ? (withTags(data as unknown as Page) as Page) : null;
+  return unstable_cache(
+    async (): Promise<Page | null> => {
+      const supabase = createPublicClient();
+      const { data, error } = await supabase.from("pages").select(PAGE_DETAIL_COLUMNS).eq("slug", slug).eq("status", "published").maybeSingle();
+      if (error) {
+        // Before the pages migration ran there is nothing to show – behave like "no such page".
+        if (/relation .* does not exist|schema cache|Could not find the table/i.test(error.message)) return null;
+        throw new Error(`Failed to load page: ${error.message}`);
+      }
+      return data ? (withTags(data as unknown as Page) as Page) : null;
+    },
+    ["published-page", slug],
+    { tags: [PAGES_TAG, pageTag(slug)], revalidate: 3600 },
+  )();
 }
 
 /** Slugs + timestamps of indexable published pages (sitemap). */
