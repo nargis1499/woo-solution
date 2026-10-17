@@ -80,7 +80,11 @@ NEXT_PUBLIC_STORE_NAME=Woo Solution
 # optional – enables the "Suggest with AI" alt-text button in the Media Library (server-side only)
 # OPENAI_API_KEY=sk-...
 # OPENAI_ALT_TEXT_MODEL=gpt-4o-mini
+# optional – enables Users → "New user" (creating logins needs Supabase's Admin API; server-side only)
+# SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
 ```
+
+**`SUPABASE_SERVICE_ROLE_KEY`** is only used by the *New user* dialog: a login cannot be created through RLS, so that one action calls `auth.admin.createUser()` with the secret key. It never reaches the browser – every caller passes `assertAdmin()` first, and without the variable the dialog says so instead of failing silently. Add it in the hosting provider's environment variables too (never in a `NEXT_PUBLIC_*` one).
 
 ### Auth settings (Supabase dashboard → Authentication)
 
@@ -154,7 +158,7 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Categories | Create, rename, delete (products become uncategorised); **drag the handle** (mouse, touch long-press, or ↑/↓ on a focused handle) to reorder – the shop's category filter and the sitemap follow the saved order. Which categories appear in the storefront navigation is decided under **UI → Menu** |
 | Orders | Filter by status, view items & shipping address, reply in the **order inquiry thread** (see [Order inquiries](#order-inquiries)), change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Notifications | The admin bell’s full page (see [Notifications](#notifications)): All / Unread / Orders / Messages, per-page selector, bulk mark-read / delete |
-| Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept). You can't demote or delete yourself |
+| Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept), and **create** an account from the **New user** dialog (name, e-mail, phone, role, password — see [Creating users](#creating-users)). You can't demote or delete yourself |
 | Media | The Media Library – see [Media](#media) below: uploads, grid / list browsing, search, filters, folders, trash, bulk actions, image optimisation / WebP conversion / editing, alt text, usage tracking and the reusable **media picker** |
 | Extra | Three tabs. **Menu** – see [Menus](#menus) below: build the storefront **header** and **footer** navigation from pages, categories and custom links, drag to reorder, edit link text, open in a new tab. **Home page** – see [Home page](#home-page) below: switch the home-page sections on and off, including a filtered product list with its own title. **Extra** – see [Theme customization](#theme-customization) below: colours and gradients for light **and** dark mode, presets, reset |
 | Settings | Three tabs – see [Settings](#settings) below: **General** (site title, tagline, support e-mail, WhatsApp, Telegram, favicon, plus the **Presence** card with the global visibility fallback), **SEO** (search-engine visibility, site URL, title / meta description, share image, verification codes, X handle) and **WooCommerce** (global stock management switch, store currency USD / BDT + exchange rate) |
@@ -164,6 +168,19 @@ The **Pages, Products, Orders and Users** lists are paginated: `?page=` + a **pe
 **Bulk delete** – the same lists have a checkbox column. Tick rows (the header checkbox selects the whole page, Shift+click selects a range, Space toggles the focused row) and a floating **N selected → Delete** bar appears; confirming removes them in one go and reports the result as a toast. Rows are links as well: click anywhere on a row to open it while nothing is selected – once something is ticked, clicking a row toggles it instead. Your own account can be opened but never selected, and `deleteUsers` additionally skips the caller's id on the server.
 
 Every action reports back through a toast notification (bottom-right corner of the dashboard, [sonner](https://sonner.emilkowal.ski/)) – successes in green, failures in red – while validation errors stay next to the fields they belong to.
+
+#### Creating users
+
+**Users → New user** (top right) opens a modal that creates an account without going through the sign-up page: **Full name**, **E-mail**, **Phone**, **Role** (*Customer* / *Administrator*) and **Password**.
+
+| | |
+| --- | --- |
+| Password | starts as a freshly generated **20-character** password (letters, digits and symbols, look-alikes left out) and the **Generate** button makes another one. The eye icon hides / shows it, the copy icon puts it on the clipboard; a four-step meter under the field says Weak / Fair / Good / Strong. The server requires at least 8 characters with a letter and a number |
+| Role | *Administrator* sets `profiles.is_admin`; the new admin can sign in and open `/nemesis` straight away. *Customer* gets the normal storefront account |
+| Created | through `auth.admin.createUser()` on the Supabase Admin API (service-role key, server-side only) with the address already confirmed – the admin sets the password by hand, so there is nothing to confirm by e-mail. The `on_auth_user_created` trigger writes the profile row, then name / phone / role are filled in |
+| Validation | missing name, a malformed e-mail, a short password or an address that already has an account each show **under their own field**; the dialog stays open with everything you typed (except the password, which is never echoed back). Success closes it, toasts, and the new row is in the list |
+| Closing | the **Create user** / **Cancel** buttons, the **×** or **Escape** – reopening always starts from a clean form |
+
 
 #### Variable products
 
@@ -389,6 +406,7 @@ woo-solution/
 │   │   │   ├── media/                       # Media Library UI + the reusable picker / media-ref-field
 │   │   │   ├── pages/                       # page form, Tiptap rich-text editor, tag input, SEO panel, status select
 │   │   │   ├── menu/                        # Extra → Menu: location switch, add panel, item table, edit dialog
+│   │   │   ├── users/                       # Users → New user: the create-account dialog (generate / reveal / copy password)
 │   │   │   ├── home/                        # Extra → Home page: section switches + filter title form
 │   │   │   └── extra/                       # Extra → Theme Customization: colour fields (HEX/RGB/HSL), gradients, presets
 │   │   ├── notifications/                    # NotificationBell + live provider (shared by both headers),
@@ -413,7 +431,8 @@ woo-solution/
 │       ├── menu-config.ts                   # menu locations, URL rules, href resolution (shared by storefront, admin and actions)
 │       ├── seo.ts                           # metadata, robots/sitemap entries, JSON-LD built from the SEO tab
 │       ├── image-hosts.ts                   # next/image allow-list
-│       ├── supabase/{server,proxy}.ts       # Supabase clients (server components / actions, proxy)
+│       ├── supabase/{server,proxy,service}.ts  # Supabase clients (server components / actions, proxy, service-role for the Admin API)
+│       ├── password.ts                      # password rules, the generator and the strength meter (shared)
 │       ├── auth.ts                          # getCurrentUser() – verified via getClaims()
 │       ├── data/{products,orders,pages}.ts  # data-access layer (cached, tag-invalidated)
 │       ├── cart-store.ts                    # Zustand cart (persisted)
@@ -519,6 +538,7 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 - [x] **Pages** – rich-text content pages at `/<slug>` with drafts, preview, tags, featured image and per-page SEO
 - [x] **Order inquiries** – turn-based customer ⇄ admin chat on the order pages, live over Server-Sent Events (pending & cancelled orders), with **presence** (Online / Last seen / Offline, per-customer visibility + a global fallback, real presence only – an idle or closed tab is never "Online") and **read receipts** (✓ / ✓✓, masked to *Delivered* for the customer until the admin answers)
 - [x] **Notifications** – a bell in both headers and a page for each role, fed by one SSE connection per tab (order status, new orders, payments, inquiries; bulk mark-read / delete)
+- [x] **Create users from the dashboard** – Users → *New user*: name, e-mail, phone, role and a generated / revealed / copyable password
 - [ ] Admin extras – CSV export, audit log, per-section roles
 - [ ] **Server-side cart** (`cart_items` table) synced across devices, merged on login
 - [ ] **Coupons & discounts**, tax rules, multiple shipping methods

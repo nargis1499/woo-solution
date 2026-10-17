@@ -15,6 +15,7 @@ import { SearchForm } from "@/components/admin/search-form";
 import { ListToolbar, Pagination } from "@/components/admin/pagination";
 import { DataTable, EmptyState, PageHeader, ToneBadge } from "@/components/admin/ui";
 import { UserAvatar } from "@/components/admin/user-avatar";
+import { CreateUserDialog } from "@/components/admin/users/create-user-dialog";
 
 export const metadata: Metadata = { title: "Users" };
 
@@ -36,7 +37,11 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
 
   return (
     <>
-      <PageHeader title="Users" description={`${total} ${total === 1 ? "account" : "accounts"}${isFiltered ? " match your search" : ""}.`} />
+      <PageHeader
+        title="Users"
+        description={`${total} ${total === 1 ? "account" : "accounts"}${isFiltered ? " match your search" : ""}.`}
+        actions={<CreateUserDialog />}
+      />
 
       <ListToolbar {...location}>
         <SearchForm action={LIST_PATH} q={filters.q} placeholder="Search name, e-mail or phone…" isFiltered={isFiltered} hidden={{ per: perPage }} clearHref={listHref(LIST_PATH, { per: perPage })} />

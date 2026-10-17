@@ -29,6 +29,7 @@ export function SubmitButton({
   className,
   pending: pendingProp,
   disabled,
+  ...props
 }: {
   children: ReactNode;
   pendingLabel?: string;
@@ -38,11 +39,11 @@ export function SubmitButton({
   pending?: boolean;
   /** Nothing to submit yet (e.g. an empty picker). */
   disabled?: boolean;
-}) {
+} & { "data-testid"?: string; id?: string }) {
   const status = useFormStatus();
   const pending = pendingProp ?? status.pending;
   return (
-    <Button type="submit" variant={variant} isPending={pending} isDisabled={disabled} className={className} aria-busy={pending}>
+    <Button type="submit" variant={variant} isPending={pending} isDisabled={disabled} className={className} aria-busy={pending} {...props}>
       {pending && <Spinner />}
       {pending ? pendingLabel : children}
     </Button>

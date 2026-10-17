@@ -10,6 +10,8 @@ import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradie
 import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, formatExchangeRate, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
 import { MENU_TAG } from "@/lib/menu";
 import { PRESENCE_VISIBILITIES, type PresenceVisibility } from "@/lib/presence";
+import { passwordProblem } from "@/lib/password";
+import { createServiceClient } from "@/lib/supabase/service";
 import {
   MAX_ATTRIBUTES,
   MAX_ATTRIBUTE_OPTIONS,
@@ -709,6 +711,78 @@ export async function updateUser(_prev: AdminFormState, formData: FormData): Pro
 
     revalidateStore();
     return { success: "User updated." };
+  } catch (e) {
+    return { error: friendlyError(e), values };
+  }
+}
+
+/**
+ * Creates an account from the dashboard (the "New user" dialog on Users).
+ *
+ * Accounts cannot be inserted through RLS: the row has to live in `auth.users` with a
+ * hashed password, so this goes through Supabase's **Admin API** with the service-role
+ * key (`SUPABASE_SERVICE_ROLE_KEY`, server-side only). `adminClient()` runs first and
+ * throws unless the caller is an admin, and only then is the service client used.
+ *
+ * The address is confirmed on creation (`email_confirm: true`) – the admin is setting a
+ * password by hand and will pass it on, so there is nothing to confirm by e-mail. The
+ * `on_auth_user_created` trigger writes the profile row (full name from the metadata);
+ * phone + role are filled in right after.
+ */
+export async function createUser(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
+  const values = echo(formData);
+  // Never echo a password back into the page.
+  delete values.password;
+
+  const fullName = str(formData, "full_name", 120);
+  const email = str(formData, "email", 254).toLowerCase();
+  const phone = str(formData, "phone", 40);
+  const role = str(formData, "role", 20) === "admin" ? "admin" : "customer";
+  const password = typeof formData.get("password") === "string" ? (formData.get("password") as string) : "";
+
+  const fieldErrors: Record<string, string> = {};
+  if (!fullName) fieldErrors.full_name = "Enter the full name.";
+  if (!email) fieldErrors.email = "Enter an e-mail address.";
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fieldErrors.email = "Enter a valid e-mail address.";
+  const problem = passwordProblem(password);
+  if (problem) fieldErrors.password = problem;
+  if (Object.keys(fieldErrors).length > 0) return { error: "Check the highlighted fields.", fieldErrors, values };
+
+  try {
+    const { supabase } = await adminClient();
+    const service = createServiceClient();
+    if (!service) {
+      return {
+        error: "Creating users needs SUPABASE_SERVICE_ROLE_KEY in the server environment (Dashboard → Project Settings → API → secret key, then redeploy).",
+        values,
+      };
+    }
+
+    const { data, error } = await service.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
+    if (error) {
+      const code = (error as { code?: string }).code ?? "";
+      if (code === "email_exists" || code === "user_already_exists" || /already (been )?(registered|exists)/i.test(error.message)) {
+        return { error: "That e-mail already has an account.", fieldErrors: { email: "That e-mail already has an account." }, values };
+      }
+      throw error;
+    }
+
+    const created = data.user;
+    if (!created) throw new Error("Supabase did not return the new user.");
+
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .update({ full_name: fullName, phone: phone || null, is_admin: role === "admin" })
+      .eq("id", created.id);
+    if (profileError) throw profileError;
+
+    revalidateStore();
+    return { success: `${fullName} was created — ${email} can sign in with the password you set.` };
   } catch (e) {
     return { error: friendlyError(e), values };
   }
