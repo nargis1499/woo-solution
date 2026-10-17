@@ -172,7 +172,7 @@ export function CategoryIconPicker({
                 )}
                 style={iconFillStyle(fill)}
               >
-                <Icon className="size-5" aria-hidden />
+                <Icon className="size-6" aria-hidden />
                 {isSelected && <CheckIcon className="absolute right-1 bottom-1 size-3.5" aria-hidden />}
               </Button>
             );
