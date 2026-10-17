@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { isExternalHref, menuItemHref } from "@/lib/menu-config";
@@ -37,7 +38,7 @@ type Row = {
  * without a page and are skipped). Falls back to an empty list if the table can't be
  * reached, so a storefront never breaks because of its navigation.
  */
-export async function getMenu(location: MenuLocation): Promise<MenuLink[]> {
+export const getMenu = cache(async (location: MenuLocation): Promise<MenuLink[]> => {
   return unstable_cache(
     async (): Promise<MenuLink[]> => {
       try {
@@ -66,4 +67,4 @@ export async function getMenu(location: MenuLocation): Promise<MenuLink[]> {
     ["menu", location],
     { tags: [MENU_TAG], revalidate: 3600 },
   )();
-}
+});

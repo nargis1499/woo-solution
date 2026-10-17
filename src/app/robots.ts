@@ -7,6 +7,8 @@ import { getSiteSettings, resolveSiteUrl } from "@/lib/site-settings";
  * "Search engine visibility" off → every crawler is told to stay away
  * (together with the <meta name="robots" content="noindex"> tag).
  */
+export const dynamic = "force-dynamic";
+
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const settings = await getSiteSettings();
   const base = resolveSiteUrl(settings);

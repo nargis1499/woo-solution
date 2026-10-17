@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { STORE_NAME } from "@/lib/config";

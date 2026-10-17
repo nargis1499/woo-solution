@@ -7,6 +7,8 @@ import { getSiteSettings, resolveSiteUrl } from "@/lib/site-settings";
  * Empty while search engine visibility is off or no site URL is known
  * (sitemaps must contain absolute URLs).
  */
+export const dynamic = "force-dynamic";
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const settings = await getSiteSettings();
   const base = resolveSiteUrl(settings);

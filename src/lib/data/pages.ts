@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { MEDIA_REF_COLUMNS } from "@/lib/media/shared";
@@ -33,7 +34,7 @@ export function withTags<T extends { tags?: unknown }>(row: T): T & { tags: Tag[
 }
 
 /** Published page by slug – null for drafts and unknown slugs (RLS hides drafts from the anon key anyway). */
-export async function getPublishedPage(slug: string): Promise<Page | null> {
+export const getPublishedPage = cache(async (slug: string): Promise<Page | null> => {
   return unstable_cache(
     async (): Promise<Page | null> => {
       const supabase = createPublicClient();
@@ -48,7 +49,7 @@ export async function getPublishedPage(slug: string): Promise<Page | null> {
     ["published-page", slug],
     { tags: [PAGES_TAG, pageTag(slug)], revalidate: 3600 },
   )();
-}
+});
 
 /** Slugs + timestamps of indexable published pages (sitemap). */
 export async function getPublishedPagesForSitemap(): Promise<{ slug: string; updated_at: string }[]> {
