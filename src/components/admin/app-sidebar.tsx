@@ -61,7 +61,7 @@ export function AdminSidebar({ user, storeName }: { user: CurrentUser; storeName
 
   return (
     <Sidebar collapsible="icon" variant="inset">
-      <SidebarHeader>
+      <SidebarHeader className="px-4 py-2 group-data-[collapsible=icon]:p-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" href="/nemesis" tooltip={storeName}>
@@ -78,17 +78,24 @@ export function AdminSidebar({ user, storeName }: { user: CurrentUser; storeName
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Manage</SidebarGroupLabel>
+        <SidebarGroup className="px-0 py-2 group-data-[collapsible=icon]:p-2">
+          <SidebarGroupLabel className="px-4">Manage</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5 group-data-[collapsible=icon]:gap-1">
               {ADMIN_NAV.map(({ href, label, icon: Icon, exact }) => {
                 // Every tab of a section (?tab=extra, ?location=footer) highlights the same entry.
                 const path = href.split("?")[0];
                 const active = exact ? pathname === path : pathname.startsWith(path);
                 return (
                   <SidebarMenuItem key={href}>
-                    <SidebarMenuButton href={href} isActive={active} tooltip={label} aria-current={active ? "page" : undefined} onPress={() => isMobile && setOpenMobile(false)}>
+                    <SidebarMenuButton
+                      href={href}
+                      isActive={active}
+                      tooltip={label}
+                      aria-current={active ? "page" : undefined}
+                      onPress={() => isMobile && setOpenMobile(false)}
+                      className="h-auto rounded-none px-4 py-2.5 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:rounded-md"
+                    >
                       <Icon />
                       <span>{label}</span>
                     </SidebarMenuButton>
@@ -100,7 +107,7 @@ export function AdminSidebar({ user, storeName }: { user: CurrentUser; storeName
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="px-4 py-2 group-data-[collapsible=icon]:p-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenuTrigger>
