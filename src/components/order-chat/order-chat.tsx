@@ -469,11 +469,11 @@ function MessageBubble({ message, mine, status, customerName }: { message: Order
       <div className={cn("flex max-w-[85%] min-w-0 flex-col", isAdmin ? "items-start" : "items-end")}>
         <div
           className={cn(
-            "rounded-lg px-3 py-2 text-sm break-words",
-            isAdmin ? "rounded-tl-sm bg-primary text-primary-foreground" : "rounded-tr-sm bg-muted",
+            "rounded-lg px-3 py-2 text-sm break-words bg-muted text-muted-foreground",
+            isAdmin ? "rounded-tl-sm" : "rounded-tr-sm bg-muted",
           )}
         >
-          <p className={cn("text-xs font-semibold", isAdmin ? "text-primary-foreground/90" : "text-muted-foreground")}>{name}</p>
+          <p className={cn("text-xs font-bold")}>{name}</p>
           <p className="mt-0.5 whitespace-pre-wrap">{message.message}</p>
         </div>
         <span
