@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
-import { PaintbrushIcon, RotateCcwIcon } from "lucide-react";
+import { CheckIcon, MoonIcon, PaintbrushIcon, RotateCcwIcon, SunIcon } from "lucide-react";
 import type { Key } from "react-aria-components";
 import { updateTheme, type AdminFormState } from "@/app/nemesis/actions";
 import {
@@ -12,6 +12,8 @@ import {
   THEME_PRESETS,
   gradientCss,
   presetColors,
+  presetIdFor,
+  presetLabel,
   themeVars,
   type ThemeColorKey,
   type ThemeColors,
@@ -19,6 +21,7 @@ import {
   type ThemeGradient,
   type ThemeGradientKey,
   type ThemeGradients,
+  type ThemeMode,
 } from "@/lib/theme";
 import { startTransition, useActionState } from "react";
 import { AlertDialog, AlertDialogCancel, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -35,7 +38,7 @@ import { CheckboxField, SubmitButton } from "@/components/admin/form-bits";
 import { ThemeColorField } from "./color-field";
 import { cn } from "@/lib/utils";
 
-type Mode = "light" | "dark";
+type Mode = ThemeMode;
 
 const MODES: { id: Mode; label: string }[] = [
   { id: "light", label: "Light mode" },
@@ -74,13 +77,24 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
     else setDark((c) => ({ ...c, [key]: value }));
   }
 
+  /**
+   * A preset paints **the mode being edited** – Light and Dark each keep their
+   * own palette, so the admin can run Modern Indigo in the dark and Emerald Tech
+   * in the light. With "same colors for both modes" on there is one palette, so
+   * both take it.
+   */
   function applyPreset(index: number) {
     const preset = THEME_PRESETS[index];
-    setLight(presetColors(preset, "light", sync));
-    setDark(presetColors(preset, "dark", sync));
-    if (preset.hero) {
-      setGradients((g) => ({ ...g, hero: { ...g.hero, enabled: true, type: "linear", angle: preset.hero!.angle, from: preset.hero!.from, via: null, to: preset.hero!.to } }));
+    if (sync) {
+      setLight(presetColors(preset, "light", true));
+      setDark(presetColors(preset, "dark", true));
+    } else if (mode === "light") {
+      setLight(presetColors(preset, "light", false));
+    } else {
+      setDark(presetColors(preset, "dark", false));
     }
+    // Gradients are shared by the two modes, so a preset never touches them: the hero
+    // keeps using each mode's own `--primary` (or the gradient the admin set up by hand).
   }
 
   function resetAll() {
@@ -97,6 +111,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   }
 
   const previewColors: ThemeColors = sync ? light : mode === "light" ? light : dark;
+  const activePreset = { light: presetIdFor(light, "light", sync), dark: presetIdFor(dark, "dark", sync) };
 
   return (
     <form
@@ -181,24 +196,65 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
 
               <FieldSet>
                 <FieldLegend variant="label">Presets</FieldLegend>
+                {/* Each mode owns its palette: a click paints the mode being edited, so the
+                    Light and Dark chips below can name two different presets. */}
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="theme-presets">
                   {THEME_PRESETS.map((preset, index) => {
-                    const set = sync ? preset.light : mode === "light" ? preset.light : preset.dark;
+                    const set = sync || mode === "light" ? preset.light : preset.dark;
                     const swatches = [set.primary, set.secondary, set.button, set.button_hover, set.loader];
+                    const isActive = activePreset[mode] === preset.id;
+                    const otherMode = mode === "light" ? "dark" : "light";
+                    const isOther = !sync && activePreset[otherMode] === preset.id;
+                    const OtherIcon = otherMode === "dark" ? MoonIcon : SunIcon;
                     return (
                       <button
                         key={preset.id}
                         type="button"
                         onClick={() => applyPreset(index)}
-                        className="rounded-lg border p-3 text-left transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                        aria-pressed={isActive}
+                        data-active={isActive ? "true" : undefined}
                         data-testid={`theme-preset-${preset.id}`}
+                        className={cn(
+                          "relative rounded-lg border p-3 text-left transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+                          isActive && "border-primary bg-accent ring-2 ring-primary",
+                        )}
                       >
                         <span className="flex gap-1">
                           {swatches.map((c, i) => (
                             <span key={i} className="size-5 rounded-[4px] border" style={{ backgroundColor: c || "#000000" }} />
                           ))}
                         </span>
-                        <span className="mt-2 block text-sm font-medium">{preset.name}</span>
+                        <span className={cn("mt-2 block text-sm font-medium", (isActive || isOther) && "pe-5")}>{preset.name}</span>
+                        {isActive && (
+                          <CheckIcon className="absolute end-2.5 top-2.5 size-4 text-primary" aria-hidden data-testid={`theme-preset-${preset.id}-active`} />
+                        )}
+                        {isOther && !isActive && (
+                          <OtherIcon className="absolute end-2.5 top-2.5 size-3.5 text-muted-foreground" aria-hidden data-testid={`theme-preset-${preset.id}-other`} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2" data-testid="theme-preset-modes">
+                  {MODES.map((m) => {
+                    const name = presetLabel(m.id === "light" ? light : dark, m.id, sync);
+                    const ModeIcon = m.id === "light" ? SunIcon : MoonIcon;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setMode(m.id)}
+                        aria-pressed={mode === m.id}
+                        data-testid={`theme-preset-${m.id}-label`}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+                          mode === m.id ? "border-primary bg-accent" : "text-muted-foreground",
+                        )}
+                      >
+                        <ModeIcon className="size-3.5" aria-hidden />
+                        {m.id === "light" ? "Light" : "Dark"}
+                        <span className="font-medium text-foreground" data-testid={`theme-preset-${m.id}-name`}>{name}</span>
                       </button>
                     );
                   })}

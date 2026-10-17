@@ -373,8 +373,6 @@ export type ThemePreset = {
   name: string;
   light: Required<ThemeColors>;
   dark: Required<ThemeColors>;
-  /** Optional hero gradient that ships with the palette. */
-  hero?: { from: string; to: string; angle: number };
 };
 
 export const THEME_PRESETS: ThemePreset[] = [
@@ -383,89 +381,109 @@ export const THEME_PRESETS: ThemePreset[] = [
     name: "Modern Indigo",
     light: { primary: "#4f46e5", secondary: "#eef2ff", button: "#4f46e5", button_hover: "#4338ca", loader: "#6366f1" },
     dark: { primary: "#a5b4fc", secondary: "#27272a", button: "#6366f1", button_hover: "#818cf8", loader: "#818cf8" },
-    hero: { from: "#4f46e5", to: "#0ea5e9", angle: 120 },
   },
   {
     id: "emerald",
     name: "Emerald Tech",
     light: { primary: "#059669", secondary: "#ecfdf5", button: "#10b981", button_hover: "#059669", loader: "#34d399" },
     dark: { primary: "#6ee7b7", secondary: "#1f2937", button: "#10b981", button_hover: "#34d399", loader: "#34d399" },
-    hero: { from: "#047857", to: "#0f766e", angle: 135 },
   },
   {
     id: "coral",
     name: "Sunset Coral",
     light: { primary: "#e11d48", secondary: "#fff1f2", button: "#f43f5e", button_hover: "#e11d48", loader: "#fb7185" },
     dark: { primary: "#fda4af", secondary: "#2b1d22", button: "#f43f5e", button_hover: "#fb7185", loader: "#fb7185" },
-    hero: { from: "#f97316", to: "#e11d48", angle: 115 },
   },
   {
     id: "ocean",
     name: "Ocean Cyan",
     light: { primary: "#0891b2", secondary: "#ecfeff", button: "#06b6d4", button_hover: "#0e7490", loader: "#22d3ee" },
     dark: { primary: "#67e8f9", secondary: "#183038", button: "#06b6d4", button_hover: "#22d3ee", loader: "#22d3ee" },
-    hero: { from: "#0369a1", to: "#06b6d4", angle: 125 },
   },
   {
     id: "violet",
     name: "Violet Dusk",
     light: { primary: "#7c3aed", secondary: "#f5f3ff", button: "#8b5cf6", button_hover: "#7c3aed", loader: "#a78bfa" },
     dark: { primary: "#c4b5fd", secondary: "#241f37", button: "#8b5cf6", button_hover: "#a78bfa", loader: "#a78bfa" },
-    hero: { from: "#4c1d95", to: "#a855f7", angle: 130 },
   },
   {
     id: "rose",
     name: "Rose Quartz",
     light: { primary: "#db2777", secondary: "#fdf2f8", button: "#ec4899", button_hover: "#db2777", loader: "#f472b6" },
     dark: { primary: "#f9a8d4", secondary: "#2b1c25", button: "#ec4899", button_hover: "#f472b6", loader: "#f472b6" },
-    hero: { from: "#9d174d", to: "#f472b6", angle: 120 },
   },
   {
     id: "amber",
     name: "Amber Sunrise",
     light: { primary: "#b45309", secondary: "#fffbeb", button: "#f59e0b", button_hover: "#d97706", loader: "#fbbf24" },
     dark: { primary: "#fcd34d", secondary: "#2e2416", button: "#f59e0b", button_hover: "#fbbf24", loader: "#fbbf24" },
-    hero: { from: "#d97706", to: "#fbbf24", angle: 110 },
   },
   {
     id: "forest",
     name: "Forest Pine",
     light: { primary: "#15803d", secondary: "#f0fdf4", button: "#16a34a", button_hover: "#15803d", loader: "#4ade80" },
     dark: { primary: "#86efac", secondary: "#16241c", button: "#22c55e", button_hover: "#4ade80", loader: "#4ade80" },
-    hero: { from: "#166534", to: "#22c55e", angle: 140 },
   },
   {
     id: "teal",
     name: "Teal Lagoon",
     light: { primary: "#0f766e", secondary: "#f0fdfa", button: "#14b8a6", button_hover: "#0f766e", loader: "#2dd4bf" },
     dark: { primary: "#5eead4", secondary: "#152a2a", button: "#14b8a6", button_hover: "#2dd4bf", loader: "#2dd4bf" },
-    hero: { from: "#134e4a", to: "#2dd4bf", angle: 135 },
   },
   {
     id: "sky",
     name: "Sky Breeze",
     light: { primary: "#0369a1", secondary: "#f0f9ff", button: "#0ea5e9", button_hover: "#0284c7", loader: "#38bdf8" },
     dark: { primary: "#7dd3fc", secondary: "#14252f", button: "#0ea5e9", button_hover: "#38bdf8", loader: "#38bdf8" },
-    hero: { from: "#075985", to: "#38bdf8", angle: 125 },
   },
   {
     id: "crimson",
     name: "Crimson Ember",
     light: { primary: "#b91c1c", secondary: "#fef2f2", button: "#dc2626", button_hover: "#991b1b", loader: "#ef4444" },
     dark: { primary: "#fca5a5", secondary: "#2b1a1a", button: "#dc2626", button_hover: "#ef4444", loader: "#f87171" },
-    hero: { from: "#7f1d1d", to: "#ef4444", angle: 115 },
   },
   {
     id: "graphite",
     name: "Graphite",
     light: { primary: "#334155", secondary: "#f1f5f9", button: "#334155", button_hover: "#1e293b", loader: "#64748b" },
     dark: { primary: "#cbd5e1", secondary: "#1e293b", button: "#475569", button_hover: "#94a3b8", loader: "#94a3b8" },
-    hero: { from: "#0f172a", to: "#475569", angle: 120 },
   },
 ];
 
+export type ThemeMode = "light" | "dark";
+
 /** The palette a preset applies when "sync modes" is on: the light set, in both modes. */
-export function presetColors(preset: ThemePreset, mode: "light" | "dark", sync: boolean): ThemeColors {
+export function presetColors(preset: ThemePreset, mode: ThemeMode, sync: boolean): ThemeColors {
   const set = sync || mode === "light" ? preset.light : preset.dark;
   return { primary: set.primary, secondary: set.secondary, button: set.button, button_hover: set.button_hover, loader: set.loader };
+}
+
+/** Two palette entries are the same colour (`null` = "template", only equal to `null`). */
+function sameColor(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  const ca = parseColor(a);
+  const cb = parseColor(b);
+  // Unparseable strings can still be identical – compare them as written.
+  if (!ca || !cb) return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return ca.r === cb.r && ca.g === cb.g && ca.b === cb.b && Math.abs(ca.a - cb.a) < 0.01;
+}
+
+/**
+ * Which preset a mode's five colours came from – `null` once the admin edited
+ * any one of them. Each mode is checked on its own, so light and dark can sit on
+ * different presets (Modern Indigo in the dark, Emerald Tech in the light).
+ */
+export function presetIdFor(colors: ThemeColors, mode: ThemeMode, sync = false): string | null {
+  for (const preset of THEME_PRESETS) {
+    const set = presetColors(preset, mode, sync);
+    if (THEME_COLOR_KEYS.every((key) => sameColor(colors[key], set[key]))) return preset.id;
+  }
+  return null;
+}
+
+/** Label for the mode's current palette: a preset name, `Template`, or `Custom`. */
+export function presetLabel(colors: ThemeColors, mode: ThemeMode, sync = false): string {
+  const id = presetIdFor(colors, mode, sync);
+  if (id) return THEME_PRESETS.find((preset) => preset.id === id)?.name ?? "Custom";
+  return THEME_COLOR_KEYS.every((key) => colors[key] === null) ? "Template" : "Custom";
 }
