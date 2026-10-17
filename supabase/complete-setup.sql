@@ -15,7 +15,7 @@
 --      Everything (dashboard, order chat, notifications, media, pages …) works from there.
 --
 --  WHAT IS IN HERE
---   • All 22 migrations in order — schema, RLS, triggers, functions, storage bucket.
+--   • All 23 migrations in order — schema, RLS, triggers, functions, storage bucket.
 --   • API role grants (Supabase normally sets these up; stated here so the file is
 --     self-contained).
 --   • OPTIONAL demo catalog at the very end (categories + products + header menu).
@@ -3273,6 +3273,24 @@ create index if not exists categories_image_media_id_idx on public.categories (i
 
 comment on column public.categories.image_url is 'Public URL of the tile image (Media Library file or an external URL).';
 comment on column public.categories.image_media_id is 'Media Library file behind image_url; null for external URLs.';
+
+-- =============================================================================
+-- 23. Category icons — the icon an admin picks for a category
+-- (migration 20261036000000_category_icons.sql)
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+--  CATEGORY ICONS
+--
+--  The icon a category shows on the "Shop by category" tiles when it has no
+--  picture. The value is an id from src/lib/category-icons.ts (22 Lucide icons);
+--  null keeps the automatic 1 → 2 → 3 rotation.
+-- -----------------------------------------------------------------------------
+
+alter table public.categories
+  add column if not exists icon text;
+
+comment on column public.categories.icon is 'Icon id picked in the admin (see src/lib/category-icons.ts); null = automatic rotation.';
 
 
 -- =============================================================================

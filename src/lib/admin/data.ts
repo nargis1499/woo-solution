@@ -9,6 +9,7 @@ import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { pageCount } from "@/lib/admin/pagination";
 import { normaliseSiteSettings } from "@/lib/site-settings";
 import { PAGE_COLUMNS, PAGE_DETAIL_COLUMNS, withTags } from "@/lib/data/pages";
+import { categoryColumnSets } from "@/lib/data/category-columns";
 import type { PageSort } from "@/lib/pages/shared";
 import type { AdminStats, Category, MediaRef, MenuItem, MenuLocation, Order, OrderStatus, Page, PageStatus, Product, Profile, SettingsMedia, SiteSettingsRow, Tag } from "@/lib/types";
 
@@ -214,35 +215,39 @@ export async function adminListTags(): Promise<Tag[]> {
 export async function adminListCategories(): Promise<Category[]> {
   await requireAdmin();
   const supabase = await createClient();
-  const run = (columns: string) =>
-    supabase
+  type Row = Category & { products?: { count: number }[] };
+
+  let rows: Row[] | null = null;
+  let error: { message: string } | null = null;
+  for (const columns of categoryColumnSets(", products(count)")) {
+    const result = await supabase
       .from("categories")
       .select(columns)
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true });
-
-  let { data, error } = await run(`id, name, slug, sort_order, image_url, image_media_id, image_media:media!categories_image_media_id_fkey(${MEDIA_REF_COLUMNS}), products(count)`);
-  // A database that has not run the category-images migration yet: list the categories without pictures.
-  if (error && isMissingMediaSchema(error.message)) ({ data, error } = await run("id, name, slug, sort_order, products(count)"));
+    error = result.error;
+    if (!error) { rows = (result.data ?? []) as unknown as Row[]; break; }
+  }
   if (error) throw new Error(`Failed to load categories: ${error.message}`);
-  type Row = Category & { products?: { count: number }[] };
-  return ((data ?? []) as unknown as Row[]).map(({ products, ...c }) => ({
-    ...c,
-    product_count: products?.[0]?.count ?? 0,
-  }));
+  return (rows ?? []).map(({ products, ...c }) => ({ ...c, product_count: products?.[0]?.count ?? 0 }));
 }
 
 export async function adminGetCategory(id: string): Promise<Category | null> {
   await requireAdmin();
   if (!isUuid(id)) return null;
   const supabase = await createClient();
-  const run = (columns: string) => supabase.from("categories").select(columns).eq("id", id).maybeSingle();
+  type Row = Category & { products?: { count: number }[] };
 
-  let { data, error } = await run(`id, name, slug, sort_order, image_url, image_media_id, image_media:media!categories_image_media_id_fkey(${MEDIA_REF_COLUMNS}), products(count)`);
-  if (error && isMissingMediaSchema(error.message)) ({ data, error } = await run("id, name, slug, sort_order, products(count)"));
+  let row: Row | null = null;
+  let error: { message: string } | null = null;
+  for (const columns of categoryColumnSets(", products(count)")) {
+    const result = await supabase.from("categories").select(columns).eq("id", id).maybeSingle();
+    error = result.error;
+    if (!error) { row = (result.data ?? null) as Row | null; break; }
+  }
   if (error) throw new Error(`Failed to load category: ${error.message}`);
-  if (!data) return null;
-  const { products, ...c } = data as unknown as Category & { products?: { count: number }[] };
+  if (!row) return null;
+  const { products, ...c } = row;
   return { ...c, product_count: products?.[0]?.count ?? 0 };
 }
 

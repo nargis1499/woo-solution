@@ -6,6 +6,7 @@ import type { Category } from "@/lib/types";
 import { LinkButton } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { CategoryIconPicker } from "./category-icon-picker";
 import { MediaRefField } from "./media/media-ref-field";
 import { useFormToast } from "./flash-toast";
 import { SubmitButton } from "./form-bits";
@@ -62,6 +63,7 @@ export function CategoryForm({ category, compact }: { category?: Category | null
           <FieldError>{err.slug}</FieldError>
         </Field>
       </div>
+      <CategoryIconPicker key={`icon:${formRun}`} value={category?.icon ?? null} error={err.icon} />
       <MediaRefField
         key={`image:${formRun}`}
         name="image"

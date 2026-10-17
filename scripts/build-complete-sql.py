@@ -39,6 +39,7 @@ TITLES = {
     "20261033000000_customer_visibility.sql": "20. Per-customer visibility + store_presence_for()",
     "20261034000000_notifications.sql": "21. Notifications — the table, RLS and the six order / message triggers",
     "20261035000000_category_images.sql": "22. Category images — the picture behind the \"Shop by category\" tiles",
+    "20261036000000_category_icons.sql": "23. Category icons — the icon an admin picks for a category",
 }
 
 HEADER = """-- =============================================================================

@@ -1,13 +1,7 @@
-import { ShoppingBagIcon, SparklesIcon, TagIcon } from "lucide-react";
 import { mediaPreviewUrl, mediaUrl } from "@/lib/media/shared";
+import { CATEGORY_ICON_BY_ID, DEFAULT_CATEGORY_ICONS } from "@/lib/category-icons";
 import type { Category } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-/**
- * The three icons a category without a picture falls back to, cycled by position:
- * icon1, icon2, icon3, icon1, icon2 …
- */
-const FALLBACK_ICONS = [ShoppingBagIcon, TagIcon, SparklesIcon] as const;
 
 /** Public URL of the category picture (library file first, then the stored URL). */
 export function categoryImageUrl(category: Pick<Category, "image_url" | "image_media">): string | null {
@@ -18,8 +12,8 @@ export function categoryImageUrl(category: Pick<Category, "image_url" | "image_m
 
 /**
  * The round category picture — or, when the category has none, a round tile
- * filled with a gradient of the theme's primary colour and one of three
- * fallback icons.
+ * filled with a gradient of the theme's primary colour and the icon the admin
+ * picked (the 1 → 2 → 3 defaults when none was picked).
  */
 export function CategoryThumb({
   category,
@@ -27,14 +21,17 @@ export function CategoryThumb({
   size = "md",
   className,
 }: {
-  category: Pick<Category, "name" | "image_url" | "image_media">;
+  category: Pick<Category, "name" | "image_url" | "image_media" | "icon">;
   /** Position in the list – picks the fallback icon. */
   index?: number;
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
   const src = categoryImageUrl(category);
-  const Icon = FALLBACK_ICONS[index % FALLBACK_ICONS.length];
+  // The icon the admin picked; without one, the 1 → 2 → 3 rotation by position.
+  const Icon =
+    (category.icon && CATEGORY_ICON_BY_ID[category.icon]) ||
+    DEFAULT_CATEGORY_ICONS[index % DEFAULT_CATEGORY_ICONS.length];
 
   return (
     <span

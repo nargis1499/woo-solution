@@ -8,6 +8,7 @@ import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { HOME_FILTER_TITLE_MAX } from "@/lib/home-sections";
 import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradients } from "@/lib/theme";
 import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, formatExchangeRate, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
+import { isCategoryIconId } from "@/lib/category-icons";
 import { MENU_TAG } from "@/lib/menu";
 import { PRESENCE_VISIBILITIES, type PresenceVisibility } from "@/lib/presence";
 import { passwordProblem } from "@/lib/password";
@@ -554,10 +555,12 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
 
   const name = str(formData, "name", 100);
   const slug = slugify(str(formData, "slug", 100) || name);
+  const iconInput = str(formData, "icon", 40);
 
   const fieldErrors: Record<string, string> = {};
   if (!name) fieldErrors.name = "Name is required.";
   if (!SLUG_RE.test(slug)) fieldErrors.slug = "Use lowercase letters, numbers and dashes only.";
+  if (iconInput && !isCategoryIconId(iconInput)) fieldErrors.icon = "Pick one of the available icons.";
   if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
 
   try {
@@ -565,7 +568,7 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
     const image = await resolveImageChoice(formData, "image", fieldErrors);
     if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
 
-    const row = { name, slug, ...image };
+    const row = { name, slug, icon: iconInput || null, ...image };
     let result;
     if (isEdit) {
       result = await supabase.from("categories").update(row).eq("id", id).select("id").single();
