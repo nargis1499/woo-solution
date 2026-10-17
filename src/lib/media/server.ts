@@ -1,7 +1,19 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import sharp from "sharp";
+import type sharpType from "sharp";
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+let sharpCached: typeof sharpType | null | undefined;
+async function getSharp(): Promise<typeof sharpType | null> {
+  if (sharpCached !== undefined) return sharpCached;
+  try {
+    const mod = await import("sharp");
+    sharpCached = mod.default ?? (mod as unknown as typeof sharpType);
+  } catch {
+    sharpCached = null;
+  }
+  return sharpCached;
+}
 import { requireAdmin } from "@/lib/admin/auth";
 import { pageCount } from "@/lib/admin/pagination";
 import { createClient } from "@/lib/supabase/server";
@@ -181,6 +193,8 @@ export type ImageInfo = { width: number | null; height: number | null; animated:
 
 export async function inspectImage(buffer: Buffer): Promise<ImageInfo> {
   try {
+    const sharp = await getSharp();
+    if (!sharp) return { width: null, height: null, animated: false, format: null };
     const meta = await sharp(buffer, { animated: false }).metadata();
     const swap = (meta.orientation ?? 1) >= 5; // EXIF rotated by 90°
     return {
@@ -209,6 +223,8 @@ export async function generateVariants(
   const variants: Partial<Record<MediaVariantName, MediaVariant>> = {};
   let total = 0;
   if (!RASTER.has(mime) || !info.width || !info.height) return { variants, variants_size: 0 };
+  const sharp = await getSharp();
+  if (!sharp) return { variants, variants_size: 0 };
   const longest = Math.max(info.width, info.height);
   for (const [name, target] of Object.entries(VARIANT_SIZES) as [MediaVariantName, number][]) {
     // always a thumbnail (fast grids), larger renditions only when they would actually be smaller
@@ -238,6 +254,8 @@ export async function optimizeImageBuffer(
   mime: string,
   { format, quality }: OptimizeOptions,
 ): Promise<{ buffer: Buffer; mime: string; ext: string; width: number; height: number }> {
+  const sharp = await getSharp();
+  if (!sharp) throw new Error("Image optimisation requires the Node.js runtime with sharp.");
   const q = Math.min(100, Math.max(30, Math.round(quality)));
   const info = await inspectImage(buffer);
   let img = sharp(buffer, { animated: info.animated && format !== "avif" }).rotate();
@@ -260,6 +278,8 @@ export async function optimizeImageBuffer(
 
 /** Rotate → flip → crop, encoded back into the same format. */
 export async function editImageBuffer(buffer: Buffer, mime: string, ops: EditOps): Promise<{ buffer: Buffer; width: number; height: number }> {
+  const sharp = await getSharp();
+  if (!sharp) throw new Error("Image editing requires the Node.js runtime with sharp.");
   const info = await inspectImage(buffer);
   if (info.animated) throw new Error("Animated images can't be edited.");
   // sharp pipeline: flips always run before the rotation, and an extract() chained *after*

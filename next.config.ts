@@ -6,6 +6,7 @@ const supabaseHost = supabaseImageHost();
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
+  serverExternalPackages: ["sharp"],
   turbopack: {
     rules: {
       "*.css": {
