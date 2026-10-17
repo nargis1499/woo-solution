@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useSearchParams } from "next/navigation";
+import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useThemeCustomization } from "@/components/theme/theme-customization";
 
@@ -13,7 +14,9 @@ import { useThemeCustomization } from "@/components/theme/theme-customization";
  */
 export function TopLoader() {
   const { gradients } = useThemeCustomization();
-  const gradientBar = gradients.loader.enabled;
+  // Gradients are per mode: follow whichever palette the page is currently rendered in.
+  const { resolvedTheme } = useTheme();
+  const gradientBar = gradients[resolvedTheme === "dark" ? "dark" : "light"].loader.enabled;
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [progress, setProgress] = useState(0);

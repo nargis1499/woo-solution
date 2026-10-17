@@ -6,7 +6,7 @@ import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { HOME_FILTER_TITLE_MAX } from "@/lib/home-sections";
-import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradients } from "@/lib/theme";
+import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradientSets } from "@/lib/theme";
 import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, formatExchangeRate, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
 import { isCategoryIconId } from "@/lib/category-icons";
 import { MENU_TAG } from "@/lib/menu";
@@ -1206,7 +1206,7 @@ export async function updateTheme(_prev: AdminFormState, formData: FormData): Pr
   try {
     const light: ThemeColors = normaliseColors(parseThemeJson(str(formData, "theme_light", 20000)));
     const darkInput: ThemeColors = normaliseColors(parseThemeJson(str(formData, "theme_dark", 20000)));
-    const gradients: ThemeGradients = normaliseGradients(parseThemeJson(str(formData, "theme_gradients", 20000)));
+    const gradients: ThemeGradientSets = normaliseGradients(parseThemeJson(str(formData, "theme_gradients", 20000)));
     const sync = bool(formData, "theme_sync");
 
     const problem = await saveSiteSettings({

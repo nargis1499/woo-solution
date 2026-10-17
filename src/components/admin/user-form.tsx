@@ -11,6 +11,23 @@ import { CheckboxField, SubmitButton } from "./form-bits";
 export function UserForm({ profile, isSelf }: { profile: Profile; isSelf: boolean }) {
   const [state, formAction] = useActionState<AdminFormState, FormData>(updateUser, null);
   useFormToast(state);
+  // The fields remount when the row changes (the router keeps pages alive, so an unlocked form
+  // would show stale values on the next visit) – but the action state lives out here, where the
+  // remount cannot swallow the "User updated." toast.
+  return <UserFields key={`${profile.id}:${profile.updated_at}:${profile.is_admin}`} profile={profile} isSelf={isSelf} state={state} formAction={formAction} />;
+}
+
+function UserFields({
+  profile,
+  isSelf,
+  state,
+  formAction,
+}: {
+  profile: Profile;
+  isSelf: boolean;
+  state: AdminFormState;
+  formAction: (formData: FormData) => void;
+}) {
   const v = state?.values ?? {};
 
   return (

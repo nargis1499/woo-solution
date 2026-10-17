@@ -1,4 +1,4 @@
-import type { ThemeColors, ThemeGradients } from "@/lib/theme";
+import type { ThemeColors, ThemeGradientSets } from "@/lib/theme";
 import type { CurrencyCode } from "@/lib/money";
 // Hand-written row types that mirror `supabase/migrations/*_init.sql`.
 // Tip: once your schema grows, generate them instead:
@@ -326,7 +326,7 @@ export type SiteSettings = {
   // Extra → Theme Customization (see src/lib/theme.ts)
   theme_light: ThemeColors;
   theme_dark: ThemeColors;
-  theme_gradients: ThemeGradients;
+  theme_gradients: ThemeGradientSets;
   /** true = dark mode reuses the light palette */
   theme_sync: boolean;
 };

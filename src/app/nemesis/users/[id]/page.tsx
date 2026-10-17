@@ -80,8 +80,9 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
           </Section>
         </div>
         <Section title="Edit user">
-          {/* kept-alive route: a changed profile must remount the form (see the category form) */}
-          <UserForm key={`${profile.id}:${profile.updated_at}:${profile.is_admin}`} profile={profile} isSelf={isSelf} />
+          {/* kept-alive route: the form remounts its fields when the row changes (inside UserForm,
+              so the action state – and the "User updated." toast – survives) */}
+          <UserForm profile={profile} isSelf={isSelf} />
         </Section>
       </div>
     </>

@@ -15,6 +15,8 @@
 export const THEME_COLOR_KEYS = ["primary", "secondary", "button", "button_hover", "loader"] as const;
 export type ThemeColorKey = (typeof THEME_COLOR_KEYS)[number];
 
+export type ThemeMode = "light" | "dark";
+
 /** `null` = use the template's own colour for this token. */
 export type ThemeColors = Record<ThemeColorKey, string | null>;
 
@@ -36,11 +38,14 @@ export type ThemeGradient = {
 
 export type ThemeGradients = Record<ThemeGradientKey, ThemeGradient>;
 
+/** One gradient set per colour mode – the hero can glow green in the light and indigo in the dark. */
+export type ThemeGradientSets = Record<ThemeMode, ThemeGradients>;
+
 export type ThemeCustomization = {
   light: ThemeColors;
   dark: ThemeColors;
-  gradients: ThemeGradients;
-  /** Use the light palette in dark mode too. */
+  gradients: ThemeGradientSets;
+  /** Use the light palette (and gradients) in dark mode too. */
   sync: boolean;
 };
 
@@ -82,17 +87,26 @@ export const TEMPLATE_DEFAULTS: { light: ThemeColors; dark: ThemeColors } = {
   },
 };
 
-/** Reset writes these (same values as an untouched template – see the module doc). */
-export const DEFAULT_THEME: ThemeCustomization = {
-  light: { primary: null, secondary: null, button: null, button_hover: null, loader: null },
-  dark: { primary: null, secondary: null, button: null, button_hover: null, loader: null },
-  sync: false,
-  gradients: {
+/** A fresh template gradient set – a factory, so the two modes never share one object. */
+export function templateGradients(): ThemeGradients {
+  return {
     button: { enabled: false, type: "linear", angle: 135, from: LIGHT_PRIMARY, via: null, to: "#5b3d8a" },
     loader: { enabled: false, type: "linear", angle: 90, from: LIGHT_PRIMARY, via: null, to: "#4cc9f0" },
     hero: { enabled: false, type: "linear", angle: 120, from: LIGHT_PRIMARY, via: null, to: "#3f2d63" },
-  },
-};
+  };
+}
+
+/** Reset writes these (same values as an untouched template – see the module doc). */
+export function templateTheme(): ThemeCustomization {
+  return {
+    light: { primary: null, secondary: null, button: null, button_hover: null, loader: null },
+    dark: { primary: null, secondary: null, button: null, button_hover: null, loader: null },
+    sync: false,
+    gradients: { light: templateGradients(), dark: templateGradients() },
+  };
+}
+
+export const DEFAULT_THEME: ThemeCustomization = templateTheme();
 
 /* ── Colour helpers ─────────────────────────────────────────────────────── */
 
@@ -306,16 +320,20 @@ export function themeVars(colors: ThemeColors, gradients?: ThemeGradients): Reco
 
 /** `:root{…}.dark{…}` – what the root layout injects into the document. */
 export function themeCss(theme: ThemeCustomization): string {
-  const light = themeVars(theme.light, theme.gradients);
-  const dark = themeVars(theme.sync ? theme.light : theme.dark, theme.gradients);
+  const light = themeVars(theme.light, theme.gradients.light);
+  // "Use the same colors for both modes" also reuses the light gradients – otherwise each
+  // mode carries its own hero/button/loading-bar gradient.
+  const dark = themeVars(theme.sync ? theme.light : theme.dark, theme.sync ? theme.gradients.light : theme.gradients.dark);
   const block = (selector: string, vars: Record<string, string>) => {
     const body = Object.entries(vars)
       .map(([k, v]) => `${k}:${v}`)
       .join(";");
     return body ? `${selector}{${body}}` : "";
   };
-  // `:root` before `.dark`: equal specificity, so the later rule wins for dark mode.
-  return block(":root", light) + block(".dark", dark);
+  // `:root:not(.dark)`: a light-mode token must not inherit into dark mode. Custom properties
+  // inherit, so a plain `:root` block would hand Light's --primary/--hero-image to `.dark` and
+  // the dark palette would silently show the light one wherever it has no value of its own.
+  return block(":root:not(.dark)", light) + block(".dark", dark);
 }
 
 /* ── Validation ─────────────────────────────────────────────────────────── */
@@ -344,11 +362,25 @@ export function normaliseGradient(raw: unknown, fallback: ThemeGradient): ThemeG
   };
 }
 
-export function normaliseGradients(raw: unknown): ThemeGradients {
+function normaliseGradientSet(raw: unknown): ThemeGradients {
   const row = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const fallback = templateGradients();
   const out = {} as ThemeGradients;
-  for (const key of THEME_GRADIENT_KEYS) out[key] = normaliseGradient(row[key], DEFAULT_THEME.gradients[key]);
+  for (const key of THEME_GRADIENT_KEYS) out[key] = normaliseGradient(row[key], fallback[key]);
   return out;
+}
+
+/**
+ * Accepts the per-mode shape (`{ light: {...}, dark: {...} }`) and the older flat
+ * one (`{ button, loader, hero }`, from before gradients followed the mode),
+ * which is copied into both modes so nothing looks different after the upgrade.
+ */
+export function normaliseGradients(raw: unknown): ThemeGradientSets {
+  const row = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const hasModes = (row.light && typeof row.light === "object") || (row.dark && typeof row.dark === "object");
+  if (hasModes) return { light: normaliseGradientSet(row.light), dark: normaliseGradientSet(row.dark) };
+  const flat = normaliseGradientSet(row);
+  return { light: flat, dark: normaliseGradientSet(row) };
 }
 
 /** Any shape from the database (or a form field) → a usable theme. */
@@ -373,6 +405,8 @@ export type ThemePreset = {
   name: string;
   light: Required<ThemeColors>;
   dark: Required<ThemeColors>;
+  /** Hero gradient that ships with the palette – seeded into the mode a preset is applied to. */
+  hero?: { from: string; to: string; angle: number };
 };
 
 export const THEME_PRESETS: ThemePreset[] = [
@@ -381,76 +415,86 @@ export const THEME_PRESETS: ThemePreset[] = [
     name: "Modern Indigo",
     light: { primary: "#4f46e5", secondary: "#eef2ff", button: "#4f46e5", button_hover: "#4338ca", loader: "#6366f1" },
     dark: { primary: "#a5b4fc", secondary: "#27272a", button: "#6366f1", button_hover: "#818cf8", loader: "#818cf8" },
+    hero: { from: "#4f46e5", to: "#0ea5e9", angle: 120 },
   },
   {
     id: "emerald",
     name: "Emerald Tech",
     light: { primary: "#059669", secondary: "#ecfdf5", button: "#10b981", button_hover: "#059669", loader: "#34d399" },
     dark: { primary: "#6ee7b7", secondary: "#1f2937", button: "#10b981", button_hover: "#34d399", loader: "#34d399" },
+    hero: { from: "#047857", to: "#0f766e", angle: 135 },
   },
   {
     id: "coral",
     name: "Sunset Coral",
     light: { primary: "#e11d48", secondary: "#fff1f2", button: "#f43f5e", button_hover: "#e11d48", loader: "#fb7185" },
     dark: { primary: "#fda4af", secondary: "#2b1d22", button: "#f43f5e", button_hover: "#fb7185", loader: "#fb7185" },
+    hero: { from: "#f97316", to: "#e11d48", angle: 115 },
   },
   {
     id: "ocean",
     name: "Ocean Cyan",
     light: { primary: "#0891b2", secondary: "#ecfeff", button: "#06b6d4", button_hover: "#0e7490", loader: "#22d3ee" },
     dark: { primary: "#67e8f9", secondary: "#183038", button: "#06b6d4", button_hover: "#22d3ee", loader: "#22d3ee" },
+    hero: { from: "#0369a1", to: "#06b6d4", angle: 125 },
   },
   {
     id: "violet",
     name: "Violet Dusk",
     light: { primary: "#7c3aed", secondary: "#f5f3ff", button: "#8b5cf6", button_hover: "#7c3aed", loader: "#a78bfa" },
     dark: { primary: "#c4b5fd", secondary: "#241f37", button: "#8b5cf6", button_hover: "#a78bfa", loader: "#a78bfa" },
+    hero: { from: "#4c1d95", to: "#a855f7", angle: 130 },
   },
   {
     id: "rose",
     name: "Rose Quartz",
     light: { primary: "#db2777", secondary: "#fdf2f8", button: "#ec4899", button_hover: "#db2777", loader: "#f472b6" },
     dark: { primary: "#f9a8d4", secondary: "#2b1c25", button: "#ec4899", button_hover: "#f472b6", loader: "#f472b6" },
+    hero: { from: "#9d174d", to: "#f472b6", angle: 120 },
   },
   {
     id: "amber",
     name: "Amber Sunrise",
     light: { primary: "#b45309", secondary: "#fffbeb", button: "#f59e0b", button_hover: "#d97706", loader: "#fbbf24" },
     dark: { primary: "#fcd34d", secondary: "#2e2416", button: "#f59e0b", button_hover: "#fbbf24", loader: "#fbbf24" },
+    hero: { from: "#d97706", to: "#fbbf24", angle: 110 },
   },
   {
     id: "forest",
     name: "Forest Pine",
     light: { primary: "#15803d", secondary: "#f0fdf4", button: "#16a34a", button_hover: "#15803d", loader: "#4ade80" },
     dark: { primary: "#86efac", secondary: "#16241c", button: "#22c55e", button_hover: "#4ade80", loader: "#4ade80" },
+    hero: { from: "#166534", to: "#22c55e", angle: 140 },
   },
   {
     id: "teal",
     name: "Teal Lagoon",
     light: { primary: "#0f766e", secondary: "#f0fdfa", button: "#14b8a6", button_hover: "#0f766e", loader: "#2dd4bf" },
     dark: { primary: "#5eead4", secondary: "#152a2a", button: "#14b8a6", button_hover: "#2dd4bf", loader: "#2dd4bf" },
+    hero: { from: "#134e4a", to: "#2dd4bf", angle: 135 },
   },
   {
     id: "sky",
     name: "Sky Breeze",
     light: { primary: "#0369a1", secondary: "#f0f9ff", button: "#0ea5e9", button_hover: "#0284c7", loader: "#38bdf8" },
     dark: { primary: "#7dd3fc", secondary: "#14252f", button: "#0ea5e9", button_hover: "#38bdf8", loader: "#38bdf8" },
+    hero: { from: "#075985", to: "#38bdf8", angle: 125 },
   },
   {
     id: "crimson",
     name: "Crimson Ember",
     light: { primary: "#b91c1c", secondary: "#fef2f2", button: "#dc2626", button_hover: "#991b1b", loader: "#ef4444" },
     dark: { primary: "#fca5a5", secondary: "#2b1a1a", button: "#dc2626", button_hover: "#ef4444", loader: "#f87171" },
+    hero: { from: "#7f1d1d", to: "#ef4444", angle: 115 },
   },
   {
     id: "graphite",
     name: "Graphite",
     light: { primary: "#334155", secondary: "#f1f5f9", button: "#334155", button_hover: "#1e293b", loader: "#64748b" },
     dark: { primary: "#cbd5e1", secondary: "#1e293b", button: "#475569", button_hover: "#94a3b8", loader: "#94a3b8" },
+    hero: { from: "#0f172a", to: "#475569", angle: 120 },
   },
 ];
-
-export type ThemeMode = "light" | "dark";
 
 /** The palette a preset applies when "sync modes" is on: the light set, in both modes. */
 export function presetColors(preset: ThemePreset, mode: ThemeMode, sync: boolean): ThemeColors {

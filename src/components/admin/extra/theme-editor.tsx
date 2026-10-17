@@ -5,9 +5,9 @@ import { CheckIcon, MoonIcon, PaintbrushIcon, RotateCcwIcon, SunIcon } from "luc
 import type { Key } from "react-aria-components";
 import { updateTheme, type AdminFormState } from "@/app/nemesis/actions";
 import {
-  DEFAULT_THEME,
   TEMPLATE_DEFAULTS,
   THEME_COLOR_FIELDS,
+  templateTheme,
   THEME_GRADIENT_FIELDS,
   THEME_PRESETS,
   gradientCss,
@@ -20,7 +20,7 @@ import {
   type ThemeCustomization,
   type ThemeGradient,
   type ThemeGradientKey,
-  type ThemeGradients,
+  type ThemeGradientSets,
   type ThemeMode,
 } from "@/lib/theme";
 import { startTransition, useActionState } from "react";
@@ -61,12 +61,15 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   const [mode, setMode] = useState<Mode>("light");
   const [light, setLight] = useState<ThemeColors>(saved.light);
   const [dark, setDark] = useState<ThemeColors>(saved.dark);
-  const [gradients, setGradients] = useState<ThemeGradients>(saved.gradients);
+  const [gradients, setGradients] = useState<ThemeGradientSets>(saved.gradients);
   const [sync, setSync] = useState(saved.sync);
   const [resetOpen, setResetOpen] = useState(false);
 
   const colors = mode === "light" ? light : dark;
   const defaults = TEMPLATE_DEFAULTS[mode];
+  // Gradients follow the mode too: the hero glows in the light palette in light mode and in the
+  // dark one in dark mode. "Same colors for both modes" makes the light set win, like the colours.
+  const modeGradients = sync ? gradients.light : gradients[mode];
 
   function setColor(key: ThemeColorKey, value: string | null) {
     // Sync (or editing while synced) keeps both modes identical – one click, both themes.
@@ -93,21 +96,37 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
     } else {
       setDark(presetColors(preset, "dark", false));
     }
-    // Gradients are shared by the two modes, so a preset never touches them: the hero
-    // keeps using each mode's own `--primary` (or the gradient the admin set up by hand).
+    // The preset also brings its hero gradient to the mode it was applied to, so a light-mode
+    // Emerald and a dark-mode Indigo each get a hero that matches their palette.
+    const hero = preset.hero;
+    if (hero) {
+      const next = { enabled: true, type: "linear" as const, angle: hero.angle, from: hero.from, via: null, to: hero.to };
+      const modes: ThemeMode[] = sync ? ["light", "dark"] : [mode];
+      setGradients((sets) => {
+        const out = { ...sets };
+        for (const m of modes) out[m] = { ...sets[m], hero: next };
+        return out;
+      });
+    }
   }
 
   function resetAll() {
-    setLight(DEFAULT_THEME.light);
-    setDark(DEFAULT_THEME.dark);
-    setGradients(DEFAULT_THEME.gradients);
+    const theme = templateTheme();
+    setLight(theme.light);
+    setDark(theme.dark);
+    setGradients(theme.gradients);
     setSync(false);
     setMode("light");
     setResetOpen(false);
   }
 
   function setGradient(key: ThemeGradientKey, patch: Partial<ThemeGradient>) {
-    setGradients((g) => ({ ...g, [key]: { ...g[key], ...patch } }));
+    const modes: ThemeMode[] = sync ? ["light", "dark"] : [mode];
+    setGradients((sets) => {
+      const out = { ...sets };
+      for (const m of modes) out[m] = { ...sets[m], [key]: { ...sets[m][key], ...patch } };
+      return out;
+    });
   }
 
   const previewColors: ThemeColors = sync ? light : mode === "light" ? light : dark;
@@ -296,12 +315,18 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Gradients</CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle>Gradients</CardTitle>
+                <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground" data-testid="theme-gradients-mode">
+                  {mode === "light" ? <SunIcon className="size-3.5" aria-hidden /> : <MoonIcon className="size-3.5" aria-hidden />}
+                  {mode === "light" ? "Light" : "Dark"} mode
+                </span>
+              </div>
               <CardDescription>Linear or radial, two or three stops.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {THEME_GRADIENT_FIELDS.map((field) => {
-                const g = gradients[field.key];
+                const g = modeGradients[field.key];
                 return (
                   <div key={field.key} className="space-y-3 rounded-md border p-3" data-testid={`theme-gradient-${field.key}`}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -320,8 +345,9 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                       </label>
                     </div>
 
+                    {/* below xl the card lives in a narrow column (preview sidebar on lg) – two rows beat a squeezed slider */}
                     {g.enabled && (
-                      <div className="grid gap-4 sm:grid-cols-[160px_120px_minmax(0,1fr)]">
+                      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[160px_120px_minmax(0,1fr)]">
                         <Field>
                           <FieldLabel htmlFor={`gradient-${field.key}-type`}>Type</FieldLabel>
                           <Select
@@ -350,7 +376,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                             onChange={(e) => setGradient(field.key, { angle: Number(e.target.value) })}
                           />
                         </Field>
-                        <Field>
+                        <Field className="sm:col-span-2 xl:col-span-1">
                           <FieldLabel htmlFor={`gradient-${field.key}-angle-slider`}>Direction</FieldLabel>
                           <Slider
                             id={`gradient-${field.key}-angle-slider`}
@@ -439,7 +465,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
               <div
                 className={cn("overflow-hidden rounded-xl border", mode === "dark" && !sync && "dark")}
                 data-testid="theme-preview"
-                style={{ ...themeVars(previewColors, gradients), backgroundColor: "var(--background)", color: "var(--foreground)" } as CSSProperties}
+                style={{ ...themeVars(previewColors, modeGradients), backgroundColor: "var(--background)", color: "var(--foreground)" } as CSSProperties}
               >
                 <div className="theme-hero px-4 py-6">
                   <p className="text-lg font-bold">Hero section</p>
@@ -458,7 +484,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                     </a>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div className="h-full w-2/3 rounded-full" style={{ backgroundColor: "var(--loader)", backgroundImage: gradients.loader.enabled ? "var(--loader-image)" : undefined }} data-testid="preview-loader" />
+                    <div className="h-full w-2/3 rounded-full" style={{ backgroundColor: "var(--loader)", backgroundImage: modeGradients.loader.enabled ? "var(--loader-image)" : undefined }} data-testid="preview-loader" />
                   </div>
                   <div className="flex items-center gap-2 rounded-lg border bg-secondary p-3 text-sm" style={{ color: "var(--secondary-foreground)" }} data-testid="preview-secondary-surface">
                     <PaintbrushIcon className="size-4" /> Secondary surface

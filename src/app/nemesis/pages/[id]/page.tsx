@@ -26,9 +26,9 @@ export default async function EditPagePage({ params, searchParams }: { params: P
         backLabel="Pages"
         actions={<DeleteButton action={deletePage} id={page.id} returnTo={backHref} label="Delete page" size="default" title={`Delete "${page.title}"?`} description={`The page and its public URL /${page.slug} are removed permanently. This cannot be undone.`} />}
       />
-      {/* The router keeps visited pages mounted: a changed row must remount the form, or it
-          comes back with the state it was left in (old title, old images …). */}
-      <PageForm key={`${page.id}:${page.updated_at}`} page={page} tagSuggestions={tags.map((t) => t.name)} siteUrl={resolveSiteUrl(settings)} storeName={settings.store_name} returnTo={backHref} />
+      {/* No remount key: the editor is fully controlled and redraws itself from the fresh row
+          after a save – remounting would close the SEO panel and the editor mid-edit. */}
+      <PageForm page={page} tagSuggestions={tags.map((t) => t.name)} siteUrl={resolveSiteUrl(settings)} storeName={settings.store_name} returnTo={backHref} />
     </>
   );
 }

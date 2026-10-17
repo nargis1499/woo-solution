@@ -29,13 +29,7 @@ type Intent = "draft" | "publish" | "update" | "unpublish";
  * `<form action>`) so React never resets the editor, the tag chips or the
  * switches after a save.
  */
-export function PageForm({
-  page,
-  tagSuggestions,
-  siteUrl,
-  storeName,
-  returnTo = "/nemesis/pages",
-}: {
+type PageFormProps = {
   page?: Page | null;
   /** Names of every existing tag (autocomplete). */
   tagSuggestions: string[];
@@ -44,9 +38,32 @@ export function PageForm({
   storeName: string;
   /** List URL (page / size / filter) to go back to. */
   returnTo?: string;
-}) {
+};
+
+export function PageForm(props: PageFormProps) {
   const [state, dispatch, isPending] = useActionState<AdminFormState, FormData>(savePage, null);
   useFormToast(state);
+  // No remount key here on purpose: every field in this editor is controlled (title, slug, body,
+  // tags, switches), so a save already redraws it from `state`/fresh props – while a remount would
+  // slam the open SEO panel, the tag chips and the cursor shut on every save. The action state
+  // lives in this wrapper so its toast is reported exactly once per result.
+  return <PageFields {...props} state={state} dispatch={dispatch} isPending={isPending} />;
+}
+
+function PageFields({
+  page,
+  tagSuggestions,
+  siteUrl,
+  storeName,
+  returnTo = "/nemesis/pages",
+  state,
+  dispatch,
+  isPending,
+}: PageFormProps & {
+  state: AdminFormState;
+  dispatch: (formData: FormData) => void;
+  isPending: boolean;
+}) {
   const v = state?.values ?? {};
   const err = state?.fieldErrors ?? {};
   const isEdit = Boolean(page);

@@ -3,7 +3,7 @@ import { cacheLife, cacheTag } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { STORE_NAME } from "@/lib/config";
 import { isCurrencyCode, moneyFromSettings, type Money } from "@/lib/money";
-import { DEFAULT_THEME, normaliseColors, normaliseGradients } from "@/lib/theme";
+import { DEFAULT_THEME, normaliseColors, normaliseGradients, templateTheme } from "@/lib/theme";
 import type { SiteSettings } from "@/lib/types";
 
 export const SITE_SETTINGS_TAG = "site-settings";
@@ -34,7 +34,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   home_filter_title: null,
   theme_light: DEFAULT_THEME.light,
   theme_dark: DEFAULT_THEME.dark,
-  theme_gradients: DEFAULT_THEME.gradients,
+  // a fresh copy per read: the two modes must never share one gradient object
+  theme_gradients: templateTheme().gradients,
   theme_sync: false,
 };
 
