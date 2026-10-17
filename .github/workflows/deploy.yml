@@ -40,6 +40,14 @@ jobs:
 
       - name: Deploy Worker & Assets to Cloudflare
         run: |
+          SUB=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')
+          if [ -z "$SUB" ]; then
+            curl -s -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data '{"subdomain":"woo-solution"}' \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" || true
+          fi
           npx wrangler deploy \
             --var NEXT_PUBLIC_SUPABASE_URL:"$NEXT_PUBLIC_SUPABASE_URL" \
             --var NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:"$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" \
