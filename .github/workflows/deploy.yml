@@ -1,0 +1,50 @@
+name: Deploy to Cloudflare
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: cloudflare-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+      NEXT_PUBLIC_STORE_NAME: ${{ secrets.NEXT_PUBLIC_STORE_NAME || 'Woo Solution' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Build Next.js for Cloudflare (@opennextjs/cloudflare)
+        run: npx @opennextjs/cloudflare build
+
+      - name: Deploy Worker & Assets to Cloudflare
+        run: |
+          npx wrangler deploy \
+            --var NEXT_PUBLIC_SUPABASE_URL:"$NEXT_PUBLIC_SUPABASE_URL" \
+            --var NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:"$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" \
+            --var NEXT_PUBLIC_SITE_URL:"$NEXT_PUBLIC_SITE_URL" \
+            --var NEXT_PUBLIC_STORE_NAME:"$NEXT_PUBLIC_STORE_NAME"
+          if [ -n "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            printf "%s" "$SUPABASE_SERVICE_ROLE_KEY" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+          fi
