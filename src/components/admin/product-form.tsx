@@ -1,9 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { XIcon } from "lucide-react";
 import { saveProduct, type AdminFormState } from "@/app/nemesis/actions";
 import { CURRENCIES, DEFAULT_PRICE_MICROS, inputFromMicros } from "@/lib/money";
 import type { Category, Product } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { useMoney } from "@/components/money-provider";
 import { LinkButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,8 +58,50 @@ export function ProductForm({
   const [type, setType] = useState<"simple" | "variable">((v.type as "simple" | "variable") ?? product?.type ?? "simple");
   const [sku, setSku] = useState(v.sku ?? product?.sku ?? "");
   const [brand, setBrand] = useState(v.brand ?? product?.brand ?? "");
+  const [features, setFeatures] = useState<string[]>(() =>
+    (v.features ?? product?.features ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  const [featureDraft, setFeatureDraft] = useState("");
   const [attributes, setAttributes] = useState<DraftAttribute[]>(() => (v.attributes_json ? (JSON.parse(v.attributes_json) as DraftAttribute[]) : initialAttributes(product)));
   const [variations, setVariations] = useState<DraftVariation[]>(() => (v.variations_json ? (JSON.parse(v.variations_json) as DraftVariation[]).map((row) => ({ ...row, key: row.id ?? crypto.randomUUID(), image_preview: row.image_url ?? "" })) : initialVariations(product, money)));
+
+  function commitFeatures(raw: string) {
+    const parts = raw
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (!parts.length) return;
+    setFeatures((prev) => {
+      const next = [...prev];
+      for (const part of parts) {
+        if (next.some((item) => item.toLowerCase() === part.toLowerCase())) continue;
+        next.push(part);
+      }
+      return next;
+    });
+    setFeatureDraft("");
+  }
+
+  function removeFeature(index: number) {
+    setFeatures((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  const serializedFeatures = [
+    ...features,
+    ...featureDraft
+      .split(",")
+      .map((p) => p.trim())
+      .filter(
+        (p) =>
+          Boolean(p) &&
+          !features.some((item) => item.toLowerCase() === p.toLowerCase()),
+      ),
+  ]
+    .join(", ")
+    .slice(0, 500);
 
   const gallery = (product?.gallery ?? []).flatMap((g) => (g.media ? [g.media] : []));
 
@@ -154,15 +198,66 @@ export function ProductForm({
                 <Textarea id="description" name="description" rows={5} maxLength={5000} defaultValue={v.description ?? product?.description ?? ""} />
               </Field>
               <Field data-invalid={Boolean(err.features) || undefined}>
-                <FieldLabel htmlFor="features">Product features (comma separated)</FieldLabel>
-                <Input
-                  id="features"
+                <FieldLabel htmlFor="features_input">Product Features</FieldLabel>
+                <input
+                  type="hidden"
                   name="features"
-                  maxLength={500}
-                  placeholder="e.g. Custom Active Noise Cancellation, 30 Hours Battery, Speak-to-Chat Ambient Sensor"
-                  defaultValue={v.features ?? product?.features ?? ""}
-                  aria-invalid={Boolean(err.features) || undefined}
+                  value={serializedFeatures}
+                  data-testid="features-hidden"
                 />
+                <div
+                  data-testid="product-features-box"
+                  className={cn(
+                    "flex min-h-11 w-full flex-wrap items-center gap-2 rounded-xl border border-input bg-transparent p-2.5 text-sm shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30",
+                    err.features && "border-destructive ring-destructive/20",
+                  )}
+                >
+                  {features.map((feature, index) => (
+                    <span
+                      key={`${feature}-${index}`}
+                      data-testid="product-feature-chip"
+                      className="inline-flex items-center gap-2 rounded-lg bg-muted/80 px-3 py-1.5 text-sm font-semibold text-foreground"
+                    >
+                      <span>{feature}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${feature}`}
+                        onClick={() => removeFeature(index)}
+                        className="rounded-sm text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <XIcon className="size-4" />
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    id="features_input"
+                    type="text"
+                    value={featureDraft}
+                    placeholder="Add another Feature"
+                    aria-invalid={Boolean(err.features) || undefined}
+                    onChange={(e) => {
+                      if (e.target.value.includes(",")) {
+                        commitFeatures(e.target.value);
+                      } else {
+                        setFeatureDraft(e.target.value);
+                      }
+                    }}
+                    onBlur={() => commitFeatures(featureDraft)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitFeatures(featureDraft);
+                      } else if (
+                        e.key === "Backspace" &&
+                        !featureDraft &&
+                        features.length > 0
+                      ) {
+                        removeFeature(features.length - 1);
+                      }
+                    }}
+                    className="min-w-44 flex-1 bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground"
+                  />
+                </div>
                 <FieldError>{err.features}</FieldError>
               </Field>
             </FieldGroup>

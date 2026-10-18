@@ -1283,10 +1283,13 @@ export async function updateHomeSections(_prev: AdminFormState, formData: FormDa
   const rawBannerStyle = str(formData, "home_category_banner_style", 40);
   const bannerStyle = isHomeCategoryBannerStyle(rawBannerStyle) ? rawBannerStyle : "soft";
   const rawCategorySectionsJson = str(formData, "home_category_sections_json", 50000);
-  let categorySections = normaliseHomeCategorySections([]);
+  let categorySections = normaliseHomeCategorySections([], bannerStyle);
   if (rawCategorySectionsJson) {
     try {
-      categorySections = normaliseHomeCategorySections(JSON.parse(rawCategorySectionsJson));
+      categorySections = normaliseHomeCategorySections(
+        JSON.parse(rawCategorySectionsJson),
+        bannerStyle,
+      );
     } catch {
       categorySections = [];
     }

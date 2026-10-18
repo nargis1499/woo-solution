@@ -305,6 +305,7 @@ export type HomeCategorySectionConfig = {
   /** Max products to show in this category section (0 = show all). */
   limit: number;
   layout: HomeCategoryDisplayMode;
+  banner_style: HomeCategoryBannerStyle;
 };
 
 export type SiteSettings = {

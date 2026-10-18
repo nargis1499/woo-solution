@@ -266,6 +266,7 @@ async function CategoryProductSections() {
     categories,
     settings.home_category_sections,
     settings.home_category_default_layout,
+    settings.home_category_banner_style,
   );
 
   const sections = orderedConfigs
@@ -284,13 +285,12 @@ async function CategoryProductSections() {
 
   if (sections.length === 0) return null;
 
-  const tokens = bannerStyleTokens(settings.home_category_banner_style);
-
   return (
     <div className="space-y-14" data-testid="home-category-sections">
-      {sections.map(({ category, items, layout }, index) => {
+      {sections.map(({ category, items, layout, banner_style }) => {
         const Icon = resolveCategorySectionIcon(category);
-        const sectionNumber = String(index + 1).padStart(2, "0");
+        const effectiveBannerStyle = banner_style ?? settings.home_category_banner_style;
+        const tokens = bannerStyleTokens(effectiveBannerStyle);
 
         return (
           <section
@@ -303,7 +303,7 @@ async function CategoryProductSections() {
             {/* Dedicated Category Section Header Banner */}
             <div
               data-testid={`home-category-banner-${category.slug}`}
-              data-banner-style={settings.home_category_banner_style}
+              data-banner-style={effectiveBannerStyle}
               className={cn(
                 "relative flex flex-wrap items-center justify-between gap-4 overflow-hidden",
                 tokens.wrapper,

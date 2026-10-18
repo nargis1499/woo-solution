@@ -65,7 +65,10 @@ export function isHomeCategoryBannerStyle(v: unknown): v is HomeCategoryBannerSt
   return HOME_CATEGORY_BANNER_STYLES.some((s) => s.id === v);
 }
 
-export function normaliseHomeCategorySections(raw: unknown): HomeCategorySectionConfig[] {
+export function normaliseHomeCategorySections(
+  raw: unknown,
+  defaultBannerStyle: HomeCategoryBannerStyle = "soft",
+): HomeCategorySectionConfig[] {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
   const out: HomeCategorySectionConfig[] = [];
@@ -82,21 +85,25 @@ export function normaliseHomeCategorySections(raw: unknown): HomeCategorySection
     const layout: HomeCategoryDisplayMode = isHomeCategoryDisplayMode(rec.layout)
       ? rec.layout
       : "grid";
-    out.push({ category_id: categoryId, enabled, limit, layout });
+    const banner_style: HomeCategoryBannerStyle = isHomeCategoryBannerStyle(rec.banner_style)
+      ? rec.banner_style
+      : defaultBannerStyle;
+    out.push({ category_id: categoryId, enabled, limit, layout, banner_style });
   }
   return out;
 }
 
 /**
  * Resolves the ordered list of category section configurations against the live categories.
- * - Categories saved in `saved` keep their exact custom order, visibility, item limit, and layout
- *   (completely independent of the Categories page `sort_order`).
+ * - Categories saved in `saved` keep their exact custom order, visibility, item limit, layout,
+ *   and banner style (completely independent of the Categories page `sort_order`).
  * - Any newly created category not yet in `saved` is appended with defaults.
  */
 export function resolveHomeCategorySections(
   categories: Category[],
   saved: HomeCategorySectionConfig[],
   defaultLayout: HomeCategoryDisplayMode = "grid",
+  defaultBannerStyle: HomeCategoryBannerStyle = "soft",
 ): Array<HomeCategorySectionConfig & { category: Category }> {
   const byId = new Map(categories.map((c) => [c.id, c]));
   const seen = new Set<string>();
@@ -106,7 +113,13 @@ export function resolveHomeCategorySections(
     const category = byId.get(cfg.category_id);
     if (!category || seen.has(category.id)) continue;
     seen.add(category.id);
-    resolved.push({ ...cfg, category });
+    resolved.push({
+      ...cfg,
+      banner_style: isHomeCategoryBannerStyle(cfg.banner_style)
+        ? cfg.banner_style
+        : defaultBannerStyle,
+      category,
+    });
   }
 
   for (const category of categories) {
@@ -117,6 +130,7 @@ export function resolveHomeCategorySections(
       enabled: true,
       limit: 6,
       layout: defaultLayout,
+      banner_style: defaultBannerStyle,
       category,
     });
   }

@@ -161,6 +161,9 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
       : "soft",
     home_category_sections: normaliseHomeCategorySections(
       row.home_category_sections ?? meta.home_category_sections,
+      isHomeCategoryBannerStyle(row.home_category_banner_style ?? meta.home_category_banner_style)
+        ? ((row.home_category_banner_style ?? meta.home_category_banner_style) as SiteSettings["home_category_banner_style"])
+        : "soft",
     ),
     home_show_featured: flag(row.home_show_featured, true),
     home_show_filter: flag(row.home_show_filter, false),
