@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowRightIcon, BellIcon, BellOffIcon } from "lucide-react";
-import { Dialog, OverlayTriggerStateContext, type OverlayTriggerState } from "react-aria-components";
 import { Button, LinkButton } from "@/components/ui/button";
-import { Popover, PopoverTitle } from "@/components/ui/popover";
 import { groupNotifications } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "./notifications-provider";
@@ -14,24 +13,15 @@ import { NotificationRow } from "./notification-row";
  * The header bell, used unchanged by the storefront and the dashboard.
  *
  * The badge is the live unread count from the tab's single SSE connection; the popover
- * shows the newest notifications, a "Mark all read" shortcut and the link to the
- * dedicated page (`basePath`). A signed-out visitor has no provider above it, so the
- * bell simply renders nothing.
+ * shows the newest notifications (with order messages grouped by order), a "Mark all read"
+ * shortcut and the link to the dedicated page (`basePath`). A signed-out visitor has no
+ * provider above it, so the bell simply renders nothing.
  *
- * It is a **non-modal** popover (`isNonModal`): no dimming underlay, no page-wide
- * `inert` – clicking anywhere outside closes it while the page behind stays usable.
- *
- * The open state is owned here rather than by a `DialogTrigger`/`Popover` pair:
- *
- *   - the bell is a plain button whose press toggles – one press, one change;
- *   - a press anywhere outside the box closes it, Escape closes it, and the
- *     close requests React Aria makes on its own (it treats the focus moving as
- *     "focus left the popover") are ignored.
- *
- * A controlled DialogTrigger used to close on the pointer-down of the second click
- * – the press on the trigger itself – and the trigger's own press then reopened
- * the box, so the bell appeared not to toggle at all. With the state here that
- * cannot happen: only the handlers above change it.
+ * Rendered via `createPortal(..., document.body)` with `position: fixed` anchored to
+ * `triggerRef.current.getBoundingClientRect()`. Unlike React Aria's `useOverlayPosition`
+ * (which imperatively writes document-scroll `top` coordinates onto `element.style`),
+ * viewport-fixed coordinates keep the panel pinned directly beneath the sticky header
+ * bell at any scroll depth, during chat-box scrolling, and when expanding message threads.
  */
 export function NotificationBell({ basePath, className }: { basePath: string; className?: string }) {
   const notifications = useNotifications();
@@ -40,20 +30,17 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
   const triggerRef = useRef<HTMLButtonElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // Every way the box closes lives here – a press anywhere outside it (but not on the
-  // bell, which toggles) and Escape. React Aria also asks to close when focus leaves
-  // the popover, which is exactly what pressing the bell does; letting it through is
-  // what made the bell close and instantly reopen on the same click.
+  const updatePosition = useCallback(() => {
+    const btn = triggerRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const top = Math.max(8, Math.round(rect.bottom + 8));
+    const right = Math.max(8, Math.round(window.innerWidth - rect.right));
+    setPos((prev) => (prev.top === top && prev.right === right ? prev : { top, right }));
+  }, []);
+
   useEffect(() => {
     if (!open) return;
-    const updatePosition = () => {
-      const btn = triggerRef.current;
-      if (!btn) return;
-      const rect = btn.getBoundingClientRect();
-      const top = Math.max(8, Math.round(rect.bottom + 8));
-      const right = Math.max(8, Math.round(window.innerWidth - rect.right));
-      setPos((prev) => (prev.top === top && prev.right === right ? prev : { top, right }));
-    };
     updatePosition();
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
@@ -66,34 +53,25 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
     window.addEventListener("scroll", updatePosition, { capture: true, passive: true });
     window.addEventListener("resize", updatePosition, { passive: true });
     document.addEventListener("pointerdown", onPointerDown, true);
-    document.addEventListener("keydown", onKeyDown, true); // capture: the dialog stops Escape from bubbling
+    document.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("scroll", updatePosition, true);
       window.removeEventListener("resize", updatePosition);
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [open]);
+  }, [open, updatePosition]);
+
+  const items = notifications?.items ?? [];
+  const groups = useMemo(() => groupNotifications(items).slice(0, 6), [items]);
 
   if (!notifications) return null;
 
-  const { items, unread, live, markAllRead, markRead } = notifications;
-  const groups = useMemo(() => groupNotifications(items).slice(0, 6), [items]);
+  const { unread, live, markAllRead, markRead } = notifications;
   const label = unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
 
-  // What the dialog reads for its Escape key / closing behaviour.
-  const state: OverlayTriggerState = {
-    isOpen: open,
-    open: () => setOpen(true),
-    close: () => setOpen(false),
-    toggle: () => setOpen((value) => !value),
-    setOpen,
-    point: null,
-    setPoint: () => {},
-  };
-
   return (
-    <OverlayTriggerStateContext.Provider value={state}>
+    <>
       <Button
         ref={triggerRef}
         variant="ghost"
@@ -103,14 +81,7 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
         aria-haspopup="dialog"
         aria-expanded={open}
         onPress={() => {
-          const btn = triggerRef.current;
-          if (btn) {
-            const rect = btn.getBoundingClientRect();
-            setPos({
-              top: Math.max(8, Math.round(rect.bottom + 8)),
-              right: Math.max(8, Math.round(window.innerWidth - rect.right)),
-            });
-          }
+          updatePosition();
           setOpen((value) => !value);
         }}
         data-testid="notification-bell"
@@ -128,84 +99,82 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
         )}
       </Button>
 
-      <Popover
-        triggerRef={triggerRef}
-        isOpen={open}
-        // `isOpen` is the only source of truth; closes are handled above, never here.
-        onOpenChange={(next) => {
-          if (next) setOpen(true);
-        }}
-        placement="bottom end"
-        offset={8}
-        isNonModal
-        style={{
-          position: "fixed",
-          top: pos.top,
-          right: pos.right,
-          left: "auto",
-          bottom: "auto",
-        }}
-        className="!fixed w-[min(92vw,400px)] gap-0 overflow-hidden p-0"
-      >
-        <Dialog ref={boxRef} className="flex flex-col outline-none" data-testid="notification-popover">
-          <div className="flex items-center gap-2 border-b px-4 py-3">
-            <PopoverTitle className="text-sm font-semibold">Notifications</PopoverTitle>
-            <span
-              className={cn("size-1.5 rounded-full", live ? "bg-emerald-500" : "bg-muted-foreground/40")}
-              role="status"
-              aria-label={live ? "Live updates on" : "Reconnecting"}
-              title={live ? "Live updates on" : "Reconnecting…"}
-              data-testid="notification-live"
-              data-live={live ? "true" : "false"}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-7 px-2 text-xs"
-              onPress={() => void markAllRead()}
-              isDisabled={unread === 0}
-              data-testid="notification-mark-all"
-            >
-              Mark all read
-            </Button>
-          </div>
-
-          {items.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 px-6 py-10 text-center" data-testid="notification-empty">
-              <span className="grid size-11 place-items-center rounded-full bg-muted text-muted-foreground">
-                <BellOffIcon className="size-5" />
-              </span>
-              <p className="text-sm font-medium">You&apos;re all caught up</p>
-              <p className="text-xs text-muted-foreground">Order updates and messages will show up here.</p>
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={boxRef}
+            role="dialog"
+            aria-label="Notifications"
+            data-slot="popover-content"
+            data-testid="notification-popover"
+            style={{
+              position: "fixed",
+              top: `${pos.top}px`,
+              right: `${pos.right}px`,
+              zIndex: 50,
+            }}
+            className="flex w-[min(92vw,400px)] flex-col overflow-hidden rounded-xl bg-popover text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/10 outline-none animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-100"
+          >
+            <div className="flex items-center gap-2 border-b px-4 py-3">
+              <h2 className="text-sm font-semibold">Notifications</h2>
+              <span
+                className={cn("size-1.5 rounded-full", live ? "bg-emerald-500" : "bg-muted-foreground/40")}
+                role="status"
+                aria-label={live ? "Live updates on" : "Reconnecting"}
+                title={live ? "Live updates on" : "Reconnecting…"}
+                data-testid="notification-live"
+                data-live={live ? "true" : "false"}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto h-7 px-2 text-xs"
+                onPress={() => void markAllRead()}
+                isDisabled={unread === 0}
+                data-testid="notification-mark-all"
+              >
+                Mark all read
+              </Button>
             </div>
-          ) : (
-            <ul className="scrollbar-hidden max-h-[min(62vh,440px)] divide-y overflow-y-auto overscroll-contain">
-              {groups.map((group) => (
-                <NotificationRow
-                  key={group.key}
-                  notification={group.latest}
-                  groupItems={group.items}
-                  compact
-                  onMarkGroupRead={(ids) => {
-                    void markRead(ids);
-                  }}
-                  onOpen={(ids) => {
-                    void markRead(ids);
-                    setOpen(false); // navigating away – do not leave the popover hanging over the next page
-                  }}
-                />
-              ))}
-            </ul>
-          )}
 
-          <div className="border-t p-2">
-            <LinkButton href={basePath} variant="ghost" className="w-full justify-between" onClick={() => setOpen(false)} data-testid="notification-view-all">
-              View all notifications
-              <ArrowRightIcon className="size-4" />
-            </LinkButton>
-          </div>
-        </Dialog>
-      </Popover>
-    </OverlayTriggerStateContext.Provider>
+            {items.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 px-6 py-10 text-center" data-testid="notification-empty">
+                <span className="grid size-11 place-items-center rounded-full bg-muted text-muted-foreground">
+                  <BellOffIcon className="size-5" />
+                </span>
+                <p className="text-sm font-medium">You&apos;re all caught up</p>
+                <p className="text-xs text-muted-foreground">Order updates and messages will show up here.</p>
+              </div>
+            ) : (
+              <ul className="scrollbar-hidden max-h-[min(62vh,440px)] divide-y overflow-y-auto overscroll-contain">
+                {groups.map((group) => (
+                  <NotificationRow
+                    key={group.key}
+                    notification={group.latest}
+                    groupItems={group.items}
+                    compact
+                    onMarkGroupRead={(ids) => {
+                      void markRead(ids);
+                    }}
+                    onOpen={(ids) => {
+                      void markRead(ids);
+                      setOpen(false); // navigating away – do not leave the popover hanging over the next page
+                    }}
+                  />
+                ))}
+              </ul>
+            )}
+
+            <div className="border-t p-2">
+              <LinkButton href={basePath} variant="ghost" className="w-full justify-between" onClick={() => setOpen(false)} data-testid="notification-view-all">
+                View all notifications
+                <ArrowRightIcon className="size-4" />
+              </LinkButton>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

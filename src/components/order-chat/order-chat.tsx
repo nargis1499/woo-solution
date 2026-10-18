@@ -152,7 +152,12 @@ export function OrderChat({
   }, []);
 
   /** Catch-up sync (used on SSE open/reconnect, tab focus, and multi-isolate edge fallback). */
+  const syncInFlight = useRef(false);
+  const liveRef = useRef(false);
+
   const syncThread = useCallback(async () => {
+    if (syncInFlight.current) return;
+    syncInFlight.current = true;
     try {
       const response = await fetch(`/api/orders/${orderId}/chat?sync=1`, { cache: "no-store" });
       if (!response.ok) return;
@@ -163,14 +168,16 @@ export function OrderChat({
       }
     } catch {
       // keep existing state until next tick
+    } finally {
+      syncInFlight.current = false;
     }
   }, [orderId, mergeMessages]);
 
   useEffect(() => {
     const source = new EventSource(`/api/orders/${orderId}/chat/stream${since.current ? `?since=${encodeURIComponent(since.current)}` : ""}`);
     source.addEventListener("open", () => {
+      liveRef.current = true;
       setLive(true);
-      void syncThread();
     });
     source.addEventListener("message", (event) => {
       let incoming: OrderMessage;
@@ -207,8 +214,14 @@ export function OrderChat({
         // keep the previous state
       }
     });
-    source.addEventListener("error", () => setLive(false));
-    const poll = setInterval(() => void syncThread(), 2500);
+    source.addEventListener("error", () => {
+      liveRef.current = false;
+      setLive(false);
+    });
+    // Fallback poll only when the SSE stream is disconnected / reconnecting.
+    const poll = setInterval(() => {
+      if (!liveRef.current) void syncThread();
+    }, 4000);
     const onFocus = () => void syncThread();
     window.addEventListener("focus", onFocus);
     return () => {
