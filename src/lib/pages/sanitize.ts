@@ -40,6 +40,13 @@ const OPTIONS: sanitizeHtml.IOptions = {
   },
   allowedStyles: {
     "*": { "text-align": TEXT_ALIGN },
+    img: {
+      width: [/^\d{1,5}px$/, /^100%$/],
+      height: [/^\d{1,5}px$/, /^auto$/],
+      "max-width": [/^\d{1,5}px$/, /^100%$/],
+      "max-height": [/^\d{1,5}px$/],
+      "object-fit": [/^cover$/, /^contain$/],
+    },
   },
   allowedSchemes: ["http", "https", "mailto", "tel"],
   allowedSchemesByTag: { img: ["http", "https"] },

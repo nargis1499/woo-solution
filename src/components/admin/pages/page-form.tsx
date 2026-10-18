@@ -216,6 +216,27 @@ function PageFields({
             </FieldGroup>
           </CardContent>
         </Card>
+
+        <SeoSettings
+          values={{
+            seo_title: v.seo_title ?? page?.seo_title ?? "",
+            seo_description: v.seo_description ?? page?.seo_description ?? "",
+            canonical_url: v.canonical_url ?? page?.canonical_url ?? "",
+            robots_index: v.robots_index ? v.robots_index !== "off" : (page?.robots_index ?? true),
+            robots_follow: v.robots_follow ? v.robots_follow !== "off" : (page?.robots_follow ?? true),
+            og_title: v.og_title ?? page?.og_title ?? "",
+            og_description: v.og_description ?? page?.og_description ?? "",
+          }}
+          errors={err}
+          pageTitle={title}
+          slug={slug}
+          contentHtml={content}
+          siteUrl={siteUrl}
+          storeName={storeName}
+          ogImage={page ? shareImage(page) : null}
+          hasFeaturedImage={featuredPicked}
+          defaultOpen={false}
+        />
       </div>
 
       {/* ── sidebar: publish + Block Settings / Page Meta inspector ─────────── */}
@@ -361,29 +382,6 @@ function PageFields({
               <TagInput id="tags" name="tags" suggestions={tagSuggestions} defaultValue={v.tags ? v.tags.split("\n") : (page?.tags ?? []).map((t) => t.name)} onChange={() => setDirty(true)} />
               <FieldError className="mt-2">{err.tags}</FieldError>
             </div>
-
-            <hr className="border-border/70" />
-
-            <SeoSettings
-              values={{
-                seo_title: v.seo_title ?? page?.seo_title ?? "",
-                seo_description: v.seo_description ?? page?.seo_description ?? "",
-                canonical_url: v.canonical_url ?? page?.canonical_url ?? "",
-                robots_index: v.robots_index ? v.robots_index !== "off" : (page?.robots_index ?? true),
-                robots_follow: v.robots_follow ? v.robots_follow !== "off" : (page?.robots_follow ?? true),
-                og_title: v.og_title ?? page?.og_title ?? "",
-                og_description: v.og_description ?? page?.og_description ?? "",
-              }}
-              errors={err}
-              pageTitle={title}
-              slug={slug}
-              contentHtml={content}
-              siteUrl={siteUrl}
-              storeName={storeName}
-              ogImage={page ? shareImage(page) : null}
-              hasFeaturedImage={featuredPicked}
-              defaultOpen={Boolean(err.seo_title || err.seo_description || err.canonical_url || err.og_title || err.og_description || err.og_image_media_id)}
-            />
           </div>
         </div>
       </aside>

@@ -61,7 +61,7 @@ export function PageArticle({ page, className }: { page: Page; className?: strin
             width={media?.width ?? undefined}
             height={media?.height ?? undefined}
             referrerPolicy={media ? undefined : "no-referrer"}
-            className="h-auto w-full rounded-2xl object-cover shadow-sm"
+            className="max-h-[600px] w-full rounded-2xl object-cover shadow-sm"
             fetchPriority="high"
             data-testid="page-featured-image"
           />

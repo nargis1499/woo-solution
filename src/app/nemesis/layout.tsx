@@ -66,7 +66,7 @@ async function AdminGate({ children }: { children: ReactNode }) {
               <NotificationBellGate basePath="/nemesis/notifications" />
             </Suspense>
           } />
-          <div className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">{children}</div>
+          <div className="w-full flex-1 px-3 py-4 md:px-5 md:py-5">{children}</div>
         </SidebarInset>
       </SidebarProvider>
     </MoneyProvider>

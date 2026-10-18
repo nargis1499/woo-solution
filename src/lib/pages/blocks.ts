@@ -17,7 +17,6 @@ export type BlockType =
   | "callout"
   | "image"
   | "cta"
-  | "code"
   | "list"
   | "quote"
   | "divider";
@@ -26,7 +25,7 @@ export type HeadingLevel = "h1" | "h2" | "h3" | "h4";
 export type TextAlign = "left" | "center" | "right";
 export type ParagraphVariant = "normal" | "lead" | "muted";
 export type CalloutTone = "info" | "success" | "warning" | "danger";
-export type ImageLayout = "full" | "wide" | "standard";
+export type ImageLayout = "wide" | "full" | "custom";
 export type CtaVariant = "primary" | "secondary" | "outline";
 export type ListStyle = "bullet" | "ordered";
 export type DividerStyle = "solid" | "dashed" | "dots";
@@ -50,7 +49,8 @@ export type PageBlock = {
   alt?: string;
   caption?: string;
   imageLayout?: ImageLayout;
-  overlayTitle?: string;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   // CTA Button
   ctaHeading?: string;
   ctaSubtext?: string;
@@ -58,10 +58,6 @@ export type PageBlock = {
   buttonHref?: string;
   buttonVariant?: CtaVariant;
   newTab?: boolean;
-  // Code Snippet
-  language?: string;
-  filename?: string;
-  code?: string;
   // List
   listStyle?: ListStyle;
   items?: string[];
@@ -116,13 +112,6 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
     keywords: ["cta", "button", "link", "action", "banner"],
   },
   {
-    type: "code",
-    label: "Code Snippet",
-    description: "Formatted code block with syntax label",
-    badge: "</>",
-    keywords: ["code", "snippet", "pre", "syntax", "terminal", "json", "tsx"],
-  },
-  {
     type: "list",
     label: "Bullet / Numbered List",
     description: "Structured bulleted or numbered list items",
@@ -167,8 +156,9 @@ export function createBlock(type: BlockType, id: string, overrides?: Partial<Pag
         mediaId: null,
         alt: "",
         caption: "",
-        imageLayout: "full",
-        overlayTitle: "",
+        imageLayout: "wide",
+        imageWidth: 800,
+        imageHeight: 450,
         ...overrides,
       };
     case "cta":
@@ -181,14 +171,6 @@ export function createBlock(type: BlockType, id: string, overrides?: Partial<Pag
         buttonVariant: "primary",
         align: "left",
         newTab: false,
-        ...overrides,
-      };
-    case "code":
-      return {
-        ...base,
-        language: "tsx",
-        filename: "",
-        code: "",
         ...overrides,
       };
     case "list":
@@ -216,16 +198,7 @@ export function createBlock(type: BlockType, id: string, overrides?: Partial<Pag
 }
 
 export function defaultInitialBlocks(): PageBlock[] {
-  return [
-    createBlock("heading", "b-1", {
-      level: "h1",
-      html: "",
-    }),
-    createBlock("paragraph", "b-2", {
-      variant: "normal",
-      html: "",
-    }),
-  ];
+  return [];
 }
 
 function escapeAttr(value: string): string {
@@ -260,8 +233,6 @@ export function isBlockEmpty(block: PageBlock): boolean {
       return !(block.src ?? "").trim();
     case "cta":
       return !(block.buttonText ?? "").trim() && !(block.ctaHeading ?? "").trim();
-    case "code":
-      return !(block.code ?? "").trim();
     case "list":
       return !(block.items ?? []).some((item) => stripTags(item) !== "");
     case "divider":
@@ -305,14 +276,34 @@ export function blocksToHtml(blocks: PageBlock[]): string {
           return `<div class="page-block-callout page-callout-${escapeAttr(tone)}" data-block-id="${escapeAttr(block.id)}" data-block-type="callout" data-block-json="${meta}">${titleHtml}<div class="page-callout-body">${block.html ?? ""}</div></div>`;
         }
         case "image": {
-          const layout = block.imageLayout ?? "full";
+          const rawLayout = block.imageLayout;
+          const layout: ImageLayout =
+            rawLayout === "custom" || rawLayout === "full" || rawLayout === "wide"
+              ? rawLayout
+              : "wide";
           const mediaAttr = block.mediaId ? ` data-media-id="${escapeAttr(block.mediaId)}"` : "";
           const alt = escapeAttr(block.alt ?? "");
           const src = escapeAttr(block.src ?? "");
+          const w =
+            layout === "custom" && block.imageWidth && block.imageWidth > 0
+              ? Math.round(block.imageWidth)
+              : null;
+          const h =
+            layout === "custom" && block.imageHeight && block.imageHeight > 0
+              ? Math.round(block.imageHeight)
+              : null;
+          const dimAttrs = `${w ? ` width="${w}"` : ""}${h ? ` height="${h}"` : ""}`;
+          const styleParts: string[] = [];
+          if (layout === "custom") {
+            if (w) styleParts.push(`width: ${w}px`);
+            if (h) styleParts.push(`height: ${h}px`);
+            styleParts.push("object-fit: cover");
+          }
+          const imgStyle = styleParts.length ? ` style="${styleParts.join("; ")}"` : "";
           const captionHtml = block.caption?.trim()
             ? `<figcaption>${escapeHtml(block.caption.trim())}</figcaption>`
             : "";
-          return `<figure class="page-block-image page-image-${escapeAttr(layout)}" data-block-id="${escapeAttr(block.id)}" data-block-type="image" data-block-json="${meta}"><img src="${src}" alt="${alt}"${mediaAttr} loading="lazy" />${captionHtml}</figure>`;
+          return `<figure class="page-block-image page-image-${escapeAttr(layout)}" data-block-id="${escapeAttr(block.id)}" data-block-type="image" data-block-json="${meta}"><img src="${src}" alt="${alt}"${mediaAttr}${dimAttrs}${imgStyle} loading="lazy" />${captionHtml}</figure>`;
         }
         case "cta": {
           const variant = block.buttonVariant ?? "primary";
@@ -326,13 +317,6 @@ export function blocksToHtml(blocks: PageBlock[]): string {
           const href = escapeAttr(block.buttonHref?.trim() || "#");
           const label = escapeHtml(block.buttonText?.trim() || "Learn more");
           return `<div class="page-block-cta page-cta-${escapeAttr(variant)}" data-block-id="${escapeAttr(block.id)}" data-block-type="cta" data-block-json="${meta}"${alignStyle}>${headingHtml}${subtextHtml}<p class="page-cta-action"><a href="${href}" class="page-cta-button page-cta-button-${escapeAttr(variant)}"${targetAttr}>${label}</a></p></div>`;
-        }
-        case "code": {
-          const lang = block.language || "tsx";
-          const headerHtml = block.filename?.trim()
-            ? `<div class="page-code-header"><span>${escapeHtml(block.filename.trim())}</span><span>${escapeHtml(lang)}</span></div>`
-            : `<div class="page-code-header"><span>${escapeHtml(lang)}</span></div>`;
-          return `<div class="page-block-code" data-block-id="${escapeAttr(block.id)}" data-block-type="code" data-block-json="${meta}">${headerHtml}<pre><code class="language-${escapeAttr(lang)}">${escapeHtml(block.code ?? "")}</code></pre></div>`;
         }
         case "list": {
           const tag = block.listStyle === "ordered" ? "ol" : "ul";
@@ -372,13 +356,17 @@ function unescapeAttr(raw: string): string {
 export function htmlToBlocks(html: string): PageBlock[] {
   if (!html || !html.trim()) return defaultInitialBlocks();
 
+  const validTypes = new Set<string>(BLOCK_DEFINITIONS.map((d) => d.type));
   const parsed: PageBlock[] = [];
   const jsonAttrRe = /data-block-json="([^"]+)"/g;
   let match: RegExpExecArray | null;
   while ((match = jsonAttrRe.exec(html)) !== null) {
     try {
       const obj = JSON.parse(unescapeAttr(match[1])) as PageBlock;
-      if (obj && typeof obj === "object" && obj.type && obj.id) {
+      if (obj && typeof obj === "object" && obj.type && obj.id && validTypes.has(obj.type)) {
+        if (obj.type === "image" && (obj.imageLayout as string) === "standard") {
+          obj.imageLayout = "custom";
+        }
         parsed.push(obj);
       }
     } catch {
@@ -418,8 +406,6 @@ export function htmlToBlocks(html: string): PageBlock[] {
           }
         } else if (tag === "blockquote") {
           parsed.push(createBlock("quote", id, { html: el.innerHTML }));
-        } else if (tag === "pre") {
-          parsed.push(createBlock("code", id, { code: el.textContent ?? "" }));
         } else if (tag === "ul" || tag === "ol") {
           const items = Array.from(el.querySelectorAll(":scope > li")).map((li) => li.innerHTML);
           parsed.push(
