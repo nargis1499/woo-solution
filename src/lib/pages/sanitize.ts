@@ -104,11 +104,11 @@ export function mediaIdsFromHtml(html: string): string[] {
   return [...ids];
 }
 
-/** True when the content has no visible text, image, table, divider or product block (an empty editor). */
+/** True when the content has no visible text, image, table, divider or product/layout block (an empty editor). */
 export function isBlankHtml(html: string): boolean {
   return (
     !/<(img|hr|table|iframe)\b/i.test(html) &&
-    !/data-block-type="simple_product"/i.test(html) &&
+    !/data-block-type="(?:simple_product|layout)"/i.test(html) &&
     sanitizeHtml(html, { allowedTags: [], allowedAttributes: {} }).replace(/&nbsp;|\s/g, "") === ""
   );
 }

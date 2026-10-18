@@ -24,6 +24,7 @@ import {
   FolderOpenIcon,
   ImageIcon,
   ItalicIcon,
+  LayoutGridIcon,
   Link2Icon,
   Link2OffIcon,
   ListIcon,
@@ -48,12 +49,15 @@ import {
   blocksToHtml,
   createBlock,
   htmlToBlocks,
+  normalizeLayoutCells,
   type BlockType,
   type CalloutTone,
   type CtaVariant,
   type DividerStyle,
   type HeadingLevel,
   type ImageLayout,
+  type LayoutGap,
+  type LayoutValign,
   type ListStyle,
   type PageBlock,
   type ParagraphVariant,
@@ -95,10 +99,17 @@ const TEXT_COLOR_SWATCHES = [
   { id: "slate", label: "Slate", value: "#64748b" },
 ] as const;
 
+export type LayoutCellTarget = {
+  layoutId: string;
+  cellIndex: number;
+};
+
 export type BlockEditorController = {
   blocks: PageBlock[];
   activeBlockId: string;
   activeBlock: PageBlock | null;
+  activeParentLayoutId: string | null;
+  targetLayoutCell: LayoutCellTarget | null;
   setActiveBlockId: (id: string) => void;
   updateBlock: (id: string, patch: Partial<PageBlock>) => void;
   changeBlockType: (id: string, nextType: BlockType) => void;
@@ -106,11 +117,28 @@ export type BlockEditorController = {
   duplicateBlock: (id: string) => void;
   removeBlock: (id: string) => void;
   moveBlock: (id: string, dir: -1 | 1) => void;
-  openPicker: (afterId?: string | null, replaceBlockId?: string | null) => void;
+  openPicker: (
+    afterId?: string | null,
+    replaceBlockId?: string | null,
+    targetCell?: LayoutCellTarget | null,
+  ) => void;
   closePicker: () => void;
   pickerOpen: boolean;
   html: string;
 };
+
+function collectAllBlockIds(list: PageBlock[]): Set<string> {
+  const used = new Set<string>();
+  for (const b of list) {
+    used.add(b.id);
+    if (b.type === "layout" && b.layoutCells) {
+      for (const cell of b.layoutCells) {
+        for (const child of cell) used.add(child.id);
+      }
+    }
+  }
+  return used;
+}
 
 export function useBlockEditorState({
   initialHtml = "",
@@ -127,10 +155,11 @@ export function useBlockEditorState({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [insertAfterId, setInsertAfterId] = useState<string | null>(null);
   const [replaceId, setReplaceId] = useState<string | null>(null);
+  const [targetLayoutCell, setTargetLayoutCell] = useState<LayoutCellTarget | null>(null);
 
   const nextId = useCallback((list: PageBlock[]) => {
-    const used = new Set(list.map((b) => b.id));
-    let n = list.length + 1;
+    const used = collectAllBlockIds(list);
+    let n = used.size + 1;
     while (used.has(`b-${n}`)) n++;
     return `b-${n}`;
   }, []);
@@ -149,7 +178,33 @@ export function useBlockEditorState({
 
   const updateBlock = useCallback(
     (id: string, patch: Partial<PageBlock>) => {
-      commit((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+      commit((prev) =>
+        prev.map((b) => {
+          if (b.id === id) {
+            const updated = { ...b, ...patch };
+            if (updated.type === "layout") {
+              const rows = Math.max(1, Math.min(12, updated.layoutRows ?? 1));
+              const cols = Math.max(1, Math.min(6, updated.layoutCols ?? 2));
+              updated.layoutRows = rows;
+              updated.layoutCols = cols;
+              updated.layoutCells = normalizeLayoutCells(rows, cols, updated.layoutCells);
+            }
+            return updated;
+          }
+          if (b.type === "layout" && b.layoutCells) {
+            let changed = false;
+            const nextCells = b.layoutCells.map((cell) =>
+              cell.map((child) => {
+                if (child.id !== id) return child;
+                changed = true;
+                return { ...child, ...patch };
+              }),
+            );
+            return changed ? { ...b, layoutCells: nextCells } : b;
+          }
+          return b;
+        }),
+      );
     },
     [commit],
   );
@@ -158,12 +213,28 @@ export function useBlockEditorState({
     (id: string, nextType: BlockType) => {
       commit((prev) =>
         prev.map((b) => {
-          if (b.id !== id) return b;
-          const preservedHtml = b.html ?? "";
-          return createBlock(nextType, b.id, {
-            html: preservedHtml,
-            align: b.align ?? "left",
-          });
+          if (b.id === id) {
+            const preservedHtml = b.html ?? "";
+            return createBlock(nextType, b.id, {
+              html: preservedHtml,
+              align: b.align ?? "left",
+            });
+          }
+          if (b.type === "layout" && b.layoutCells && nextType !== "layout") {
+            let changed = false;
+            const nextCells = b.layoutCells.map((cell) =>
+              cell.map((child) => {
+                if (child.id !== id) return child;
+                changed = true;
+                return createBlock(nextType, child.id, {
+                  html: child.html ?? "",
+                  align: child.align ?? "left",
+                });
+              }),
+            );
+            return changed ? { ...b, layoutCells: nextCells } : b;
+          }
+          return b;
         }),
       );
       setActiveBlockId(id);
@@ -175,6 +246,43 @@ export function useBlockEditorState({
     (type: BlockType, afterId?: string | null): PageBlock => {
       let created: PageBlock | null = null;
       commit((prev) => {
+        const id = nextId(prev);
+
+        // 1. Inserting or replacing inside a Layout cell
+        if (targetLayoutCell && type !== "layout") {
+          return prev.map((b) => {
+            if (b.id !== targetLayoutCell.layoutId || b.type !== "layout") return b;
+            const rows = Math.max(1, Math.min(12, b.layoutRows ?? 1));
+            const cols = Math.max(1, Math.min(6, b.layoutCols ?? 2));
+            const cells = normalizeLayoutCells(rows, cols, b.layoutCells);
+            const cellIdx = Math.max(0, Math.min(cells.length - 1, targetLayoutCell.cellIndex));
+            const currentCell = [...cells[cellIdx]];
+
+            if (replaceId) {
+              const rIdx = currentCell.findIndex((c) => c.id === replaceId);
+              if (rIdx !== -1) {
+                created = createBlock(type, replaceId);
+                currentCell[rIdx] = created;
+                cells[cellIdx] = currentCell;
+                return { ...b, layoutCells: cells };
+              }
+            }
+
+            created = createBlock(type, id);
+            const targetAfter = afterId ?? insertAfterId;
+            if (!targetAfter) {
+              currentCell.push(created);
+            } else {
+              const aIdx = currentCell.findIndex((c) => c.id === targetAfter);
+              if (aIdx === -1) currentCell.push(created);
+              else currentCell.splice(aIdx + 1, 0, created);
+            }
+            cells[cellIdx] = currentCell;
+            return { ...b, layoutCells: cells };
+          });
+        }
+
+        // 2. Replacing a top-level block
         if (replaceId) {
           const target = prev.find((b) => b.id === replaceId);
           if (target) {
@@ -182,7 +290,33 @@ export function useBlockEditorState({
             return prev.map((b) => (b.id === replaceId ? created! : b));
           }
         }
-        const id = nextId(prev);
+
+        // 3. If `afterId` is inside a layout cell, insert right after it inside that cell
+        if (afterId && type !== "layout") {
+          for (const b of prev) {
+            if (b.type === "layout" && b.layoutCells) {
+              const cellIdx = b.layoutCells.findIndex((cell) =>
+                cell.some((child) => child.id === afterId),
+              );
+              if (cellIdx !== -1) {
+                created = createBlock(type, id);
+                return prev.map((lb) => {
+                  if (lb.id !== b.id || !lb.layoutCells) return lb;
+                  const nextCells = lb.layoutCells.map((c, idx) => {
+                    if (idx !== cellIdx) return c;
+                    const copy = [...c];
+                    const pos = copy.findIndex((item) => item.id === afterId);
+                    copy.splice(pos + 1, 0, created!);
+                    return copy;
+                  });
+                  return { ...lb, layoutCells: nextCells };
+                });
+              }
+            }
+          }
+        }
+
+        // 4. Standard top-level block insertion
         created = createBlock(type, id);
         const targetAfter = afterId ?? insertAfterId;
         if (!targetAfter) return [...prev, created];
@@ -197,6 +331,7 @@ export function useBlockEditorState({
       setPickerOpen(false);
       setInsertAfterId(null);
       setReplaceId(null);
+      setTargetLayoutCell(null);
       setTimeout(() => {
         const el = document.querySelector<HTMLElement>(
           `[data-block-editor-item="${finalBlock.id}"] [data-block-focusable="true"]`,
@@ -205,23 +340,44 @@ export function useBlockEditorState({
       }, 30);
       return finalBlock;
     },
-    [commit, insertAfterId, nextId, replaceId],
+    [commit, insertAfterId, nextId, replaceId, targetLayoutCell],
   );
 
   const duplicateBlock = useCallback(
     (id: string) => {
       let dupId = "";
       commit((prev) => {
-        const idx = prev.findIndex((b) => b.id === id);
-        if (idx === -1) return prev;
         dupId = nextId(prev);
-        const clone: PageBlock = {
-          ...structuredClone(prev[idx]),
-          id: dupId,
-        };
-        const copy = [...prev];
-        copy.splice(idx + 1, 0, clone);
-        return copy;
+        const topIdx = prev.findIndex((b) => b.id === id);
+        if (topIdx !== -1) {
+          const clone: PageBlock = {
+            ...structuredClone(prev[topIdx]),
+            id: dupId,
+          };
+          if (clone.type === "layout" && clone.layoutCells) {
+            let subCounter = 1;
+            clone.layoutCells = clone.layoutCells.map((cell) =>
+              cell.map((child) => ({ ...structuredClone(child), id: `${dupId}-c${subCounter++}` })),
+            );
+          }
+          const copy = [...prev];
+          copy.splice(topIdx + 1, 0, clone);
+          return copy;
+        }
+
+        // Check inside layout cells
+        return prev.map((b) => {
+          if (b.type !== "layout" || !b.layoutCells) return b;
+          const nextCells = b.layoutCells.map((cell) => {
+            const cIdx = cell.findIndex((child) => child.id === id);
+            if (cIdx === -1) return cell;
+            const clone: PageBlock = { ...structuredClone(cell[cIdx]), id: dupId };
+            const copy = [...cell];
+            copy.splice(cIdx + 1, 0, clone);
+            return copy;
+          });
+          return { ...b, layoutCells: nextCells };
+        });
       });
       if (dupId) setActiveBlockId(dupId);
     },
@@ -231,15 +387,33 @@ export function useBlockEditorState({
   const removeBlock = useCallback(
     (id: string) => {
       commit((prev) => {
-        if (prev.length <= 1) {
-          setActiveBlockId("");
-          return [];
+        const topIdx = prev.findIndex((b) => b.id === id);
+        if (topIdx !== -1) {
+          if (prev.length <= 1) {
+            setActiveBlockId("");
+            return [];
+          }
+          const next = prev.filter((b) => b.id !== id);
+          const nextActive = next[Math.max(0, topIdx - 1)]?.id ?? next[0]?.id ?? "";
+          setActiveBlockId(nextActive);
+          return next;
         }
-        const idx = prev.findIndex((b) => b.id === id);
-        const next = prev.filter((b) => b.id !== id);
-        const nextActive = next[Math.max(0, idx - 1)]?.id ?? next[0]?.id ?? "";
-        setActiveBlockId(nextActive);
-        return next;
+
+        // Remove from inside a layout cell
+        return prev.map((b) => {
+          if (b.type !== "layout" || !b.layoutCells) return b;
+          let foundInLayout = false;
+          const nextCells = b.layoutCells.map((cell) => {
+            if (!cell.some((child) => child.id === id)) return cell;
+            foundInLayout = true;
+            return cell.filter((child) => child.id !== id);
+          });
+          if (foundInLayout) {
+            setActiveBlockId(b.id);
+            return { ...b, layoutCells: nextCells };
+          }
+          return b;
+        });
       });
     },
     [commit],
@@ -249,33 +423,68 @@ export function useBlockEditorState({
     (id: string, dir: -1 | 1) => {
       commit((prev) => {
         const idx = prev.findIndex((b) => b.id === id);
-        const target = idx + dir;
-        if (idx === -1 || target < 0 || target >= prev.length) return prev;
-        const copy = [...prev];
-        const [item] = copy.splice(idx, 1);
-        copy.splice(target, 0, item);
-        return copy;
+        if (idx !== -1) {
+          const target = idx + dir;
+          if (target < 0 || target >= prev.length) return prev;
+          const copy = [...prev];
+          const [item] = copy.splice(idx, 1);
+          copy.splice(target, 0, item);
+          return copy;
+        }
+
+        // Move inside a layout cell
+        return prev.map((b) => {
+          if (b.type !== "layout" || !b.layoutCells) return b;
+          const nextCells = b.layoutCells.map((cell) => {
+            const cIdx = cell.findIndex((child) => child.id === id);
+            const target = cIdx + dir;
+            if (cIdx === -1 || target < 0 || target >= cell.length) return cell;
+            const copy = [...cell];
+            const [item] = copy.splice(cIdx, 1);
+            copy.splice(target, 0, item);
+            return copy;
+          });
+          return { ...b, layoutCells: nextCells };
+        });
       });
     },
     [commit],
   );
 
-  const openPicker = useCallback((afterId?: string | null, replaceBlockId?: string | null) => {
-    setInsertAfterId(afterId ?? null);
-    setReplaceId(replaceBlockId ?? null);
-    setPickerOpen(true);
-  }, []);
+  const openPicker = useCallback(
+    (
+      afterId?: string | null,
+      replaceBlockId?: string | null,
+      targetCell?: LayoutCellTarget | null,
+    ) => {
+      setInsertAfterId(afterId ?? null);
+      setReplaceId(replaceBlockId ?? null);
+      setTargetLayoutCell(targetCell ?? null);
+      setPickerOpen(true);
+    },
+    [],
+  );
 
   const closePicker = useCallback(() => {
     setPickerOpen(false);
     setInsertAfterId(null);
     setReplaceId(null);
+    setTargetLayoutCell(null);
   }, []);
 
-  const activeBlock = useMemo(
-    () => blocks.find((b) => b.id === activeBlockId) ?? blocks[0] ?? null,
-    [blocks, activeBlockId],
-  );
+  const { activeBlock, activeParentLayoutId } = useMemo(() => {
+    const top = blocks.find((b) => b.id === activeBlockId);
+    if (top) return { activeBlock: top, activeParentLayoutId: null };
+    for (const b of blocks) {
+      if (b.type === "layout" && b.layoutCells) {
+        for (const cell of b.layoutCells) {
+          const found = cell.find((child) => child.id === activeBlockId);
+          if (found) return { activeBlock: found, activeParentLayoutId: b.id };
+        }
+      }
+    }
+    return { activeBlock: blocks[0] ?? null, activeParentLayoutId: null };
+  }, [blocks, activeBlockId]);
 
   const html = useMemo(() => blocksToHtml(blocks), [blocks]);
 
@@ -283,6 +492,8 @@ export function useBlockEditorState({
     blocks,
     activeBlockId: activeBlock?.id ?? "",
     activeBlock,
+    activeParentLayoutId,
+    targetLayoutCell,
     setActiveBlockId,
     updateBlock,
     changeBlockType,
@@ -319,6 +530,12 @@ export function BlockTypeIcon({
   );
 
   switch (type) {
+    case "layout":
+      return (
+        <span className={boxClass}>
+          <LayoutGridIcon className="size-4" />
+        </span>
+      );
     case "heading":
       return <span className={boxClass}>H</span>;
     case "paragraph":
@@ -1138,476 +1355,21 @@ export function BlockEditorCanvas({
 
       {hasBlocks && (
         <div className="space-y-3.5">
-          {controller.blocks.map((block, index) => {
-            const isActive = block.id === controller.activeBlockId;
-            const def = BLOCK_DEFINITIONS.find((d) => d.type === block.type);
-
-            return (
-              <div
-                key={block.id}
-                data-block-editor-item={block.id}
-                data-testid={`block-item-${block.type}`}
-                onClick={() => controller.setActiveBlockId(block.id)}
-                className={cn(
-                  "group relative rounded-xl border px-5 py-4 transition-all",
-                  isActive
-                    ? "border-primary bg-card/90 ring-1 ring-primary/35 shadow-sm"
-                    : "border-border/60 bg-card/35 hover:border-border hover:bg-card/60",
-                )}
-              >
-                {/* Floating top-right block action bar on active / hover */}
-                <div
-                  className={cn(
-                    "absolute -top-3 right-3 z-10 flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-0.5 text-[11px] shadow-md transition-opacity",
-                    inlineToolbarVisible
-                      ? "pointer-events-none opacity-0"
-                      : isActive
-                        ? "opacity-100"
-                        : "opacity-0 group-hover:opacity-100",
-                  )}
-                >
-                  <span className="px-1.5 font-mono text-[10px] font-semibold tracking-wider text-primary uppercase">
-                    {block.type === "heading"
-                      ? (block.level ?? "h1").toUpperCase()
-                      : def?.label ?? block.type}
-                  </span>
-                  <span className="font-mono text-[10px] text-muted-foreground">{block.id}</span>
-                  <span className="mx-0.5 h-3 w-px bg-border" />
-                  {(block.type === "heading" ||
-                    block.type === "paragraph" ||
-                    block.type === "callout" ||
-                    block.type === "quote") && (
-                    <button
-                      type="button"
-                      title="Inline formatting toolbar"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        controller.setActiveBlockId(block.id);
-                        setPinnedToolbarBlockId((prev) => (prev === block.id ? null : block.id));
-                      }}
-                      className={cn(
-                        "inline-flex h-5 items-center gap-1 rounded px-1.5 text-[10px] font-semibold transition-colors hover:bg-accent",
-                        pinnedToolbarBlockId === block.id && "bg-primary/15 text-primary",
-                      )}
-                    >
-                      <TypeIcon className="size-3" /> Format
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    title="Move block up"
-                    disabled={index === 0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      controller.moveBlock(block.id, -1);
-                    }}
-                    className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
-                  >
-                    <ArrowUpIcon className="size-3" />
-                  </button>
-                  <button
-                    type="button"
-                    title="Move block down"
-                    disabled={index === controller.blocks.length - 1}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      controller.moveBlock(block.id, 1);
-                    }}
-                    className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
-                  >
-                    <ArrowDownIcon className="size-3" />
-                  </button>
-                  <button
-                    type="button"
-                    title="Duplicate block"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      controller.duplicateBlock(block.id);
-                    }}
-                    className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-                  >
-                    <CopyIcon className="size-3" />
-                  </button>
-                  <button
-                    type="button"
-                    title="Insert block below"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      controller.openPicker(block.id);
-                    }}
-                    className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-                  >
-                    <PlusIcon className="size-3" />
-                  </button>
-                  <button
-                    type="button"
-                    title="Delete block"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      controller.removeBlock(block.id);
-                    }}
-                    className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-                  >
-                    <Trash2Icon className="size-3" />
-                  </button>
-                </div>
-
-                {/* Heading Block (no placeholder text) */}
-                {block.type === "heading" && (
-                  <RichEditable
-                    html={block.html ?? ""}
-                    align={block.align ?? "left"}
-                    onFocus={() => controller.setActiveBlockId(block.id)}
-                    onChange={(html) => controller.updateBlock(block.id, { html })}
-                    onSlashCommand={() => controller.openPicker(null, block.id)}
-                    onEnterNewBlock={() => controller.addBlock("paragraph", block.id)}
-                    placeholder=""
-                    className={cn(
-                      "font-bold tracking-tight text-foreground",
-                      (block.level ?? "h1") === "h1" && "text-2xl sm:text-3xl",
-                      block.level === "h2" && "text-xl sm:text-2xl",
-                      block.level === "h3" && "text-lg sm:text-xl",
-                      block.level === "h4" && "text-base sm:text-lg",
-                    )}
-                  />
-                )}
-
-                {/* Paragraph Block (no placeholder text) */}
-                {block.type === "paragraph" && (
-                  <RichEditable
-                    html={block.html ?? ""}
-                    align={block.align ?? "left"}
-                    onFocus={() => controller.setActiveBlockId(block.id)}
-                    onChange={(html) => controller.updateBlock(block.id, { html })}
-                    onSlashCommand={() => controller.openPicker(null, block.id)}
-                    placeholder=""
-                    className={cn(
-                      "leading-relaxed",
-                      (block.variant ?? "normal") === "normal" &&
-                        "text-sm sm:text-base text-foreground/90",
-                      block.variant === "lead" && "text-base sm:text-lg font-medium text-foreground",
-                      block.variant === "muted" && "text-sm text-muted-foreground",
-                    )}
-                  />
-                )}
-
-                {block.type === "callout" && (
-                  <div
-                    className={cn(
-                      "rounded-xl border border-l-4 p-4",
-                      (block.tone ?? "info") === "info" &&
-                        "border-border border-l-primary bg-primary/[0.04]",
-                      block.tone === "success" &&
-                        "border-border border-l-emerald-500 bg-emerald-500/[0.04]",
-                      block.tone === "warning" &&
-                        "border-border border-l-amber-500 bg-amber-500/[0.04]",
-                      block.tone === "danger" &&
-                        "border-border border-l-rose-500 bg-rose-500/[0.04]",
-                    )}
-                  >
-                    <div className="mb-1.5 flex items-center gap-2">
-                      <AlertCircleIcon className="size-4 shrink-0 text-primary" />
-                      <input
-                        type="text"
-                        value={block.calloutTitle ?? ""}
-                        onFocus={() => controller.setActiveBlockId(block.id)}
-                        onChange={(e) =>
-                          controller.updateBlock(block.id, { calloutTitle: e.target.value })
-                        }
-                        placeholder="Callout title..."
-                        className="w-full bg-transparent text-sm font-semibold text-foreground outline-none placeholder:text-muted-foreground/60"
-                      />
-                    </div>
-                    <RichEditable
-                      html={block.html ?? ""}
-                      onFocus={() => controller.setActiveBlockId(block.id)}
-                      onChange={(html) => controller.updateBlock(block.id, { html })}
-                      placeholder="Highlight important information, announcements, or tips..."
-                      className="text-sm leading-relaxed text-muted-foreground"
-                    />
-                  </div>
-                )}
-
-                {block.type === "image" && (
-                  <div className="space-y-3">
-                    {block.src ? (
-                      <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
-                        <div
-                          className={cn(
-                            "relative flex p-2",
-                            (block.align ?? "center") === "left" && "justify-start",
-                            (block.align ?? "center") === "center" && "justify-center",
-                            (block.align ?? "center") === "right" && "justify-end",
-                          )}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={block.src}
-                            alt={block.alt ?? ""}
-                            style={{
-                              width:
-                                block.imageLayout === "custom" && block.imageWidth
-                                  ? `${block.imageWidth}px`
-                                  : block.imageLayout === "custom"
-                                    ? undefined
-                                    : "100%",
-                              height:
-                                block.imageLayout === "custom" && block.imageHeight
-                                  ? `${block.imageHeight}px`
-                                  : undefined,
-                              maxHeight: block.imageMaxHeight
-                                ? `${block.imageMaxHeight}px`
-                                : undefined,
-                              maxWidth: "100%",
-                              objectFit: "cover",
-                            }}
-                            className={cn(
-                              "block rounded-lg object-cover",
-                              (block.imageLayout ?? "full") === "full" && "w-full",
-                            )}
-                          />
-                          <div className="absolute right-4 bottom-4 flex items-center gap-1.5 rounded-lg border border-border/80 bg-background/90 p-1 shadow-md backdrop-blur-sm">
-                            <button
-                              type="button"
-                              onClick={() => setMediaPickerBlockId(block.id)}
-                              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium hover:bg-accent"
-                            >
-                              <FolderOpenIcon className="size-3.5" /> Replace
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                controller.updateBlock(block.id, { src: "", mediaId: null })
-                              }
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                        <div className="border-t border-border/60 px-3.5 py-2">
-                          <input
-                            type="text"
-                            value={block.caption ?? ""}
-                            style={{ textAlign: block.align ?? "center" }}
-                            onChange={(e) =>
-                              controller.updateBlock(block.id, { caption: e.target.value })
-                            }
-                            placeholder="Write an optional image caption..."
-                            className="w-full bg-transparent text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/50"
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/15 px-6 py-8 text-center">
-                        <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
-                          <ImageIcon className="size-5" />
-                        </span>
-                        <div className="space-y-0.5">
-                          <p className="text-sm font-semibold text-foreground">
-                            Hero / Image Banner
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Select an image from the Media Library or paste a direct image URL
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => setMediaPickerBlockId(block.id)}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-medium text-primary-foreground shadow-xs hover:opacity-90"
-                          >
-                            <FolderOpenIcon className="size-3.5" /> Choose from Media Library
-                          </button>
-                        </div>
-                        <div className="mt-1 flex w-full max-w-md items-center gap-2">
-                          <input
-                            type="url"
-                            value={block.src ?? ""}
-                            onChange={(e) =>
-                              controller.updateBlock(block.id, {
-                                src: e.target.value,
-                                mediaId: null,
-                              })
-                            }
-                            placeholder="Or paste image URL (https://...)"
-                            className="h-8 flex-1 rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {block.type === "simple_product" && (
-                  <SimpleProductBlockCard
-                    block={block}
-                    product={block.productId ? (productsById.get(block.productId) ?? null) : null}
-                    editorMode
-                    onRequestSelectProduct={() => {
-                      controller.setActiveBlockId(block.id);
-                      onFocusInspector?.();
-                      setTimeout(() => {
-                        const input = document.querySelector<HTMLInputElement>(
-                          '[data-testid="simple-product-search-input"]',
-                        );
-                        input?.focus();
-                      }, 40);
-                    }}
-                  />
-                )}
-
-                {block.type === "cta" && (
-                  <div
-                    style={{ textAlign: block.align ?? "left" }}
-                    className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-5"
-                  >
-                    <input
-                      type="text"
-                      value={block.ctaHeading ?? ""}
-                      onFocus={() => controller.setActiveBlockId(block.id)}
-                      onChange={(e) =>
-                        controller.updateBlock(block.id, { ctaHeading: e.target.value })
-                      }
-                      placeholder="Call to action heading (optional)..."
-                      style={{ textAlign: block.align ?? "left" }}
-                      className="w-full bg-transparent text-lg font-bold text-foreground outline-none placeholder:text-muted-foreground/50"
-                    />
-                    <input
-                      type="text"
-                      value={block.ctaSubtext ?? ""}
-                      onFocus={() => controller.setActiveBlockId(block.id)}
-                      onChange={(e) =>
-                        controller.updateBlock(block.id, { ctaSubtext: e.target.value })
-                      }
-                      placeholder="Supporting description text (optional)..."
-                      style={{ textAlign: block.align ?? "left" }}
-                      className="w-full bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/50"
-                    />
-                    <div
-                      className={cn(
-                        "flex flex-wrap items-center gap-3 pt-1",
-                        block.align === "center" && "justify-center",
-                        block.align === "right" && "justify-end",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors",
-                          (block.buttonVariant ?? "primary") === "primary" &&
-                            "bg-primary text-primary-foreground shadow-xs",
-                          block.buttonVariant === "secondary" &&
-                            "bg-secondary text-secondary-foreground",
-                          block.buttonVariant === "outline" &&
-                            "border border-border bg-background text-foreground",
-                        )}
-                      >
-                        {block.buttonText || "Button label"}
-                        <ExternalLinkIcon className="size-3.5 opacity-75" />
-                      </span>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        → {block.buttonHref || "/shop"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {block.type === "list" && (
-                  <div className="space-y-2">
-                    {(block.items ?? [""]).map((item, idx) => (
-                      <div key={idx} className="flex items-start gap-2.5">
-                        <span className="mt-1 select-none font-mono text-xs font-semibold text-primary">
-                          {block.listStyle === "ordered" ? `${idx + 1}.` : "•"}
-                        </span>
-                        <div className="flex-1">
-                          <RichEditable
-                            html={item}
-                            onFocus={() => controller.setActiveBlockId(block.id)}
-                            onChange={(nextItem) => {
-                              const nextItems = [...(block.items ?? [""])];
-                              nextItems[idx] = nextItem;
-                              controller.updateBlock(block.id, { items: nextItems });
-                            }}
-                            onEnterNewBlock={() => {
-                              const nextItems = [...(block.items ?? [""])];
-                              nextItems.splice(idx + 1, 0, "");
-                              controller.updateBlock(block.id, { items: nextItems });
-                            }}
-                            placeholder={`List item ${idx + 1}...`}
-                            className="text-sm leading-relaxed text-foreground"
-                          />
-                        </div>
-                        {(block.items?.length ?? 0) > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nextItems = (block.items ?? []).filter((_, i) => i !== idx);
-                              controller.updateBlock(block.id, {
-                                items: nextItems.length ? nextItems : [""],
-                              });
-                            }}
-                            className="mt-0.5 grid size-5 place-items-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-accent hover:text-foreground"
-                          >
-                            <XIcon className="size-3" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        controller.updateBlock(block.id, {
-                          items: [...(block.items ?? [""]), ""],
-                        })
-                      }
-                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                    >
-                      <PlusIcon className="size-3" /> Add list item
-                    </button>
-                  </div>
-                )}
-
-                {block.type === "quote" && (
-                  <blockquote
-                    style={{ textAlign: block.align ?? "left" }}
-                    className="border-l-4 border-primary pl-4"
-                  >
-                    <RichEditable
-                      html={block.html ?? ""}
-                      align={block.align ?? "left"}
-                      onFocus={() => controller.setActiveBlockId(block.id)}
-                      onChange={(html) => controller.updateBlock(block.id, { html })}
-                      placeholder="Write an impactful quote or customer testimonial..."
-                      className="text-base italic font-medium text-foreground"
-                    />
-                    <input
-                      type="text"
-                      value={block.quoteAuthor ?? ""}
-                      onFocus={() => controller.setActiveBlockId(block.id)}
-                      onChange={(e) =>
-                        controller.updateBlock(block.id, { quoteAuthor: e.target.value })
-                      }
-                      placeholder="— Quote attribution (optional)"
-                      style={{ textAlign: block.align ?? "left" }}
-                      className="mt-2 w-full bg-transparent text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/50"
-                    />
-                  </blockquote>
-                )}
-
-                {block.type === "divider" && (
-                  <div className="py-3">
-                    <hr
-                      className={cn(
-                        "border-t border-border",
-                        block.dividerStyle === "dashed" && "border-dashed",
-                        block.dividerStyle === "dots" && "border-dotted border-t-2",
-                      )}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {controller.blocks.map((block, index) => (
+            <BlockItemEditor
+              key={block.id}
+              block={block}
+              index={index}
+              totalSiblings={controller.blocks.length}
+              controller={controller}
+              productsById={productsById}
+              inlineToolbarVisible={inlineToolbarVisible}
+              pinnedToolbarBlockId={pinnedToolbarBlockId}
+              setPinnedToolbarBlockId={setPinnedToolbarBlockId}
+              setMediaPickerBlockId={setMediaPickerBlockId}
+              onFocusInspector={onFocusInspector}
+            />
+          ))}
         </div>
       )}
 
@@ -1661,6 +1423,738 @@ export function BlockEditorCanvas({
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+ * Block Item Renderer (Top-Level & Nested Inside Layout Columns)
+ * ────────────────────────────────────────────────────────────────────────── */
+
+function BlockItemEditor({
+  block,
+  index,
+  totalSiblings,
+  controller,
+  productsById,
+  inlineToolbarVisible,
+  pinnedToolbarBlockId,
+  setPinnedToolbarBlockId,
+  setMediaPickerBlockId,
+  onFocusInspector,
+  parentCellTarget,
+}: {
+  block: PageBlock;
+  index: number;
+  totalSiblings: number;
+  controller: BlockEditorController;
+  productsById: Map<string, Product>;
+  inlineToolbarVisible: boolean;
+  pinnedToolbarBlockId: string | null;
+  setPinnedToolbarBlockId: React.Dispatch<React.SetStateAction<string | null>>;
+  setMediaPickerBlockId: React.Dispatch<React.SetStateAction<string | null>>;
+  onFocusInspector?: () => void;
+  parentCellTarget?: LayoutCellTarget;
+}) {
+  const isActive = block.id === controller.activeBlockId;
+  const def = BLOCK_DEFINITIONS.find((d) => d.type === block.type);
+
+  return (
+    <div
+      data-block-editor-item={block.id}
+      data-testid={`block-item-${block.type}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        controller.setActiveBlockId(block.id);
+      }}
+      className={cn(
+        "group relative rounded-xl border transition-all",
+        parentCellTarget ? "px-3.5 py-3" : "px-5 py-4",
+        isActive
+          ? "border-primary bg-card/95 ring-1 ring-primary/35 shadow-sm"
+          : "border-border/60 bg-card/35 hover:border-border hover:bg-card/60",
+      )}
+    >
+      {/* Floating top-right block action bar on active / hover */}
+      <div
+        className={cn(
+          "absolute -top-3 right-3 z-10 flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-0.5 text-[11px] shadow-md transition-opacity",
+          inlineToolbarVisible
+            ? "pointer-events-none opacity-0"
+            : isActive
+              ? "opacity-100"
+              : "opacity-0 group-hover:opacity-100",
+        )}
+      >
+        <span className="px-1.5 font-mono text-[10px] font-semibold tracking-wider text-primary uppercase">
+          {block.type === "heading"
+            ? (block.level ?? "h1").toUpperCase()
+            : block.type === "layout"
+              ? `${block.layoutRows ?? 1}×${block.layoutCols ?? 2} GRID`
+              : def?.label ?? block.type}
+        </span>
+        <span className="font-mono text-[10px] text-muted-foreground">{block.id}</span>
+        <span className="mx-0.5 h-3 w-px bg-border" />
+        {(block.type === "heading" ||
+          block.type === "paragraph" ||
+          block.type === "callout" ||
+          block.type === "quote") && (
+          <button
+            type="button"
+            title="Inline formatting toolbar"
+            onClick={(e) => {
+              e.stopPropagation();
+              controller.setActiveBlockId(block.id);
+              setPinnedToolbarBlockId((prev) => (prev === block.id ? null : block.id));
+            }}
+            className={cn(
+              "inline-flex h-5 items-center gap-1 rounded px-1.5 text-[10px] font-semibold transition-colors hover:bg-accent",
+              pinnedToolbarBlockId === block.id && "bg-primary/15 text-primary",
+            )}
+          >
+            <TypeIcon className="size-3" /> Format
+          </button>
+        )}
+        <button
+          type="button"
+          title="Move block up"
+          disabled={index === 0}
+          onClick={(e) => {
+            e.stopPropagation();
+            controller.moveBlock(block.id, -1);
+          }}
+          className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
+        >
+          <ArrowUpIcon className="size-3" />
+        </button>
+        <button
+          type="button"
+          title="Move block down"
+          disabled={index === totalSiblings - 1}
+          onClick={(e) => {
+            e.stopPropagation();
+            controller.moveBlock(block.id, 1);
+          }}
+          className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
+        >
+          <ArrowDownIcon className="size-3" />
+        </button>
+        <button
+          type="button"
+          title="Duplicate block"
+          onClick={(e) => {
+            e.stopPropagation();
+            controller.duplicateBlock(block.id);
+          }}
+          className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <CopyIcon className="size-3" />
+        </button>
+        <button
+          type="button"
+          title="Insert block below"
+          onClick={(e) => {
+            e.stopPropagation();
+            controller.openPicker(block.id, null, parentCellTarget ?? null);
+          }}
+          className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <PlusIcon className="size-3" />
+        </button>
+        <button
+          type="button"
+          title="Delete block"
+          onClick={(e) => {
+            e.stopPropagation();
+            controller.removeBlock(block.id);
+          }}
+          className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+        >
+          <Trash2Icon className="size-3" />
+        </button>
+      </div>
+
+      {/* Row & Column Layout Block */}
+      {block.type === "layout" && (
+        <LayoutBlockCanvasView
+          block={block}
+          controller={controller}
+          productsById={productsById}
+          inlineToolbarVisible={inlineToolbarVisible}
+          pinnedToolbarBlockId={pinnedToolbarBlockId}
+          setPinnedToolbarBlockId={setPinnedToolbarBlockId}
+          setMediaPickerBlockId={setMediaPickerBlockId}
+          onFocusInspector={onFocusInspector}
+        />
+      )}
+
+      {/* Heading Block (no placeholder text) */}
+      {block.type === "heading" && (
+        <RichEditable
+          html={block.html ?? ""}
+          align={block.align ?? "left"}
+          onFocus={() => controller.setActiveBlockId(block.id)}
+          onChange={(html) => controller.updateBlock(block.id, { html })}
+          onSlashCommand={() =>
+            controller.openPicker(null, block.id, parentCellTarget ?? null)
+          }
+          onEnterNewBlock={() => controller.addBlock("paragraph", block.id)}
+          placeholder=""
+          className={cn(
+            "font-bold tracking-tight text-foreground",
+            (block.level ?? "h1") === "h1" && "text-2xl sm:text-3xl",
+            block.level === "h2" && "text-xl sm:text-2xl",
+            block.level === "h3" && "text-lg sm:text-xl",
+            block.level === "h4" && "text-base sm:text-lg",
+          )}
+        />
+      )}
+
+      {/* Paragraph Block (no placeholder text) */}
+      {block.type === "paragraph" && (
+        <RichEditable
+          html={block.html ?? ""}
+          align={block.align ?? "left"}
+          onFocus={() => controller.setActiveBlockId(block.id)}
+          onChange={(html) => controller.updateBlock(block.id, { html })}
+          onSlashCommand={() =>
+            controller.openPicker(null, block.id, parentCellTarget ?? null)
+          }
+          placeholder=""
+          className={cn(
+            "leading-relaxed",
+            (block.variant ?? "normal") === "normal" &&
+              "text-sm sm:text-base text-foreground/90",
+            block.variant === "lead" && "text-base sm:text-lg font-medium text-foreground",
+            block.variant === "muted" && "text-sm text-muted-foreground",
+          )}
+        />
+      )}
+
+      {block.type === "callout" && (
+        <div
+          className={cn(
+            "rounded-xl border border-l-4 p-4",
+            (block.tone ?? "info") === "info" &&
+              "border-border border-l-primary bg-primary/[0.04]",
+            block.tone === "success" &&
+              "border-border border-l-emerald-500 bg-emerald-500/[0.04]",
+            block.tone === "warning" &&
+              "border-border border-l-amber-500 bg-amber-500/[0.04]",
+            block.tone === "danger" &&
+              "border-border border-l-rose-500 bg-rose-500/[0.04]",
+          )}
+        >
+          <div className="mb-1.5 flex items-center gap-2">
+            <AlertCircleIcon className="size-4 shrink-0 text-primary" />
+            <input
+              type="text"
+              value={block.calloutTitle ?? ""}
+              onFocus={() => controller.setActiveBlockId(block.id)}
+              onChange={(e) =>
+                controller.updateBlock(block.id, { calloutTitle: e.target.value })
+              }
+              placeholder="Callout title..."
+              className="w-full bg-transparent text-sm font-semibold text-foreground outline-none placeholder:text-muted-foreground/60"
+            />
+          </div>
+          <RichEditable
+            html={block.html ?? ""}
+            onFocus={() => controller.setActiveBlockId(block.id)}
+            onChange={(html) => controller.updateBlock(block.id, { html })}
+            placeholder="Highlight important information, announcements, or tips..."
+            className="text-sm leading-relaxed text-muted-foreground"
+          />
+        </div>
+      )}
+
+      {block.type === "image" && (
+        <div className="space-y-3">
+          {block.src ? (
+            <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
+              <div
+                className={cn(
+                  "relative flex p-2",
+                  (block.align ?? "center") === "left" && "justify-start",
+                  (block.align ?? "center") === "center" && "justify-center",
+                  (block.align ?? "center") === "right" && "justify-end",
+                )}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={block.src}
+                  alt={block.alt ?? ""}
+                  style={{
+                    width:
+                      block.imageLayout === "custom" && block.imageWidth
+                        ? `${block.imageWidth}px`
+                        : block.imageLayout === "custom"
+                          ? undefined
+                          : "100%",
+                    height:
+                      block.imageLayout === "custom" && block.imageHeight
+                        ? `${block.imageHeight}px`
+                        : undefined,
+                    maxHeight: block.imageMaxHeight
+                      ? `${block.imageMaxHeight}px`
+                      : undefined,
+                    maxWidth: "100%",
+                    objectFit: "cover",
+                  }}
+                  className={cn(
+                    "block rounded-lg object-cover",
+                    (block.imageLayout ?? "full") === "full" && "w-full",
+                  )}
+                />
+                <div className="absolute right-4 bottom-4 flex items-center gap-1.5 rounded-lg border border-border/80 bg-background/90 p-1 shadow-md backdrop-blur-sm">
+                  <button
+                    type="button"
+                    onClick={() => setMediaPickerBlockId(block.id)}
+                    className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium hover:bg-accent"
+                  >
+                    <FolderOpenIcon className="size-3.5" /> Replace
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      controller.updateBlock(block.id, { src: "", mediaId: null })
+                    }
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+              <div className="border-t border-border/60 px-3.5 py-2">
+                <input
+                  type="text"
+                  value={block.caption ?? ""}
+                  style={{ textAlign: block.align ?? "center" }}
+                  onChange={(e) =>
+                    controller.updateBlock(block.id, { caption: e.target.value })
+                  }
+                  placeholder="Write an optional image caption..."
+                  className="w-full bg-transparent text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/50"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/15 px-6 py-8 text-center">
+              <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+                <ImageIcon className="size-5" />
+              </span>
+              <div className="space-y-0.5">
+                <p className="text-sm font-semibold text-foreground">
+                  Hero / Image Banner
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Select an image from the Media Library or paste a direct image URL
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setMediaPickerBlockId(block.id)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-medium text-primary-foreground shadow-xs hover:opacity-90"
+                >
+                  <FolderOpenIcon className="size-3.5" /> Choose from Media Library
+                </button>
+              </div>
+              <div className="mt-1 flex w-full max-w-md items-center gap-2">
+                <input
+                  type="url"
+                  value={block.src ?? ""}
+                  onChange={(e) =>
+                    controller.updateBlock(block.id, {
+                      src: e.target.value,
+                      mediaId: null,
+                    })
+                  }
+                  placeholder="Or paste image URL (https://...)"
+                  className="h-8 flex-1 rounded-lg border border-border bg-background px-3 text-xs outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {block.type === "simple_product" && (
+        <SimpleProductBlockCard
+          block={block}
+          product={block.productId ? (productsById.get(block.productId) ?? null) : null}
+          editorMode
+          onRequestSelectProduct={() => {
+            controller.setActiveBlockId(block.id);
+            onFocusInspector?.();
+            setTimeout(() => {
+              const input = document.querySelector<HTMLInputElement>(
+                '[data-testid="simple-product-search-input"]',
+              );
+              input?.focus();
+            }, 40);
+          }}
+        />
+      )}
+
+      {block.type === "cta" && (
+        <div
+          style={{ textAlign: block.align ?? "left" }}
+          className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-5"
+        >
+          <input
+            type="text"
+            value={block.ctaHeading ?? ""}
+            onFocus={() => controller.setActiveBlockId(block.id)}
+            onChange={(e) =>
+              controller.updateBlock(block.id, { ctaHeading: e.target.value })
+            }
+            placeholder="Call to action heading (optional)..."
+            style={{ textAlign: block.align ?? "left" }}
+            className="w-full bg-transparent text-lg font-bold text-foreground outline-none placeholder:text-muted-foreground/50"
+          />
+          <input
+            type="text"
+            value={block.ctaSubtext ?? ""}
+            onFocus={() => controller.setActiveBlockId(block.id)}
+            onChange={(e) =>
+              controller.updateBlock(block.id, { ctaSubtext: e.target.value })
+            }
+            placeholder="Supporting description text (optional)..."
+            style={{ textAlign: block.align ?? "left" }}
+            className="w-full bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/50"
+          />
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-3 pt-1",
+              block.align === "center" && "justify-center",
+              block.align === "right" && "justify-end",
+            )}
+          >
+            <span
+              className={cn(
+                "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors",
+                (block.buttonVariant ?? "primary") === "primary" &&
+                  "bg-primary text-primary-foreground shadow-xs",
+                block.buttonVariant === "secondary" &&
+                  "bg-secondary text-secondary-foreground",
+                block.buttonVariant === "outline" &&
+                  "border border-border bg-background text-foreground",
+              )}
+            >
+              {block.buttonText || "Button label"}
+              <ExternalLinkIcon className="size-3.5 opacity-75" />
+            </span>
+            <span className="font-mono text-xs text-muted-foreground">
+              → {block.buttonHref || "/shop"}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {block.type === "list" && (
+        <div className="space-y-2">
+          {(block.items ?? [""]).map((item, idx) => (
+            <div key={idx} className="flex items-start gap-2.5">
+              <span className="mt-1 select-none font-mono text-xs font-semibold text-primary">
+                {block.listStyle === "ordered" ? `${idx + 1}.` : "•"}
+              </span>
+              <div className="flex-1">
+                <RichEditable
+                  html={item}
+                  onFocus={() => controller.setActiveBlockId(block.id)}
+                  onChange={(nextItem) => {
+                    const nextItems = [...(block.items ?? [""])];
+                    nextItems[idx] = nextItem;
+                    controller.updateBlock(block.id, { items: nextItems });
+                  }}
+                  onEnterNewBlock={() => {
+                    const nextItems = [...(block.items ?? [""])];
+                    nextItems.splice(idx + 1, 0, "");
+                    controller.updateBlock(block.id, { items: nextItems });
+                  }}
+                  placeholder={`List item ${idx + 1}...`}
+                  className="text-sm leading-relaxed text-foreground"
+                />
+              </div>
+              {(block.items?.length ?? 0) > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextItems = (block.items ?? []).filter((_, i) => i !== idx);
+                    controller.updateBlock(block.id, {
+                      items: nextItems.length ? nextItems : [""],
+                    });
+                  }}
+                  className="mt-0.5 grid size-5 place-items-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-accent hover:text-foreground"
+                >
+                  <XIcon className="size-3" />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              controller.updateBlock(block.id, {
+                items: [...(block.items ?? [""]), ""],
+              })
+            }
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+          >
+            <PlusIcon className="size-3" /> Add list item
+          </button>
+        </div>
+      )}
+
+      {block.type === "quote" && (
+        <blockquote
+          style={{ textAlign: block.align ?? "left" }}
+          className="border-l-4 border-primary pl-4"
+        >
+          <RichEditable
+            html={block.html ?? ""}
+            align={block.align ?? "left"}
+            onFocus={() => controller.setActiveBlockId(block.id)}
+            onChange={(html) => controller.updateBlock(block.id, { html })}
+            placeholder="Write an impactful quote or customer testimonial..."
+            className="text-base italic font-medium text-foreground"
+          />
+          <input
+            type="text"
+            value={block.quoteAuthor ?? ""}
+            onFocus={() => controller.setActiveBlockId(block.id)}
+            onChange={(e) =>
+              controller.updateBlock(block.id, { quoteAuthor: e.target.value })
+            }
+            placeholder="— Quote attribution (optional)"
+            style={{ textAlign: block.align ?? "left" }}
+            className="mt-2 w-full bg-transparent text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/50"
+          />
+        </blockquote>
+      )}
+
+      {block.type === "divider" && (
+        <div className="py-3">
+          <hr
+            className={cn(
+              "border-t border-border",
+              block.dividerStyle === "dashed" && "border-dashed",
+              block.dividerStyle === "dots" && "border-dotted border-t-2",
+            )}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Layout Block Canvas View (Rows × Columns Grid with Nested Blocks)
+ * ────────────────────────────────────────────────────────────────────────── */
+
+function LayoutBlockCanvasView({
+  block,
+  controller,
+  productsById,
+  inlineToolbarVisible,
+  pinnedToolbarBlockId,
+  setPinnedToolbarBlockId,
+  setMediaPickerBlockId,
+  onFocusInspector,
+}: {
+  block: PageBlock;
+  controller: BlockEditorController;
+  productsById: Map<string, Product>;
+  inlineToolbarVisible: boolean;
+  pinnedToolbarBlockId: string | null;
+  setPinnedToolbarBlockId: React.Dispatch<React.SetStateAction<string | null>>;
+  setMediaPickerBlockId: React.Dispatch<React.SetStateAction<string | null>>;
+  onFocusInspector?: () => void;
+}) {
+  const rows = Math.max(1, Math.min(12, block.layoutRows ?? 1));
+  const cols = Math.max(1, Math.min(6, block.layoutCols ?? 2));
+  const gap = block.layoutGap ?? "md";
+  const valign = block.layoutValign ?? "stretch";
+  const cells = normalizeLayoutCells(rows, cols, block.layoutCells);
+
+  return (
+    <div className="space-y-3" data-testid="layout-block-canvas">
+      {/* Top inline header bar for quick Row & Column adjustments */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/25 px-3 py-1.5 text-xs">
+        <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
+          <LayoutGridIcon className="size-3.5 text-primary" />
+          <span>
+            Row &amp; Column Layout ({rows} {rows === 1 ? "Row" : "Rows"} × {cols}{" "}
+            {cols === 1 ? "Column" : "Columns"})
+          </span>
+        </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex items-center gap-1">
+            <span className="text-[11px] text-muted-foreground">Rows:</span>
+            <button
+              type="button"
+              data-testid="layout-canvas-rows-minus"
+              disabled={rows <= 1}
+              onClick={(e) => {
+                e.stopPropagation();
+                controller.updateBlock(block.id, { layoutRows: Math.max(1, rows - 1) });
+              }}
+              className="grid size-5 place-items-center rounded border border-border bg-background text-muted-foreground hover:text-foreground disabled:opacity-35"
+            >
+              <MinusIcon className="size-2.5" />
+            </button>
+            <span
+              data-testid="layout-canvas-rows-value"
+              className="min-w-4 text-center font-mono text-xs font-bold tabular-nums"
+            >
+              {rows}
+            </span>
+            <button
+              type="button"
+              data-testid="layout-canvas-rows-plus"
+              disabled={rows >= 12}
+              onClick={(e) => {
+                e.stopPropagation();
+                controller.updateBlock(block.id, { layoutRows: Math.min(12, rows + 1) });
+              }}
+              className="grid size-5 place-items-center rounded border border-border bg-background text-muted-foreground hover:text-foreground disabled:opacity-35"
+            >
+              <PlusIcon className="size-2.5" />
+            </button>
+          </div>
+
+          <div className="inline-flex items-center gap-1">
+            <span className="text-[11px] text-muted-foreground">Columns:</span>
+            <button
+              type="button"
+              data-testid="layout-canvas-cols-minus"
+              disabled={cols <= 1}
+              onClick={(e) => {
+                e.stopPropagation();
+                controller.updateBlock(block.id, { layoutCols: Math.max(1, cols - 1) });
+              }}
+              className="grid size-5 place-items-center rounded border border-border bg-background text-muted-foreground hover:text-foreground disabled:opacity-35"
+            >
+              <MinusIcon className="size-2.5" />
+            </button>
+            <span
+              data-testid="layout-canvas-cols-value"
+              className="min-w-4 text-center font-mono text-xs font-bold tabular-nums"
+            >
+              {cols}
+            </span>
+            <button
+              type="button"
+              data-testid="layout-canvas-cols-plus"
+              disabled={cols >= 6}
+              onClick={(e) => {
+                e.stopPropagation();
+                controller.updateBlock(block.id, { layoutCols: Math.min(6, cols + 1) });
+              }}
+              className="grid size-5 place-items-center rounded border border-border bg-background text-muted-foreground hover:text-foreground disabled:opacity-35"
+            >
+              <PlusIcon className="size-2.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Rows × Columns Grid */}
+      <div
+        data-testid="layout-cells-grid"
+        className={cn(
+          "grid",
+          cols === 1 && "grid-cols-1",
+          cols === 2 && "grid-cols-1 md:grid-cols-2",
+          cols === 3 && "grid-cols-1 md:grid-cols-2 lg:grid-cols-3",
+          cols === 4 && "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
+          cols === 5 && "grid-cols-1 sm:grid-cols-2 lg:grid-cols-5",
+          cols >= 6 && "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6",
+          gap === "sm" && "gap-3",
+          gap === "md" && "gap-4",
+          gap === "lg" && "gap-6",
+          valign === "top" && "items-start",
+          valign === "center" && "items-center",
+          valign === "stretch" && "items-stretch",
+        )}
+      >
+        {cells.map((cellBlocks, cellIdx) => {
+          const rowNum = Math.floor(cellIdx / cols) + 1;
+          const colNum = (cellIdx % cols) + 1;
+          const cellTarget: LayoutCellTarget = {
+            layoutId: block.id,
+            cellIndex: cellIdx,
+          };
+
+          return (
+            <div
+              key={`cell-${cellIdx}`}
+              data-testid={`layout-cell-${cellIdx}`}
+              className="flex min-w-0 flex-col rounded-xl border border-dashed border-border/80 bg-background/50 p-3 transition-colors hover:border-primary/40"
+            >
+              {/* Cell header */}
+              <div className="mb-2.5 flex items-center justify-between gap-2 border-b border-border/50 pb-1.5">
+                <span className="font-mono text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                  {rows > 1 ? `Row ${rowNum} · Col ${colNum}` : `Column ${colNum}`}
+                </span>
+                <button
+                  type="button"
+                  data-testid={`layout-cell-add-${cellIdx}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    controller.openPicker(
+                      cellBlocks[cellBlocks.length - 1]?.id ?? null,
+                      null,
+                      cellTarget,
+                    );
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-border/80 bg-card px-2 py-0.5 text-[11px] font-medium text-primary transition-colors hover:border-primary/50 hover:bg-primary/10"
+                >
+                  <PlusIcon className="size-3" /> Add block
+                </button>
+              </div>
+
+              {/* Inner blocks inside this column cell */}
+              {cellBlocks.length > 0 ? (
+                <div className="space-y-3 pt-1">
+                  {cellBlocks.map((child, childIdx) => (
+                    <BlockItemEditor
+                      key={child.id}
+                      block={child}
+                      index={childIdx}
+                      totalSiblings={cellBlocks.length}
+                      controller={controller}
+                      productsById={productsById}
+                      inlineToolbarVisible={inlineToolbarVisible}
+                      pinnedToolbarBlockId={pinnedToolbarBlockId}
+                      setPinnedToolbarBlockId={setPinnedToolbarBlockId}
+                      setMediaPickerBlockId={setMediaPickerBlockId}
+                      onFocusInspector={onFocusInspector}
+                      parentCellTarget={cellTarget}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  data-testid={`layout-cell-empty-add-${cellIdx}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    controller.openPicker(null, null, cellTarget);
+                  }}
+                  className="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/60 bg-muted/15 px-3 py-6 text-center text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/[0.04] hover:text-foreground"
+                >
+                  <PlusIcon className="size-4 text-primary" />
+                  <span className="font-medium">
+                    Add block to {rows > 1 ? `Row ${rowNum}, Col ${colNum}` : `Column ${colNum}`}
+                  </span>
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
  * Block Command Palette Modal
  * ────────────────────────────────────────────────────────────────────────── */
 
@@ -1670,15 +2164,18 @@ function BlockPickerModal({ controller }: { controller: BlockEditorController })
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const filtered = useMemo(() => {
+    const baseList = controller.targetLayoutCell
+      ? BLOCK_DEFINITIONS.filter((d) => d.type !== "layout")
+      : BLOCK_DEFINITIONS;
     const q = query.trim().toLowerCase();
-    if (!q) return BLOCK_DEFINITIONS;
-    return BLOCK_DEFINITIONS.filter(
+    if (!q) return baseList;
+    return baseList.filter(
       (d) =>
         d.label.toLowerCase().includes(q) ||
         d.description.toLowerCase().includes(q) ||
         d.keywords.some((k) => k.includes(q)),
     );
-  }, [query]);
+  }, [controller.targetLayoutCell, query]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -1831,6 +2328,24 @@ export function BlockSettingsInspector({
 
   return (
     <div className="space-y-5 p-5" data-testid="block-settings-panel">
+      {/* If editing an inner block inside a Layout Column, offer 1-click return to parent Layout Grid */}
+      {controller.activeParentLayoutId && (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+            <LayoutGridIcon className="size-3.5 text-primary" />
+            <span>Inside Layout Column</span>
+          </span>
+          <button
+            type="button"
+            data-testid="select-parent-layout-btn"
+            onClick={() => controller.setActiveBlockId(controller.activeParentLayoutId!)}
+            className="font-semibold text-primary hover:underline"
+          >
+            Grid Settings →
+          </button>
+        </div>
+      )}
+
       {/* ACTIVE BLOCK TYPE header */}
       <div>
         <p className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
@@ -1868,6 +2383,11 @@ export function BlockSettingsInspector({
       </div>
 
       <hr className="border-border/70" />
+
+      {/* Row & Column Layout Settings */}
+      {block.type === "layout" && (
+        <LayoutInspectorSection block={block} controller={controller} />
+      )}
 
       {/* Heading Settings */}
       {block.type === "heading" && (
@@ -2751,6 +3271,257 @@ function SimpleProductInspectorSection({
             aria-label="Show short description"
             data-testid="simple-product-description-switch"
           />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Row & Column Layout Inspector Section
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const LAYOUT_PRESETS = [
+  { rows: 1, cols: 2, label: "1 × 2" },
+  { rows: 1, cols: 3, label: "1 × 3" },
+  { rows: 1, cols: 4, label: "1 × 4" },
+  { rows: 2, cols: 2, label: "2 × 2" },
+  { rows: 2, cols: 3, label: "2 × 3" },
+  { rows: 3, cols: 3, label: "3 × 3" },
+] as const;
+
+function LayoutInspectorSection({
+  block,
+  controller,
+}: {
+  block: PageBlock;
+  controller: BlockEditorController;
+}) {
+  const rows = Math.max(1, Math.min(12, block.layoutRows ?? 1));
+  const cols = Math.max(1, Math.min(6, block.layoutCols ?? 2));
+  const gap = block.layoutGap ?? "md";
+  const valign = block.layoutValign ?? "stretch";
+  const cells = normalizeLayoutCells(rows, cols, block.layoutCells);
+
+  return (
+    <div className="space-y-4" data-testid="layout-inspector">
+      {/* Rows & Columns Steppers / Inputs */}
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-muted-foreground">
+            Rows
+          </label>
+          <div className="flex h-9 items-center overflow-hidden rounded-lg border border-border bg-background">
+            <button
+              type="button"
+              data-testid="layout-rows-minus"
+              disabled={rows <= 1}
+              onClick={() =>
+                controller.updateBlock(block.id, { layoutRows: Math.max(1, rows - 1) })
+              }
+              className="grid h-full w-8 place-items-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-35"
+            >
+              <MinusIcon className="size-3.5" />
+            </button>
+            <input
+              type="text"
+              inputMode="numeric"
+              data-testid="layout-rows-input"
+              value={String(rows)}
+              onChange={(e) => {
+                const n = parseDimensionInput(e.target.value);
+                if (n) {
+                  controller.updateBlock(block.id, {
+                    layoutRows: Math.max(1, Math.min(12, n)),
+                  });
+                }
+              }}
+              className="h-full min-w-0 flex-1 border-x border-border bg-transparent text-center font-mono text-xs font-bold text-foreground outline-none tabular-nums"
+            />
+            <button
+              type="button"
+              data-testid="layout-rows-plus"
+              disabled={rows >= 12}
+              onClick={() =>
+                controller.updateBlock(block.id, { layoutRows: Math.min(12, rows + 1) })
+              }
+              className="grid h-full w-8 place-items-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-35"
+            >
+              <PlusIcon className="size-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-muted-foreground">
+            Columns
+          </label>
+          <div className="flex h-9 items-center overflow-hidden rounded-lg border border-border bg-background">
+            <button
+              type="button"
+              data-testid="layout-cols-minus"
+              disabled={cols <= 1}
+              onClick={() =>
+                controller.updateBlock(block.id, { layoutCols: Math.max(1, cols - 1) })
+              }
+              className="grid h-full w-8 place-items-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-35"
+            >
+              <MinusIcon className="size-3.5" />
+            </button>
+            <input
+              type="text"
+              inputMode="numeric"
+              data-testid="layout-cols-input"
+              value={String(cols)}
+              onChange={(e) => {
+                const n = parseDimensionInput(e.target.value);
+                if (n) {
+                  controller.updateBlock(block.id, {
+                    layoutCols: Math.max(1, Math.min(6, n)),
+                  });
+                }
+              }}
+              className="h-full min-w-0 flex-1 border-x border-border bg-transparent text-center font-mono text-xs font-bold text-foreground outline-none tabular-nums"
+            />
+            <button
+              type="button"
+              data-testid="layout-cols-plus"
+              disabled={cols >= 6}
+              onClick={() =>
+                controller.updateBlock(block.id, { layoutCols: Math.min(6, cols + 1) })
+              }
+              className="grid h-full w-8 place-items-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-35"
+            >
+              <PlusIcon className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Grid Presets */}
+      <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-muted-foreground">
+          Quick Grid Presets (Rows × Columns)
+        </label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {LAYOUT_PRESETS.map((preset) => {
+            const active = rows === preset.rows && cols === preset.cols;
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                data-testid={`layout-preset-${preset.rows}x${preset.cols}`}
+                onClick={() =>
+                  controller.updateBlock(block.id, {
+                    layoutRows: preset.rows,
+                    layoutCols: preset.cols,
+                  })
+                }
+                className={cn(
+                  "inline-flex h-8 items-center justify-center rounded-lg border font-mono text-xs font-semibold transition-colors",
+                  active
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Grid Spacing (Gap) */}
+      <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-muted-foreground">
+          Column &amp; Row Spacing
+        </label>
+        <Select
+          aria-label="Column and Row Spacing"
+          selectedKey={gap}
+          onSelectionChange={(key) => {
+            if (key) {
+              controller.updateBlock(block.id, { layoutGap: String(key) as LayoutGap });
+            }
+          }}
+        >
+          <SelectTrigger className="w-full" data-testid="layout-gap-select">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem id="sm">Compact Gap (16px)</SelectItem>
+            <SelectItem id="md">Standard Gap (24px)</SelectItem>
+            <SelectItem id="lg">Spacious Gap (32px)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Vertical Alignment */}
+      <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-muted-foreground">
+          Vertical Alignment
+        </label>
+        <Select
+          aria-label="Vertical Alignment"
+          selectedKey={valign}
+          onSelectionChange={(key) => {
+            if (key) {
+              controller.updateBlock(block.id, {
+                layoutValign: String(key) as LayoutValign,
+              });
+            }
+          }}
+        >
+          <SelectTrigger className="w-full" data-testid="layout-valign-select">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem id="stretch">Stretch Columns (Equal Height)</SelectItem>
+            <SelectItem id="top">Align Top</SelectItem>
+            <SelectItem id="center">Align Center</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Column Cells Summary & Quick Add */}
+      <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-muted-foreground">
+          Columns &amp; Cells ({cells.length})
+        </label>
+        <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-border bg-background/60 p-1.5">
+          {cells.map((cellBlocks, cellIdx) => {
+            const rowNum = Math.floor(cellIdx / cols) + 1;
+            const colNum = (cellIdx % cols) + 1;
+            return (
+              <div
+                key={`inspector-cell-${cellIdx}`}
+                className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-xs"
+              >
+                <div className="min-w-0 flex-1">
+                  <span className="font-mono text-[11px] font-semibold text-foreground">
+                    {rows > 1 ? `Row ${rowNum} · Col ${colNum}` : `Column ${colNum}`}
+                  </span>
+                  <span className="ml-2 text-[11px] text-muted-foreground">
+                    ({cellBlocks.length} {cellBlocks.length === 1 ? "block" : "blocks"})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  data-testid={`inspector-cell-add-${cellIdx}`}
+                  onClick={() =>
+                    controller.openPicker(
+                      cellBlocks[cellBlocks.length - 1]?.id ?? null,
+                      null,
+                      { layoutId: block.id, cellIndex: cellIdx },
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-primary hover:border-primary/50 hover:bg-primary/10"
+                >
+                  <PlusIcon className="size-3" /> Add block
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

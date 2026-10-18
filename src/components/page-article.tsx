@@ -2,7 +2,13 @@ import { CalendarIcon } from "lucide-react";
 import { getSimpleProductsByIds } from "@/lib/data/products";
 import { formatDate } from "@/lib/format";
 import { mediaUrl } from "@/lib/media/shared";
-import { extractContentSegments } from "@/lib/pages/blocks";
+import {
+  extractContentSegments,
+  isBlockEmpty,
+  normalizeLayoutCells,
+  renderSingleBlockHtml,
+  type PageBlock,
+} from "@/lib/pages/blocks";
 import { sanitizePageHtml } from "@/lib/pages/sanitize";
 import { featuredImage } from "@/lib/pages/shared";
 import { getSiteSettings } from "@/lib/site-settings";
@@ -16,8 +22,8 @@ import { SimpleProductBlockCard } from "@/components/simple-product-block-card";
  * Storefront template for a CMS page (also used by the admin preview). The
  * content is sanitised again right before rendering – the allow-list in
  * `lib/pages/sanitize.ts` is the only thing between the editor and the DOM.
- * Any `simple_product` blocks are hydrated into interactive horizontal
- * `<SimpleProductBlockCard />` components with live product data.
+ * Any `simple_product` or `layout` blocks are hydrated into interactive
+ * storefront components with live product data.
  */
 export async function PageArticle({ page, className }: { page: Page; className?: string }) {
   // Media Library file (with responsive renditions) or a pasted external URL.
@@ -32,16 +38,26 @@ export async function PageArticle({ page, className }: { page: Page; className?:
     : undefined;
   const html = sanitizePageHtml(page.content);
   const segments = extractContentSegments(html);
-  const productBlocks = segments.filter(
-    (s): s is Extract<typeof s, { kind: "simple_product" }> => s.kind === "simple_product",
-  );
+  const hasInteractiveBlocks = segments.some((s) => s.kind !== "html");
 
   const productsById = new Map<string, Product>();
   let manageStock = true;
-  if (productBlocks.length > 0) {
-    const ids = productBlocks
-      .map((s) => s.block.productId)
-      .filter((id): id is string => Boolean(id));
+  if (hasInteractiveBlocks) {
+    const productIds = new Set<string>();
+    for (const seg of segments) {
+      if (seg.kind === "simple_product" && seg.block.productId) {
+        productIds.add(seg.block.productId);
+      } else if (seg.kind === "layout") {
+        for (const cell of seg.block.layoutCells ?? []) {
+          for (const child of cell) {
+            if (child.type === "simple_product" && child.productId) {
+              productIds.add(child.productId);
+            }
+          }
+        }
+      }
+    }
+    const ids = [...productIds];
     const [liveProducts, settings] = await Promise.all([
       ids.length > 0 ? getSimpleProductsByIds(ids) : Promise.resolve([]),
       getSiteSettings(),
@@ -97,7 +113,7 @@ export async function PageArticle({ page, className }: { page: Page; className?:
       )}
 
       {html ? (
-        productBlocks.length === 0 ? (
+        !hasInteractiveBlocks ? (
           <div className="mx-auto mt-8">
             <div
               className="rich-text rich-text-lg"
@@ -107,25 +123,40 @@ export async function PageArticle({ page, className }: { page: Page; className?:
           </div>
         ) : (
           <div className="mx-auto mt-8 space-y-6" data-testid="page-content">
-            {segments.map((seg, i) =>
-              seg.kind === "html" ? (
-                <div
-                  key={`html-${i}`}
-                  className="rich-text rich-text-lg"
-                  dangerouslySetInnerHTML={{ __html: seg.html }}
-                />
-              ) : (
-                <div key={`prod-${seg.block.id}-${i}`} className="my-6">
-                  <SimpleProductBlockCard
-                    block={seg.block}
-                    product={
-                      seg.block.productId ? (productsById.get(seg.block.productId) ?? null) : null
-                    }
-                    manageStock={manageStock}
+            {segments.map((seg, i) => {
+              if (seg.kind === "html") {
+                return (
+                  <div
+                    key={`html-${i}`}
+                    className="rich-text rich-text-lg"
+                    dangerouslySetInnerHTML={{ __html: seg.html }}
                   />
-                </div>
-              ),
-            )}
+                );
+              }
+              if (seg.kind === "simple_product") {
+                return (
+                  <div key={`prod-${seg.block.id}-${i}`} className="my-6">
+                    <SimpleProductBlockCard
+                      block={seg.block}
+                      product={
+                        seg.block.productId
+                          ? (productsById.get(seg.block.productId) ?? null)
+                          : null
+                      }
+                      manageStock={manageStock}
+                    />
+                  </div>
+                );
+              }
+              return (
+                <StorefrontLayoutBlock
+                  key={`layout-${seg.block.id}-${i}`}
+                  block={seg.block}
+                  productsById={productsById}
+                  manageStock={manageStock}
+                />
+              );
+            })}
           </div>
         )
       ) : (
@@ -134,5 +165,76 @@ export async function PageArticle({ page, className }: { page: Page; className?:
         </p>
       )}
     </article>
+  );
+}
+
+function StorefrontLayoutBlock({
+  block,
+  productsById,
+  manageStock,
+}: {
+  block: PageBlock;
+  productsById: Map<string, Product>;
+  manageStock: boolean;
+}) {
+  const rows = Math.max(1, Math.min(12, block.layoutRows ?? 1));
+  const cols = Math.max(1, Math.min(6, block.layoutCols ?? 2));
+  const gap = block.layoutGap ?? "md";
+  const valign = block.layoutValign ?? "stretch";
+  const cells = normalizeLayoutCells(rows, cols, block.layoutCells);
+
+  return (
+    <div
+      data-testid="storefront-layout-grid"
+      data-layout-rows={rows}
+      data-layout-cols={cols}
+      className={cn(
+        "my-6 grid",
+        cols === 1 && "grid-cols-1",
+        cols === 2 && "grid-cols-1 md:grid-cols-2",
+        cols === 3 && "grid-cols-1 md:grid-cols-2 lg:grid-cols-3",
+        cols === 4 && "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
+        cols === 5 && "grid-cols-1 sm:grid-cols-2 lg:grid-cols-5",
+        cols >= 6 && "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6",
+        gap === "sm" && "gap-4",
+        gap === "md" && "gap-6",
+        gap === "lg" && "gap-8",
+        valign === "top" && "items-start",
+        valign === "center" && "items-center",
+        valign === "stretch" && "items-stretch",
+      )}
+    >
+      {cells.map((cellBlocks, cellIdx) => {
+        const visibleBlocks = cellBlocks.filter((b) => !isBlockEmpty(b));
+        return (
+          <div
+            key={`cell-${cellIdx}`}
+            data-testid={`storefront-layout-cell-${cellIdx}`}
+            className="min-w-0 space-y-4"
+          >
+            {visibleBlocks.map((child, childIdx) =>
+              child.type === "simple_product" ? (
+                <SimpleProductBlockCard
+                  key={`${child.id}-${childIdx}`}
+                  block={child}
+                  product={
+                    child.productId ? (productsById.get(child.productId) ?? null) : null
+                  }
+                  manageStock={manageStock}
+                />
+              ) : (
+                <div
+                  key={`${child.id}-${childIdx}`}
+                  className="rich-text rich-text-lg"
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizePageHtml(renderSingleBlockHtml(child, false)),
+                  }}
+                />
+              ),
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }

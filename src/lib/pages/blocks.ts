@@ -12,6 +12,7 @@
  */
 
 export type BlockType =
+  | "layout"
   | "heading"
   | "paragraph"
   | "callout"
@@ -31,12 +32,21 @@ export type ProductImageShape = "circle" | "rounded";
 export type CtaVariant = "primary" | "secondary" | "outline";
 export type ListStyle = "bullet" | "ordered";
 export type DividerStyle = "solid" | "dashed" | "dots";
+export type LayoutGap = "sm" | "md" | "lg";
+export type LayoutValign = "top" | "center" | "stretch";
 
 export type PageBlock = {
   id: string;
   type: BlockType;
   /** Rich inline HTML for heading, paragraph, callout, quote */
   html?: string;
+  // Layout (Rows × Columns Grid)
+  layoutRows?: number;
+  layoutCols?: number;
+  layoutGap?: LayoutGap;
+  layoutValign?: LayoutValign;
+  /** `rows * cols` cells in row-major order; each cell holds an array of child blocks. */
+  layoutCells?: PageBlock[][];
   // Heading
   level?: HeadingLevel;
   align?: TextAlign;
@@ -97,6 +107,13 @@ export type BlockDefinition = {
 };
 
 export const BLOCK_DEFINITIONS: BlockDefinition[] = [
+  {
+    type: "layout",
+    label: "Row & Column Layout",
+    description: "Custom rows & columns grid that holds other blocks inside each column",
+    badge: "GRID",
+    keywords: ["layout", "grid", "row", "rows", "column", "columns", "container", "split"],
+  },
   {
     type: "heading",
     label: "Heading",
@@ -162,9 +179,38 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
   },
 ];
 
+export function normalizeLayoutCells(
+  rows: number,
+  cols: number,
+  existing?: PageBlock[][],
+): PageBlock[][] {
+  const safeRows = Math.max(1, Math.min(12, Math.round(rows || 1)));
+  const safeCols = Math.max(1, Math.min(6, Math.round(cols || 2)));
+  const total = safeRows * safeCols;
+  const src = Array.isArray(existing) ? existing : [];
+  const out: PageBlock[][] = [];
+  for (let i = 0; i < total; i++) {
+    out.push(Array.isArray(src[i]) ? src[i] : []);
+  }
+  return out;
+}
+
 export function createBlock(type: BlockType, id: string, overrides?: Partial<PageBlock>): PageBlock {
   const base: PageBlock = { id, type };
   switch (type) {
+    case "layout": {
+      const rows = overrides?.layoutRows ?? 1;
+      const cols = overrides?.layoutCols ?? 2;
+      return {
+        ...base,
+        layoutRows: rows,
+        layoutCols: cols,
+        layoutGap: "md",
+        layoutValign: "stretch",
+        layoutCells: normalizeLayoutCells(rows, cols, overrides?.layoutCells),
+        ...overrides,
+      };
+    }
     case "heading":
       return { ...base, level: "h1", align: "left", html: "", ...overrides };
     case "paragraph":
@@ -275,6 +321,8 @@ function stripTags(html: string): string {
 
 export function isBlockEmpty(block: PageBlock): boolean {
   switch (block.type) {
+    case "layout":
+      return false;
     case "heading":
     case "paragraph":
       return stripTags(block.html ?? "") === "";
@@ -296,122 +344,165 @@ export function isBlockEmpty(block: PageBlock): boolean {
 }
 
 /**
+ * Serialises a single non-layout block into semantic HTML (used both for
+ * top-level blocks and for rendering non-product blocks inside a layout cell).
+ */
+export function renderSingleBlockHtml(block: PageBlock, includeJsonMeta = true): string {
+  const metaAttr = includeJsonMeta ? ` data-block-json="${escapeAttr(JSON.stringify(block))}"` : "";
+  const idAttr = includeJsonMeta
+    ? ` data-block-id="${escapeAttr(block.id)}" data-block-type="${escapeAttr(block.type)}"${metaAttr}`
+    : "";
+  const alignStyle =
+    block.align && block.align !== "left" ? ` style="text-align: ${block.align}"` : "";
+
+  switch (block.type) {
+    case "heading": {
+      const tag = block.level && /^h[1-4]$/.test(block.level) ? block.level : "h2";
+      return `<${tag}${idAttr}${alignStyle}>${block.html ?? ""}</${tag}>`;
+    }
+    case "paragraph": {
+      const cls =
+        block.variant === "lead"
+          ? ' class="page-block-lead"'
+          : block.variant === "muted"
+            ? ' class="page-block-muted"'
+            : "";
+      return `<p${idAttr}${cls}${alignStyle}>${block.html ?? ""}</p>`;
+    }
+    case "callout": {
+      const tone = block.tone ?? "info";
+      const titleHtml = block.calloutTitle?.trim()
+        ? `<p class="page-callout-title"><strong>${escapeHtml(block.calloutTitle.trim())}</strong></p>`
+        : "";
+      return `<div class="page-block-callout page-callout-${escapeAttr(tone)}"${idAttr}>${titleHtml}<div class="page-callout-body">${block.html ?? ""}</div></div>`;
+    }
+    case "image": {
+      const rawLayout = block.imageLayout as string | undefined;
+      const layout: ImageLayout = rawLayout === "custom" ? "custom" : "full";
+      const align: TextAlign = block.align ?? "center";
+      const mediaAttr = block.mediaId ? ` data-media-id="${escapeAttr(block.mediaId)}"` : "";
+      const alt = escapeAttr(block.alt ?? "");
+      const src = escapeAttr(block.src ?? "");
+      const w =
+        layout === "custom" && block.imageWidth && block.imageWidth > 0
+          ? Math.round(block.imageWidth)
+          : null;
+      const h =
+        layout === "custom" && block.imageHeight && block.imageHeight > 0
+          ? Math.round(block.imageHeight)
+          : null;
+      const maxH =
+        block.imageMaxHeight && block.imageMaxHeight > 0
+          ? Math.round(block.imageMaxHeight)
+          : null;
+      const dimAttrs = `${w ? ` width="${w}"` : ""}${h ? ` height="${h}"` : ""}`;
+      const styleParts: string[] = [];
+      if (layout === "custom") {
+        if (w) styleParts.push(`width: ${w}px`);
+        if (h) styleParts.push(`height: ${h}px`);
+        styleParts.push("object-fit: cover");
+      } else {
+        styleParts.push("width: 100%");
+      }
+      if (maxH) {
+        styleParts.push(`max-height: ${maxH}px`);
+        if (!styleParts.includes("object-fit: cover")) styleParts.push("object-fit: cover");
+      }
+      const imgStyle = styleParts.length ? ` style="${styleParts.join("; ")}"` : "";
+      const captionHtml = block.caption?.trim()
+        ? `<figcaption>${escapeHtml(block.caption.trim())}</figcaption>`
+        : "";
+      return `<figure class="page-block-image page-image-${escapeAttr(layout)} page-image-align-${escapeAttr(align)}"${idAttr} style="text-align: ${align}"><img src="${src}" alt="${alt}"${mediaAttr}${dimAttrs}${imgStyle} loading="lazy" />${captionHtml}</figure>`;
+    }
+    case "simple_product": {
+      // IMPORTANT: No nested <div> inside `.page-block-product` so `extractContentSegments`
+      // can split `<div ... data-block-type="simple_product" ...>...</div>` deterministically.
+      const name = escapeHtml(block.productName?.trim() || "Simple Product");
+      const cat = escapeHtml(
+        (block.productBadgeText?.trim() || block.productCategoryName || "FEATURED").toUpperCase(),
+      );
+      const href = block.productSlug ? `/products/${escapeAttr(block.productSlug)}` : "/shop";
+      return `<div class="page-block-product"${idAttr}><p class="page-product-fallback"><span class="page-product-badge">${cat}</span> <strong><a href="${href}">${name}</a></strong></p></div>`;
+    }
+    case "cta": {
+      const variant = block.buttonVariant ?? "primary";
+      const targetAttr = block.newTab ? ' target="_blank" rel="noopener noreferrer"' : "";
+      const headingHtml = block.ctaHeading?.trim()
+        ? `<h3 class="page-cta-heading">${escapeHtml(block.ctaHeading.trim())}</h3>`
+        : "";
+      const subtextHtml = block.ctaSubtext?.trim()
+        ? `<p class="page-cta-subtext">${escapeHtml(block.ctaSubtext.trim())}</p>`
+        : "";
+      const href = escapeAttr(block.buttonHref?.trim() || "#");
+      const label = escapeHtml(block.buttonText?.trim() || "Learn more");
+      return `<div class="page-block-cta page-cta-${escapeAttr(variant)}"${idAttr}${alignStyle}>${headingHtml}${subtextHtml}<p class="page-cta-action"><a href="${href}" class="page-cta-button page-cta-button-${escapeAttr(variant)}"${targetAttr}>${label}</a></p></div>`;
+    }
+    case "list": {
+      const tag = block.listStyle === "ordered" ? "ol" : "ul";
+      const items = (block.items ?? [])
+        .filter((item) => stripTags(item) !== "")
+        .map((item) => `<li>${item}</li>`)
+        .join("");
+      return `<${tag}${idAttr}>${items}</${tag}>`;
+    }
+    case "quote": {
+      const authorHtml = block.quoteAuthor?.trim()
+        ? `<figcaption class="page-quote-author">— ${escapeHtml(block.quoteAuthor.trim())}</figcaption>`
+        : "";
+      return `<blockquote class="page-block-quote"${idAttr}${alignStyle}><p>${block.html ?? ""}</p>${authorHtml}</blockquote>`;
+    }
+    case "divider": {
+      const style = block.dividerStyle ?? "solid";
+      return `<hr class="page-block-divider page-divider-${escapeAttr(style)}"${idAttr} />`;
+    }
+    case "layout": {
+      // IMPORTANT: No nested <div> inside `.page-block-layout` AND no `data-block-json` on
+      // inner elements so `htmlToBlocks` and `extractContentSegments` match the top-level
+      // `<div class="page-block-layout" ...>...</div>` deterministically while preserving
+      // `<img data-media-id="...">` and SEO text content.
+      const rows = Math.max(1, Math.min(12, block.layoutRows ?? 1));
+      const cols = Math.max(1, Math.min(6, block.layoutCols ?? 2));
+      const cells = normalizeLayoutCells(rows, cols, block.layoutCells);
+      const normalizedBlock: PageBlock = {
+        ...block,
+        layoutRows: rows,
+        layoutCols: cols,
+        layoutCells: cells,
+      };
+      const meta = escapeAttr(JSON.stringify(normalizedBlock));
+      const innerSummary = cells
+        .flatMap((cell) => cell)
+        .filter((child) => !isBlockEmpty(child))
+        .map((child) => {
+          if (child.type === "image" && child.src) {
+            const mAttr = child.mediaId ? ` data-media-id="${escapeAttr(child.mediaId)}"` : "";
+            return `<img src="${escapeAttr(child.src)}" alt="${escapeAttr(child.alt ?? "")}"${mAttr} loading="lazy" />`;
+          }
+          if (child.type === "simple_product") {
+            return `<span>${escapeHtml(child.productName || "Simple Product")}</span>`;
+          }
+          if (child.type === "cta") {
+            return `<span>${escapeHtml(child.ctaHeading || child.buttonText || "")}</span>`;
+          }
+          if (child.type === "list") {
+            return `<span>${(child.items ?? []).map((it) => escapeHtml(stripTags(it))).join(" ")}</span>`;
+          }
+          return `<span>${escapeHtml(stripTags(child.html ?? ""))}</span>`;
+        })
+        .join(" ");
+      return `<div class="page-block-layout" data-block-id="${escapeAttr(block.id)}" data-block-type="layout" data-block-json="${meta}"><p class="page-layout-fallback">${innerSummary || `Layout (${rows}x${cols})`}</p></div>`;
+    }
+  }
+}
+
+/**
  * Serialises the modular block array into clean semantic HTML.
  * If every block is empty, returns `""` so blank draft validation still works.
  */
 export function blocksToHtml(blocks: PageBlock[]): string {
   const nonEmpty = blocks.filter((b) => !isBlockEmpty(b));
   if (nonEmpty.length === 0) return "";
-
-  return nonEmpty
-    .map((block) => {
-      const meta = escapeAttr(JSON.stringify(block));
-      const alignStyle =
-        block.align && block.align !== "left" ? ` style="text-align: ${block.align}"` : "";
-
-      switch (block.type) {
-        case "heading": {
-          const tag = block.level && /^h[1-4]$/.test(block.level) ? block.level : "h2";
-          return `<${tag} data-block-id="${escapeAttr(block.id)}" data-block-type="heading" data-block-json="${meta}"${alignStyle}>${block.html ?? ""}</${tag}>`;
-        }
-        case "paragraph": {
-          const cls =
-            block.variant === "lead"
-              ? ' class="page-block-lead"'
-              : block.variant === "muted"
-                ? ' class="page-block-muted"'
-                : "";
-          return `<p data-block-id="${escapeAttr(block.id)}" data-block-type="paragraph" data-block-json="${meta}"${cls}${alignStyle}>${block.html ?? ""}</p>`;
-        }
-        case "callout": {
-          const tone = block.tone ?? "info";
-          const titleHtml = block.calloutTitle?.trim()
-            ? `<p class="page-callout-title"><strong>${escapeHtml(block.calloutTitle.trim())}</strong></p>`
-            : "";
-          return `<div class="page-block-callout page-callout-${escapeAttr(tone)}" data-block-id="${escapeAttr(block.id)}" data-block-type="callout" data-block-json="${meta}">${titleHtml}<div class="page-callout-body">${block.html ?? ""}</div></div>`;
-        }
-        case "image": {
-          const rawLayout = block.imageLayout as string | undefined;
-          const layout: ImageLayout = rawLayout === "custom" ? "custom" : "full";
-          const align: TextAlign = block.align ?? "center";
-          const mediaAttr = block.mediaId ? ` data-media-id="${escapeAttr(block.mediaId)}"` : "";
-          const alt = escapeAttr(block.alt ?? "");
-          const src = escapeAttr(block.src ?? "");
-          const w =
-            layout === "custom" && block.imageWidth && block.imageWidth > 0
-              ? Math.round(block.imageWidth)
-              : null;
-          const h =
-            layout === "custom" && block.imageHeight && block.imageHeight > 0
-              ? Math.round(block.imageHeight)
-              : null;
-          const maxH =
-            block.imageMaxHeight && block.imageMaxHeight > 0
-              ? Math.round(block.imageMaxHeight)
-              : null;
-          const dimAttrs = `${w ? ` width="${w}"` : ""}${h ? ` height="${h}"` : ""}`;
-          const styleParts: string[] = [];
-          if (layout === "custom") {
-            if (w) styleParts.push(`width: ${w}px`);
-            if (h) styleParts.push(`height: ${h}px`);
-            styleParts.push("object-fit: cover");
-          } else {
-            styleParts.push("width: 100%");
-          }
-          if (maxH) {
-            styleParts.push(`max-height: ${maxH}px`);
-            if (!styleParts.includes("object-fit: cover")) styleParts.push("object-fit: cover");
-          }
-          const imgStyle = styleParts.length ? ` style="${styleParts.join("; ")}"` : "";
-          const captionHtml = block.caption?.trim()
-            ? `<figcaption>${escapeHtml(block.caption.trim())}</figcaption>`
-            : "";
-          return `<figure class="page-block-image page-image-${escapeAttr(layout)} page-image-align-${escapeAttr(align)}" data-block-id="${escapeAttr(block.id)}" data-block-type="image" data-block-json="${meta}" style="text-align: ${align}"><img src="${src}" alt="${alt}"${mediaAttr}${dimAttrs}${imgStyle} loading="lazy" />${captionHtml}</figure>`;
-        }
-        case "simple_product": {
-          // IMPORTANT: No nested <div> inside `.page-block-product` so `extractContentSegments`
-          // can split `<div ... data-block-type="simple_product" ...>...</div>` deterministically.
-          const name = escapeHtml(block.productName?.trim() || "Simple Product");
-          const cat = escapeHtml(
-            (block.productBadgeText?.trim() || block.productCategoryName || "FEATURED").toUpperCase(),
-          );
-          const href = block.productSlug ? `/products/${escapeAttr(block.productSlug)}` : "/shop";
-          return `<div class="page-block-product" data-block-id="${escapeAttr(block.id)}" data-block-type="simple_product" data-block-json="${meta}"><p class="page-product-fallback"><span class="page-product-badge">${cat}</span> <strong><a href="${href}">${name}</a></strong></p></div>`;
-        }
-        case "cta": {
-          const variant = block.buttonVariant ?? "primary";
-          const targetAttr = block.newTab ? ' target="_blank" rel="noopener noreferrer"' : "";
-          const headingHtml = block.ctaHeading?.trim()
-            ? `<h3 class="page-cta-heading">${escapeHtml(block.ctaHeading.trim())}</h3>`
-            : "";
-          const subtextHtml = block.ctaSubtext?.trim()
-            ? `<p class="page-cta-subtext">${escapeHtml(block.ctaSubtext.trim())}</p>`
-            : "";
-          const href = escapeAttr(block.buttonHref?.trim() || "#");
-          const label = escapeHtml(block.buttonText?.trim() || "Learn more");
-          return `<div class="page-block-cta page-cta-${escapeAttr(variant)}" data-block-id="${escapeAttr(block.id)}" data-block-type="cta" data-block-json="${meta}"${alignStyle}>${headingHtml}${subtextHtml}<p class="page-cta-action"><a href="${href}" class="page-cta-button page-cta-button-${escapeAttr(variant)}"${targetAttr}>${label}</a></p></div>`;
-        }
-        case "list": {
-          const tag = block.listStyle === "ordered" ? "ol" : "ul";
-          const items = (block.items ?? [])
-            .filter((item) => stripTags(item) !== "")
-            .map((item) => `<li>${item}</li>`)
-            .join("");
-          return `<${tag} data-block-id="${escapeAttr(block.id)}" data-block-type="list" data-block-json="${meta}">${items}</${tag}>`;
-        }
-        case "quote": {
-          const authorHtml = block.quoteAuthor?.trim()
-            ? `<figcaption class="page-quote-author">— ${escapeHtml(block.quoteAuthor.trim())}</figcaption>`
-            : "";
-          return `<blockquote class="page-block-quote" data-block-id="${escapeAttr(block.id)}" data-block-type="quote" data-block-json="${meta}"${alignStyle}><p>${block.html ?? ""}</p>${authorHtml}</blockquote>`;
-        }
-        case "divider": {
-          const style = block.dividerStyle ?? "solid";
-          return `<hr class="page-block-divider page-divider-${escapeAttr(style)}" data-block-id="${escapeAttr(block.id)}" data-block-type="divider" data-block-json="${meta}" />`;
-        }
-      }
-    })
-    .join("\n");
+  return nonEmpty.map((block) => renderSingleBlockHtml(block, true)).join("\n");
 }
 
 function unescapeAttr(raw: string): string {
@@ -424,20 +515,24 @@ function unescapeAttr(raw: string): string {
 
 export type PageContentSegment =
   | { kind: "html"; html: string }
-  | { kind: "simple_product"; block: PageBlock };
+  | { kind: "simple_product"; block: PageBlock }
+  | { kind: "layout"; block: PageBlock };
 
 /**
  * Splits sanitised page HTML into static rich-text segments and interactive
- * `simple_product` blocks so `PageArticle` can mount `<SimpleProductBlockCard />`
- * directly in place while keeping surrounding rich text untouched.
+ * `simple_product` / `layout` blocks so `PageArticle` can mount them cleanly.
  */
 export function extractContentSegments(sanitizedHtml: string): PageContentSegment[] {
-  if (!sanitizedHtml || !sanitizedHtml.includes('data-block-type="simple_product"')) {
+  if (
+    !sanitizedHtml ||
+    (!sanitizedHtml.includes('data-block-type="simple_product"') &&
+      !sanitizedHtml.includes('data-block-type="layout"'))
+  ) {
     return sanitizedHtml ? [{ kind: "html", html: sanitizedHtml }] : [];
   }
 
   const segments: PageContentSegment[] = [];
-  const re = /<div\b[^>]*data-block-type="simple_product"[^>]*>[\s\S]*?<\/div>/gi;
+  const re = /<div\b[^>]*data-block-type="(?:simple_product|layout)"[^>]*>[\s\S]*?<\/div>/gi;
   let lastIdx = 0;
   let match: RegExpExecArray | null;
 
@@ -452,6 +547,20 @@ export function extractContentSegments(sanitizedHtml: string): PageContentSegmen
         const parsed = JSON.parse(unescapeAttr(jsonMatch[1])) as PageBlock;
         if (parsed && parsed.type === "simple_product") {
           segments.push({ kind: "simple_product", block: parsed });
+        } else if (parsed && parsed.type === "layout") {
+          const rows = Math.max(1, Math.min(12, parsed.layoutRows ?? 1));
+          const cols = Math.max(1, Math.min(6, parsed.layoutCols ?? 2));
+          segments.push({
+            kind: "layout",
+            block: {
+              ...parsed,
+              layoutRows: rows,
+              layoutCols: cols,
+              layoutCells: normalizeLayoutCells(rows, cols, parsed.layoutCells),
+            },
+          });
+        } else {
+          segments.push({ kind: "html", html: blockEl });
         }
       } catch {
         segments.push({ kind: "html", html: blockEl });
@@ -487,6 +596,13 @@ export function htmlToBlocks(html: string): PageBlock[] {
           const l = obj.imageLayout as string | undefined;
           if (l === "standard") obj.imageLayout = "custom";
           else if (l === "wide" || !l) obj.imageLayout = "full";
+        }
+        if (obj.type === "layout") {
+          const rows = Math.max(1, Math.min(12, obj.layoutRows ?? 1));
+          const cols = Math.max(1, Math.min(6, obj.layoutCols ?? 2));
+          obj.layoutRows = rows;
+          obj.layoutCols = cols;
+          obj.layoutCells = normalizeLayoutCells(rows, cols, obj.layoutCells);
         }
         parsed.push(obj);
       }
