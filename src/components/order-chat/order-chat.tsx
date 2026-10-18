@@ -531,7 +531,7 @@ function MessageBubble({ message, mine, status, customerName }: { message: Order
             isAdmin ? "rounded-tl-sm" : "rounded-tr-sm bg-muted",
           )}
         >
-          <p className={cn("text-xs font-bold")}>{name}</p>
+          <p className={cn("text-xs font-bold text-primary")}>{name}</p>
           <p className="mt-0.5 whitespace-pre-wrap">{message.message}</p>
         </div>
         <span

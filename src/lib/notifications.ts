@@ -48,10 +48,65 @@ export type AppNotification = {
 
 /** Page size of the notifications page (the bell shows a short preview). */
 export const NOTIFICATIONS_PER_PAGE = 12;
-/** How many the bell's popover keeps. */
-export const NOTIFICATION_PREVIEW_SIZE = 8;
+/** How many raw rows the bell's popover fetches before grouping by order. */
+export const NOTIFICATION_PREVIEW_SIZE = 25;
 /** How many the open tab keeps in memory between two server renders. */
-export const NOTIFICATION_MEMORY_SIZE = 20;
+export const NOTIFICATION_MEMORY_SIZE = 40;
+
+export type NotificationGroup = {
+  /** Stable React key (`order-msg:<order_id>` or row id). */
+  key: string;
+  /** The newest notification in the group (drives the header and preview). */
+  latest: AppNotification;
+  /** All notifications in this group, newest first. */
+  items: AppNotification[];
+  /** All notification IDs in this group. */
+  ids: string[];
+  /** Unread notification IDs in this group. */
+  unreadIds: string[];
+};
+
+/**
+ * Aggregates `order_message` notifications that share the same `order_id` (or `href`)
+ * into a single grouped entry at the position of the newest message for that order.
+ * Non-message notifications stay individual entries.
+ */
+export function groupNotifications(items: AppNotification[]): NotificationGroup[] {
+  const groups: NotificationGroup[] = [];
+  const messageGroupByOrder = new Map<string, NotificationGroup>();
+
+  for (const item of items) {
+    const groupKey = item.kind === "order_message" ? (item.order_id || item.href) : null;
+    if (groupKey) {
+      const existing = messageGroupByOrder.get(groupKey);
+      if (existing) {
+        existing.items.push(item);
+        existing.ids.push(item.id);
+        if (!item.read_at) existing.unreadIds.push(item.id);
+        continue;
+      }
+      const group: NotificationGroup = {
+        key: `order-msg:${groupKey}`,
+        latest: item,
+        items: [item],
+        ids: [item.id],
+        unreadIds: item.read_at ? [] : [item.id],
+      };
+      messageGroupByOrder.set(groupKey, group);
+      groups.push(group);
+    } else {
+      groups.push({
+        key: item.id,
+        latest: item,
+        items: [item],
+        ids: [item.id],
+        unreadIds: item.read_at ? [] : [item.id],
+      });
+    }
+  }
+
+  return groups;
+}
 
 /**
  * "5m ago" for the first day, then a short date. Deliberately computed on the client

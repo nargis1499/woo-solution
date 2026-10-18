@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightIcon, BellIcon, BellOffIcon } from "lucide-react";
 import { Dialog, OverlayTriggerStateContext, type OverlayTriggerState } from "react-aria-components";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Popover, PopoverTitle } from "@/components/ui/popover";
+import { groupNotifications } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "./notifications-provider";
 import { NotificationRow } from "./notification-row";
@@ -63,6 +64,7 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
   if (!notifications) return null;
 
   const { items, unread, live, markAllRead, markRead } = notifications;
+  const groups = useMemo(() => groupNotifications(items).slice(0, 6), [items]);
   const label = unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
 
   // What the dialog reads for its Escape key / closing behaviour.
@@ -147,13 +149,17 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
             </div>
           ) : (
             <ul className="scrollbar-hidden max-h-[min(62vh,440px)] divide-y overflow-y-auto overscroll-contain">
-              {items.slice(0, 6).map((notification) => (
+              {groups.map((group) => (
                 <NotificationRow
-                  key={notification.id}
-                  notification={notification}
+                  key={group.key}
+                  notification={group.latest}
+                  groupItems={group.items}
                   compact
-                  onOpen={(id) => {
-                    void markRead([id]);
+                  onMarkGroupRead={(ids) => {
+                    void markRead(ids);
+                  }}
+                  onOpen={(ids) => {
+                    void markRead(ids);
                     setOpen(false); // navigating away – do not leave the popover hanging over the next page
                   }}
                 />

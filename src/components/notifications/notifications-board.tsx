@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Key } from "react-aria-components";
 import { BellOffIcon, CheckCheckIcon, Trash2Icon, XIcon } from "lucide-react";
-import { NOTIFICATION_FILTERS, NOTIFICATION_FILTER_LABELS, type AppNotification, type NotificationFilter } from "@/lib/notifications";
+import { NOTIFICATION_FILTERS, NOTIFICATION_FILTER_LABELS, groupNotifications, type AppNotification, type NotificationFilter } from "@/lib/notifications";
 import { listHref } from "@/lib/admin/pagination";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import { Pagination } from "@/components/admin/pagination";
 import { PerPageSelect } from "@/components/admin/per-page-select";
 import { deleteNotifications, markNotificationsRead } from "./mutations";
 import { NotificationRow } from "./notification-row";
+import { useNotifications } from "./notifications-provider";
 
 /**
  * The notifications page, shared by `/notifications` (customer) and
@@ -50,6 +51,7 @@ export function NotificationsBoard({
   perPageOptions?: readonly number[];
 }) {
   const router = useRouter();
+  const liveNotifications = useNotifications();
   const [pending, startTransition] = useTransition();
   const [unreadCount, setUnreadCount] = useState(unread);
   const [items, setItems] = useState(serverItems);
@@ -72,6 +74,7 @@ export function NotificationsBoard({
     setSelected(new Set());
   }
 
+  const groups = useMemo(() => groupNotifications(items), [items]);
   const selectedIds = useMemo(() => items.filter((n) => selected.has(n.id)).map((n) => n.id), [items, selected]);
   const unreadSelected = useMemo(() => items.filter((n) => selected.has(n.id) && !n.read_at).length, [items, selected]);
   const allSelected = items.length > 0 && selected.size === items.length;
@@ -158,23 +161,45 @@ export function NotificationsBoard({
       ) : (
         <Card className="gap-0 overflow-visible py-0">
           <ul className="divide-y overflow-hidden rounded-xl" data-testid="notifications-list">
-            {items.map((notification) => (
+            {groups.map((group) => (
               <NotificationRow
-                key={notification.id}
-                notification={notification}
-                selected={selected.has(notification.id)}
-                onSelect={(id, next) =>
+                key={group.key}
+                notification={group.latest}
+                groupItems={group.items}
+                selected={group.ids.every((id) => selected.has(id))}
+                onSelect={(ids, next) =>
                   setSelected((prev) => {
                     const copy = new Set(prev);
-                    if (next) copy.add(id);
-                    else copy.delete(id);
+                    for (const id of ids) {
+                      if (next) copy.add(id);
+                      else copy.delete(id);
+                    }
                     return copy;
                   })
                 }
-                onOpen={(id) => {
-                  setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: n.read_at ?? new Date().toISOString() } : n)));
-                  setUnreadCount((prev) => Math.max(0, prev - (items.find((n) => n.id === id && !n.read_at) ? 1 : 0)));
-                  void markNotificationsRead([id]);
+                onMarkGroupRead={(ids) => {
+                  const now = new Date().toISOString();
+                  const idSet = new Set(ids);
+                  const newlyRead = items.filter((n) => idSet.has(n.id) && !n.read_at).length;
+                  setItems((prev) => prev.map((n) => (idSet.has(n.id) ? { ...n, read_at: n.read_at ?? now } : n)));
+                  setUnreadCount((prev) => Math.max(0, prev - newlyRead));
+                  if (liveNotifications) {
+                    void liveNotifications.markRead(ids);
+                  } else {
+                    void markNotificationsRead(ids);
+                  }
+                }}
+                onOpen={(ids) => {
+                  const now = new Date().toISOString();
+                  const idSet = new Set(ids);
+                  const newlyRead = items.filter((n) => idSet.has(n.id) && !n.read_at).length;
+                  setItems((prev) => prev.map((n) => (idSet.has(n.id) ? { ...n, read_at: n.read_at ?? now } : n)));
+                  setUnreadCount((prev) => Math.max(0, prev - newlyRead));
+                  if (liveNotifications) {
+                    void liveNotifications.markRead(ids);
+                  } else {
+                    void markNotificationsRead(ids);
+                  }
                 }}
               />
             ))}
