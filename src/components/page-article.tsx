@@ -31,7 +31,7 @@ export function PageArticle({ page, className }: { page: Page; className?: strin
     <article className={cn("container-page py-10", className)} data-testid="page-article">
       <PageBreadcrumbs className="mb-6" items={[{ label: "Home", href: "/" }, { label: page.title }]} />
 
-      <header className="mx-auto max-w-3xl">
+      <header className="mx-auto">
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">{page.title}</h1>
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
@@ -51,7 +51,7 @@ export function PageArticle({ page, className }: { page: Page; className?: strin
       </header>
 
       {image && (
-        <figure className="mx-auto mt-8 max-w-5xl">
+        <figure className="mx-auto mt-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={image.src}
@@ -69,7 +69,7 @@ export function PageArticle({ page, className }: { page: Page; className?: strin
       )}
 
       {html ? (
-        <div className="mx-auto mt-8 max-w-3xl">
+        <div className="mx-auto mt-8">
           <div className="rich-text rich-text-lg" data-testid="page-content" dangerouslySetInnerHTML={{ __html: html }} />
         </div>
       ) : (
