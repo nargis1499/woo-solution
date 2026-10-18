@@ -95,7 +95,9 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   const routeKey = `${pathname}?${searchParams.toString()}`;
   const formRef = useRef<HTMLFormElement | null>(null);
 
-  const [mode, setMode] = useState<Mode>(() => resolveActiveThemeMode(resolvedTheme));
+  // Start with "light" on both server and initial client hydration render so SSR HTML matches
+  // client hydration, then immediately sync to the active theme mode in `useEffect`.
+  const [mode, setMode] = useState<Mode>("light");
   const [light, setLight] = useState<ThemeColors>(saved.light);
   const [dark, setDark] = useState<ThemeColors>(saved.dark);
   const [gradients, setGradients] = useState<ThemeGradientSets>(saved.gradients);
