@@ -472,19 +472,26 @@ export function useBlockEditorState({
     setTargetLayoutCell(null);
   }, []);
 
-  const { activeBlock, activeParentLayoutId } = useMemo(() => {
-    const top = blocks.find((b) => b.id === activeBlockId);
-    if (top) return { activeBlock: top, activeParentLayoutId: null };
+  let activeBlock: PageBlock | null = blocks.find((b) => b.id === activeBlockId) ?? null;
+  let activeParentLayoutId: string | null = null;
+  if (!activeBlock) {
     for (const b of blocks) {
       if (b.type === "layout" && b.layoutCells) {
         for (const cell of b.layoutCells) {
           const found = cell.find((child) => child.id === activeBlockId);
-          if (found) return { activeBlock: found, activeParentLayoutId: b.id };
+          if (found) {
+            activeBlock = found;
+            activeParentLayoutId = b.id;
+            break;
+          }
         }
+        if (activeBlock) break;
       }
     }
-    return { activeBlock: blocks[0] ?? null, activeParentLayoutId: null };
-  }, [blocks, activeBlockId]);
+    if (!activeBlock) {
+      activeBlock = blocks[0] ?? null;
+    }
+  }
 
   const html = useMemo(() => blocksToHtml(blocks), [blocks]);
 
@@ -720,8 +727,9 @@ function FloatingInlineToolbar({
     document.addEventListener("selectionchange", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
     window.addEventListener("resize", updatePosition);
-    updatePosition();
+    const rafId = window.requestAnimationFrame(updatePosition);
     return () => {
+      window.cancelAnimationFrame(rafId);
       document.removeEventListener("selectionchange", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
       window.removeEventListener("resize", updatePosition);
@@ -2178,10 +2186,6 @@ function BlockPickerModal({ controller }: { controller: BlockEditorController })
   }, [controller.targetLayoutCell, query]);
 
   useEffect(() => {
-    setSelectedIndex(0);
-  }, [query]);
-
-  useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
@@ -2221,7 +2225,10 @@ function BlockPickerModal({ controller }: { controller: BlockEditorController })
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelectedIndex(0);
+            }}
             placeholder="Search blocks... (Heading, Paragraph, Image, CTA)"
             data-testid="block-picker-search"
             className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"

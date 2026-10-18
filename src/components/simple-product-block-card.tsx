@@ -9,7 +9,6 @@ import {
   PackageIcon,
   PlusIcon,
   ShoppingCartIcon,
-  SparklesIcon,
   StarIcon,
 } from "lucide-react";
 import { useCartStore } from "@/lib/cart-store";
@@ -43,7 +42,6 @@ export function SimpleProductBlockCard({
   product = null,
   editorMode = false,
   manageStock = true,
-  onRequestSelectProduct,
   className,
 }: SimpleProductBlockCardProps) {
   const money = useMoney();

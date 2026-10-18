@@ -62,12 +62,14 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
     };
   }, [open, updatePosition]);
 
-  const items = notifications?.items ?? [];
-  const groups = useMemo(() => groupNotifications(items).slice(0, 6), [items]);
+  const groups = useMemo(
+    () => groupNotifications(notifications?.items ?? []).slice(0, 6),
+    [notifications?.items],
+  );
 
   if (!notifications) return null;
 
-  const { unread, live, markAllRead, markRead } = notifications;
+  const { unread, live, markAllRead, markRead, items } = notifications;
   const label = unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
 
   return (

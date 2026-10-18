@@ -6,7 +6,6 @@ import { updateGeneralSettings, updateSeoSettings, updateShopSettings, type Admi
 import {
   CURRENCIES,
   CURRENCY_CODES,
-  USD_MONEY,
   formatExchangeRate,
   formatMoney,
   inputFromMicros,

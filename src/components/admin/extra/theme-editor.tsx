@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { CheckIcon, ChevronDownIcon, MoonIcon, PaintbrushIcon, RotateCcwIcon, ShoppingBagIcon, SunIcon } from "lucide-react";
@@ -53,6 +60,8 @@ const MODES: { id: Mode; label: string }[] = [
   { id: "dark", label: "Dark mode" },
 ];
 
+const subscribeNoop = () => () => {};
+
 function resolveActiveThemeMode(resolvedTheme?: string): Mode {
   if (resolvedTheme === "dark" || resolvedTheme === "light") return resolvedTheme;
   if (typeof document !== "undefined") {
@@ -90,14 +99,27 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   useFormToast(state);
 
   const { resolvedTheme } = useTheme();
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const routeKey = `${pathname}?${searchParams.toString()}`;
   const formRef = useRef<HTMLFormElement | null>(null);
 
+  const activeThemeMode: Mode = mounted
+    ? resolveActiveThemeMode(resolvedTheme)
+    : "light";
+
   // Start with "light" on both server and initial client hydration render so SSR HTML matches
-  // client hydration, then immediately sync to the active theme mode in `useEffect`.
+  // client hydration, then sync to the active theme mode via derived state when mounted, when
+  // the global theme mode is toggled, or when navigation routes change.
   const [mode, setMode] = useState<Mode>("light");
+  const [seenSyncKey, setSeenSyncKey] = useState("");
+  const syncKey = mounted ? `${activeThemeMode}:${routeKey}` : "";
+  if (syncKey && seenSyncKey !== syncKey) {
+    setSeenSyncKey(syncKey);
+    setMode(activeThemeMode);
+  }
+
   const [light, setLight] = useState<ThemeColors>(saved.light);
   const [dark, setDark] = useState<ThemeColors>(saved.dark);
   const [gradients, setGradients] = useState<ThemeGradientSets>(saved.gradients);
@@ -108,12 +130,6 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   const [colorsOpen, setColorsOpen] = useState(false);
   const [headerFooterOpen, setHeaderFooterOpen] = useState(false);
   const [gradientsOpen, setGradientsOpen] = useState(false);
-
-  // Sync the active editor mode with the current theme mode on mount, when the global
-  // theme mode is toggled, and when navigation routes change.
-  useEffect(() => {
-    setMode(resolveActiveThemeMode(resolvedTheme));
-  }, [resolvedTheme, routeKey]);
 
   // Also sync when switching into the Extra tab inside /nemesis/ui (where TabsContent uses shouldForceMount).
   useEffect(() => {

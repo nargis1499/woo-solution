@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { createElement, useId, useState } from "react";
 import {
   DndContext,
   MouseSensor,
@@ -88,6 +88,13 @@ function categoryIconFor(category: Category): LucideIcon {
   return DEFAULT_CATEGORY_ICON;
 }
 
+function CategoryRowIcon({ category }: { category: Category }) {
+  return createElement(categoryIconFor(category), {
+    className: "size-5",
+    "aria-hidden": true,
+  });
+}
+
 type CategorySectionRow = HomeCategorySectionConfig & { category: Category };
 
 function SortableCategorySectionRow({
@@ -117,8 +124,6 @@ function SortableCategorySectionRow({
   } = useSortable({ id: row.category_id });
   const { "aria-describedby": dndGeneratedId, ...dndAttributes } = attributes;
   void dndGeneratedId;
-
-  const Icon = categoryIconFor(row.category);
 
   return (
     <div
@@ -151,7 +156,7 @@ function SortableCategorySectionRow({
           <GripVerticalIcon className="size-4" />
         </span>
         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
-          <Icon className="size-5" aria-hidden />
+          <CategoryRowIcon category={row.category} />
         </span>
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="text-sm font-bold text-foreground sm:text-base">

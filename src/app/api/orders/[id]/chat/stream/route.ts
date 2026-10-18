@@ -49,7 +49,6 @@ export async function GET(request: Request, { params }: Params) {
   // Ids already written to this stream: bus, catch-up and poll overlap on purpose.
   const sent = new Set<string>();
   const receipts = new Map<string, { delivered: string | null; seen: string | null }>();
-  let cursor: string | null = since;
   let lastWrite = Date.now();
 
   let end = () => {};
@@ -75,7 +74,6 @@ export async function GET(request: Request, { params }: Params) {
         if (sent.has(message.id)) return;
         sent.add(message.id);
         receipts.set(message.id, { delivered: message.delivered_at ?? null, seen: message.seen_at ?? null });
-        cursor = message.created_at;
         write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
       };
 
