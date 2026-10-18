@@ -248,7 +248,7 @@ export function SimpleProductBlockCard({
           <div className="space-y-1">
             <h3
               data-testid="simple-product-title"
-              className="text-lg font-bold tracking-tight text-foreground leading-snug sm:text-xl lg:text-2xl"
+              className="text-lg font-bold tracking-tight text-foreground leading-snug sm:text-lg lg:text-xl"
             >
               {!editorMode && slug ? (
                 <Link
@@ -356,7 +356,7 @@ export function SimpleProductBlockCard({
                   "inline-flex h-10 items-center justify-center gap-2 rounded-xl px-5 text-xs font-bold tracking-wider uppercase shadow-sm transition-all sm:px-6 sm:text-sm",
                   outOfStock
                     ? "cursor-not-allowed border border-border bg-muted text-muted-foreground opacity-60"
-                    : "bg-button text-button-foreground hover:opacity-92 active:scale-[0.99]",
+                    : "bg-primary text-primary-foreground hover:opacity-92 active:scale-[0.99]",
                 )}
               >
                 {outOfStock ? (
