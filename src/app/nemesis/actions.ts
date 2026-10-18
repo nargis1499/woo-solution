@@ -7,7 +7,7 @@ import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole }
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
 import { HOME_FILTER_TITLE_MAX } from "@/lib/home-sections";
 import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradientSets } from "@/lib/theme";
-import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, formatExchangeRate, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
+import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
 import { isCategoryIconId } from "@/lib/category-icons";
 import { MENU_TAG } from "@/lib/menu";
 import { PRESENCE_VISIBILITIES, type PresenceVisibility } from "@/lib/presence";
@@ -1182,8 +1182,6 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
 
   if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
   try {
-    const { supabase } = await adminClient();
-    const { data: before } = await supabase.from("site_settings").select("manage_stock").eq("id", 1).maybeSingle();
     const problem = await saveSiteSettings({
       manage_stock: manageStock,
       currency,
@@ -1192,13 +1190,7 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
       ...(shippingRateMicros !== null ? { shipping_rate_micros: shippingRateMicros } : {}),
     });
     if (problem) return { error: problem, values };
-    const stockChanged = before && typeof before.manage_stock === "boolean" && before.manage_stock !== manageStock;
-    const success = stockChanged
-      ? manageStock
-        ? "Stock management enabled."
-        : "Stock management disabled – every product is now unlimited."
-      : `WooCommerce settings saved – prices now show in ${currency === "BDT" ? `BDT (৳, 1 USD = ${formatExchangeRate(rate!)} BDT)` : "USD ($)"}.`;
-    return { success, values };
+    return { success: "Setting Saved", values };
   } catch (e) {
     return { error: friendlyError(e), values };
   }
