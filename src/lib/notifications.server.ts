@@ -1,4 +1,5 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { NOTIFICATIONS_PER_PAGE, type AppNotification, type NotificationFilter } from "@/lib/notifications";
 import { pageCount } from "@/lib/pagination";
@@ -29,8 +30,8 @@ export function isMissingNotificationsError(error: unknown): boolean {
 }
 
 /** The unread badge count. A database without the table simply has none. */
-export async function getUnreadNotificationCount(): Promise<number> {
-  const supabase = await createClient();
+export async function getUnreadNotificationCount(client?: SupabaseClient): Promise<number> {
+  const supabase = client ?? (await createClient());
   const { count, error } = await supabase
     .from("notifications")
     .select("id", { count: "exact", head: true })
@@ -40,11 +41,11 @@ export async function getUnreadNotificationCount(): Promise<number> {
 }
 
 /** The newest few – what the bell's popover renders. */
-export async function getNotificationPreview(limit = 8): Promise<{ items: AppNotification[]; unread: number }> {
-  const supabase = await createClient();
+export async function getNotificationPreview(limit = 8, client?: SupabaseClient): Promise<{ items: AppNotification[]; unread: number }> {
+  const supabase = client ?? (await createClient());
   const [{ data, error }, unread] = await Promise.all([
     supabase.from("notifications").select(NOTIFICATION_COLUMNS).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(limit),
-    getUnreadNotificationCount(),
+    getUnreadNotificationCount(supabase),
   ]);
   if (error) return { items: [], unread: 0 };
   return { items: (data ?? []) as AppNotification[], unread };
@@ -95,8 +96,8 @@ export async function listNotifications({
 }
 
 /** What one SSE tick needs: rows newer than the cursor, oldest first. */
-export async function listNotificationsSince(since: string | null): Promise<AppNotification[]> {
-  const supabase = await createClient();
+export async function listNotificationsSince(since: string | null, client?: SupabaseClient): Promise<AppNotification[]> {
+  const supabase = client ?? (await createClient());
   let query = supabase.from("notifications").select(NOTIFICATION_COLUMNS).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(50);
   if (since) query = query.gt("created_at", since);
   const { data, error } = await query;

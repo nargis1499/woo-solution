@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { CLOSED_THREAD_MESSAGE, MAX_ORDER_MESSAGE_LENGTH, isOrderChatOpen, orderChatTurn } from "@/lib/order-chat";
 import { publishOrderChat } from "@/lib/order-chat-bus";
 import { insertOrderMessage, isMissingOrderMessagesError, listOrderMessagesSince } from "@/lib/order-messages";
+import { getPersonPresence, getStorePresence } from "@/lib/presence.server";
+import { presenceStatus, type Presence } from "@/lib/presence";
 import type { OrderStatus } from "@/lib/types";
 
 /**
@@ -29,10 +31,10 @@ async function loadOrder(id: string) {
   if (!user) return { error: json({ error: "Sign in to open this thread." }, 401) as Response };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.from("orders").select("id, status").eq("id", id).maybeSingle();
+  const { data, error } = await supabase.from("orders").select("id, status, user_id").eq("id", id).maybeSingle();
   if (error || !data) return { error: json({ error: "Order not found." }, 404) as Response };
 
-  return { user, isAdmin, order: data as { id: string; status: OrderStatus } };
+  return { user, isAdmin, order: data as { id: string; status: OrderStatus; user_id: string | null }, supabase };
 }
 
 export async function GET(request: Request, { params }: Params) {
@@ -41,8 +43,29 @@ export async function GET(request: Request, { params }: Params) {
   if ("error" in access) return access.error;
 
   try {
-    const since = new URL(request.url).searchParams.get("since");
-    return json({ messages: await listOrderMessagesSince(access.order.id, since) });
+    const search = new URL(request.url).searchParams;
+    const since = search.get("since");
+    const sync = search.get("sync") === "1";
+    const messages = await listOrderMessagesSince(access.order.id, since, access.supabase);
+    if (!sync) return json({ messages });
+
+    let presence: Presence | undefined;
+    try {
+      if (access.isAdmin) {
+        const customerId = access.order.user_id;
+        if (!customerId) presence = { online: false, lastActiveAt: null };
+        else {
+          const person = await getPersonPresence(customerId, access.supabase);
+          presence = { online: presenceStatus(person.lastActiveAt) === "online", lastActiveAt: person.lastActiveAt };
+        }
+      } else {
+        const store = await getStorePresence(access.user.id, access.supabase);
+        presence = { online: store.online, lastActiveAt: store.lastActiveAt, visibility: store.visibility };
+      }
+    } catch {
+      // presence is best-effort
+    }
+    return json({ messages, ...(presence ? { presence } : {}) });
   } catch (e) {
     if (isMissingOrderMessagesError(e)) return json({ error: MISSING_TABLE }, 503);
     return json({ error: "The thread could not be loaded." }, 500);

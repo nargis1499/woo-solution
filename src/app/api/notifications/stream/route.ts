@@ -1,4 +1,5 @@
 import { getAdminStatus } from "@/lib/admin/auth";
+import { createClient } from "@/lib/supabase/server";
 import { getNotificationPreview, getUnreadNotificationCount, listNotificationsSince } from "@/lib/notifications.server";
 import { subscribeNotifications } from "@/lib/notification-bus";
 import type { AppNotification } from "@/lib/notifications";
@@ -27,6 +28,7 @@ export async function GET(request: Request) {
   const { user } = await getAdminStatus();
   if (!user) return Response.json({ error: "Sign in to receive notifications." }, { status: 401 });
 
+  const supabase = await createClient();
   const userId = user.id;
   const encoder = new TextEncoder();
   let end = () => {};
@@ -93,7 +95,7 @@ export async function GET(request: Request) {
       void (async () => {
         // First frame: what the header should show right now (also heals a reconnect).
         try {
-          const preview = await getNotificationPreview(20);
+          const preview = await getNotificationPreview(20, supabase);
           for (const item of preview.items) sent.add(item.id);
           if (preview.items.length > 0) cursor = preview.items[0].created_at;
           unread = preview.unread;
@@ -105,7 +107,7 @@ export async function GET(request: Request) {
         while (!closed) {
           if (tick % COUNT_EVERY === 0) {
             try {
-              const next = await getUnreadNotificationCount();
+              const next = await getUnreadNotificationCount(supabase);
               if (next !== unread) {
                 unread = next;
                 sendEvent("unread", { unread });
@@ -116,7 +118,7 @@ export async function GET(request: Request) {
           }
 
           try {
-            for (const item of await listNotificationsSince(cursor)) pushNotification(item);
+            for (const item of await listNotificationsSince(cursor, supabase)) pushNotification(item);
           } catch {
             // table missing / database hiccup: hold the connection, try again next tick
           }

@@ -1,4 +1,5 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { sortOrderMessages } from "@/lib/order-chat";
 import type { OrderMessage } from "@/lib/types";
@@ -24,8 +25,8 @@ const MAX_MESSAGES = 500;
  * `since` (an ISO timestamp) returns only what was written after it – the SSE stream uses
  * it to catch up on whatever happened while a tab was closed.
  */
-export async function listOrderMessages(orderId: string, since?: string | null): Promise<OrderMessage[]> {
-  const supabase = await createClient();
+export async function listOrderMessages(orderId: string, since?: string | null, client?: SupabaseClient): Promise<OrderMessage[]> {
+  const supabase = client ?? (await createClient());
   const load = (columns: string) => {
     let query = supabase
       .from("order_messages")
@@ -139,6 +140,6 @@ export async function markOrderMessagesReceived(
 }
 
 /** The thread as the API routes see it – sorted oldest first after a `since` slice. */
-export async function listOrderMessagesSince(orderId: string, since: string | null): Promise<OrderMessage[]> {
-  return sortOrderMessages(await listOrderMessages(orderId, since));
+export async function listOrderMessagesSince(orderId: string, since: string | null, client?: SupabaseClient): Promise<OrderMessage[]> {
+  return sortOrderMessages(await listOrderMessages(orderId, since, client));
 }

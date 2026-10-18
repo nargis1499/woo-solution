@@ -124,9 +124,54 @@ export function OrderChat({
     [viewer],
   );
 
+  /** Merge new messages and updated delivery/seen timestamps without unnecessary re-renders. */
+  const mergeMessages = useCallback((incomingList: OrderMessage[]) => {
+    if (incomingList.length === 0) return;
+    setMessages((prev) => {
+      const byId = new Map(prev.map((m) => [m.id, m]));
+      let changed = false;
+      for (const item of incomingList) {
+        if (!since.current || item.created_at > since.current) {
+          since.current = item.created_at;
+        }
+        const existing = byId.get(item.id);
+        if (!existing) {
+          byId.set(item.id, item);
+          changed = true;
+        } else {
+          const nextDelivered = item.delivered_at ?? existing.delivered_at;
+          const nextSeen = item.seen_at ?? existing.seen_at;
+          if (nextDelivered !== existing.delivered_at || nextSeen !== existing.seen_at) {
+            byId.set(item.id, { ...existing, delivered_at: nextDelivered, seen_at: nextSeen });
+            changed = true;
+          }
+        }
+      }
+      return changed ? sortOrderMessages(Array.from(byId.values())) : prev;
+    });
+  }, []);
+
+  /** Catch-up sync (used on SSE open/reconnect, tab focus, and multi-isolate edge fallback). */
+  const syncThread = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/orders/${orderId}/chat?sync=1`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = (await response.json()) as { messages?: OrderMessage[]; presence?: Presence };
+      if (Array.isArray(data.messages)) mergeMessages(data.messages);
+      if (data.presence) {
+        setPresence((prev) => (JSON.stringify(prev) === JSON.stringify(data.presence) ? prev : data.presence!));
+      }
+    } catch {
+      // keep existing state until next tick
+    }
+  }, [orderId, mergeMessages]);
+
   useEffect(() => {
     const source = new EventSource(`/api/orders/${orderId}/chat/stream${since.current ? `?since=${encodeURIComponent(since.current)}` : ""}`);
-    source.addEventListener("open", () => setLive(true));
+    source.addEventListener("open", () => {
+      setLive(true);
+      void syncThread();
+    });
     source.addEventListener("message", (event) => {
       let incoming: OrderMessage;
       try {
@@ -134,7 +179,7 @@ export function OrderChat({
       } catch {
         return;
       }
-      setMessages((prev) => (prev.some((m) => m.id === incoming.id) ? prev : sortOrderMessages([...prev, incoming])));
+      mergeMessages([incoming]);
     });
     // ✓ / ✓✓ on our own bubbles: the recipient stamped them (seen implies delivered).
     source.addEventListener("receipt", (event) => {
@@ -163,8 +208,15 @@ export function OrderChat({
       }
     });
     source.addEventListener("error", () => setLive(false));
-    return () => source.close();
-  }, [orderId]);
+    const poll = setInterval(() => void syncThread(), 2500);
+    const onFocus = () => void syncThread();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(poll);
+      window.removeEventListener("focus", onFocus);
+      source.close();
+    };
+  }, [orderId, mergeMessages, syncThread]);
 
   // Message arrived: mark it delivered, or seen when this tab is actually being looked at.
   useEffect(() => {
@@ -182,6 +234,7 @@ export function OrderChat({
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
+      void syncThread();
       const ids = unseen(messages);
       if (ids.length === 0) return;
       for (const id of ids) reportedSeen.current.add(id);
@@ -189,7 +242,7 @@ export function OrderChat({
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [messages, unseen, report]);
+  }, [messages, unseen, report, syncThread]);
 
   // Keep the newest bubble in view: once on mount and again after every message. Only the list
   // scrolls – scrolling the page here would jump the whole order page down the moment it loads.
@@ -216,7 +269,7 @@ export function OrderChat({
         return;
       }
       const saved = payload.message;
-      setMessages((prev) => (prev.some((m) => m.id === saved.id) ? prev : sortOrderMessages([...prev, saved])));
+      mergeMessages([saved]);
       setDraft("");
     } catch {
       setError("The message could not be sent. Please try again.");

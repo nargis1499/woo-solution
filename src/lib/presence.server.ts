@@ -1,4 +1,5 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { presenceStatus, type Presence, type PresenceVisibility } from "@/lib/presence";
 
@@ -28,9 +29,9 @@ const rowPresence = (lastActiveAt: string | null, online: boolean): Presence => 
  * when no override exists — happens inside `store_presence_for()`, so a customer never
  * receives an activity time the admin does not want them to have.
  */
-export async function getStorePresence(customerId?: string | null): Promise<StorePresence> {
+export async function getStorePresence(customerId?: string | null, client?: SupabaseClient): Promise<StorePresence> {
   const empty: StorePresence = { online: false, lastActiveAt: null, name: null, avatarUrl: null };
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase.rpc("store_presence_for", { p_customer: customerId ?? null }).maybeSingle();
   if (error || !data) return empty;
 
@@ -44,9 +45,9 @@ export async function getStorePresence(customerId?: string | null): Promise<Stor
 }
 
 /** The presence of one customer, as any admin sees it (no privacy switch on their side). */
-export async function getPersonPresence(userId: string): Promise<Presence & { name: string | null; avatarUrl: string | null }> {
+export async function getPersonPresence(userId: string, client?: SupabaseClient): Promise<Presence & { name: string | null; avatarUrl: string | null }> {
   const empty = { online: false, lastActiveAt: null as string | null, name: null as string | null, avatarUrl: null as string | null };
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase.from("profiles").select("full_name, avatar_url, last_active_at").eq("id", userId).maybeSingle();
   if (error || !data) return empty;
 

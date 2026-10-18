@@ -48,6 +48,7 @@ export async function GET(request: Request, { params }: Params) {
 
   // Ids already written to this stream: bus, catch-up and poll overlap on purpose.
   const sent = new Set<string>();
+  const receipts = new Map<string, { delivered: string | null; seen: string | null }>();
   let cursor: string | null = since;
   let lastWrite = Date.now();
 
@@ -73,8 +74,21 @@ export async function GET(request: Request, { params }: Params) {
       const sendMessage = (message: OrderMessage) => {
         if (sent.has(message.id)) return;
         sent.add(message.id);
+        receipts.set(message.id, { delivered: message.delivered_at ?? null, seen: message.seen_at ?? null });
         cursor = message.created_at;
         write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
+      };
+
+      const sendReceipt = (ids: string[], status: "delivered" | "seen", at: string) => {
+        if (ids.length === 0) return;
+        for (const msgId of ids) {
+          const prev = receipts.get(msgId) ?? { delivered: null, seen: null };
+          receipts.set(msgId, {
+            delivered: prev.delivered ?? at,
+            seen: status === "seen" ? at : prev.seen,
+          });
+        }
+        write(`event: receipt\ndata: ${JSON.stringify({ ids, status, at })}\n\n`);
       };
 
       const close = () => {
@@ -94,7 +108,7 @@ export async function GET(request: Request, { params }: Params) {
 
       unsubscribe = subscribeOrderChat(id, (event) => {
         if (event.type === "message") sendMessage(event.message);
-        else if (event.type === "receipt") write(`event: receipt\ndata: ${JSON.stringify({ ids: event.ids, status: event.status, at: event.at })}\n\n`);
+        else if (event.type === "receipt") sendReceipt(event.ids, event.status, event.at);
         else write(`event: presence\ndata: ${JSON.stringify(event.presence)}\n\n`);
         wake?.();
       });
@@ -110,11 +124,11 @@ export async function GET(request: Request, { params }: Params) {
       const readPresence = async (): Promise<Presence> => {
         if (isAdmin) {
           if (!customerId) return { online: false, lastActiveAt: null };
-          const person = await getPersonPresence(customerId);
+          const person = await getPersonPresence(customerId, supabase);
           return { online: presenceStatus(person.lastActiveAt) === "online", lastActiveAt: person.lastActiveAt };
         }
         // resolved for this customer: their per-customer override, else the global switch
-        const store = await getStorePresence(user.id);
+        const store = await getStorePresence(user.id, supabase);
         return { online: store.online, lastActiveAt: store.lastActiveAt, visibility: store.visibility };
       };
 
@@ -123,7 +137,29 @@ export async function GET(request: Request, { params }: Params) {
         let lastPresence = "";
         while (!closed) {
           try {
-            for (const message of await listOrderMessagesSince(id, cursor)) sendMessage(message);
+            const allMessages = await listOrderMessagesSince(id, null, supabase);
+            for (const message of allMessages) {
+              const deliv = message.delivered_at ?? null;
+              const seen = message.seen_at ?? null;
+              if (!sent.has(message.id)) {
+                if (since && message.created_at <= since) {
+                  // Already in the client's initialMessages; seed its baseline and emit any new receipt.
+                  sent.add(message.id);
+                  receipts.set(message.id, { delivered: deliv, seen });
+                  if (seen) sendReceipt([message.id], "seen", seen);
+                  else if (deliv) sendReceipt([message.id], "delivered", deliv);
+                } else {
+                  sendMessage(message);
+                }
+                continue;
+              }
+              const prev = receipts.get(message.id) ?? { delivered: null, seen: null };
+              if (seen && prev.seen !== seen) {
+                sendReceipt([message.id], "seen", seen);
+              } else if (deliv && prev.delivered !== deliv) {
+                sendReceipt([message.id], "delivered", deliv);
+              }
+            }
           } catch {
             // table missing / database hiccup: hold the connection, try again next tick
           }
