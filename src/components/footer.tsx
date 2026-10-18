@@ -11,7 +11,7 @@ async function copyrightYear() {
 
 export async function Footer() {
   // Footer links come from UI → Menu → Footer menu.
-  const [{ store_name, tagline, support_email, whatsapp, telegram }, nav, year] = await Promise.all([getSiteSettings(), getMenu("footer"), copyrightYear()]);
+  const [{ store_name, tagline, footer_text, support_email, whatsapp, telegram }, nav, year] = await Promise.all([getSiteSettings(), getMenu("footer"), copyrightYear()]);
   const contacts = [
     support_email && { label: support_email, href: `mailto:${support_email}`, icon: MailIcon, title: "E-mail" },
     whatsappHref(whatsapp) && { label: "WhatsApp", href: whatsappHref(whatsapp)!, icon: MessageCircleIcon, title: `WhatsApp +${whatsapp!.replace(/\D/g, "")}` },
@@ -55,7 +55,7 @@ export async function Footer() {
       </div>
       <Separator />
       <div className="container-page py-4 text-xs text-muted-foreground">
-        © {year} {store_name}. Built with Next.js, Supabase and shadcn/ui.
+        © {year} {store_name}.{footer_text ? ` ${footer_text}` : ""}
       </div>
     </footer>
   );

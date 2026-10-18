@@ -290,6 +290,7 @@ export type SiteSettings = {
   // General
   store_name: string;
   tagline: string | null;
+  footer_text: string | null;
   support_email: string | null;
   /** Telegram username without the "@" → https://t.me/<telegram> */
   telegram: string | null;

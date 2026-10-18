@@ -6,6 +6,7 @@
  * values are only used to *preview* totals in the cart.
  */
 export const STORE_NAME = process.env.NEXT_PUBLIC_STORE_NAME ?? "Woo Solution";
+export const DEFAULT_FOOTER_TEXT = "Built with Next.js, Supabase and shadcn/ui.";
 
 // The display currency is a setting (Settings → WooCommerce → Currency). Amounts in this file
 // and in the database are USD micro-dollars (1 USD = 1,000,000) — see src/lib/money.ts.

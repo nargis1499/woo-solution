@@ -1008,25 +1008,51 @@ function normaliseVerificationToken(input: string): string {
   return (fromMeta ? fromMeta[1] : input).trim();
 }
 
+const META_FALLBACK_KEYS = ["footer_text", "shipping_enabled", "shipping_rate_micros"] as const;
+
 /** Writes `patch` onto the single settings row and refreshes everything that renders it. */
 async function saveSiteSettings(patch: Record<string, unknown>): Promise<string | null> {
   const { supabase } = await adminClient();
-  const { data, error } = await supabase.from("site_settings").update(patch).eq("id", 1).select("id").maybeSingle();
+  let { data, error } = await supabase.from("site_settings").update(patch).eq("id", 1).select("id").maybeSingle();
   if (error) {
     if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
       const message = error.message ?? "";
-      const migration = /shipping_/i.test(message)
-        ? "20261036000000_shipping_settings.sql"
-        : /currency|bdt_rate/i.test(message)
-          ? "20261025000000_currency.sql"
-          : /home_/i.test(message)
-            ? "20261024000000_home_sections.sql"
-            : /media_id/i.test(message)
-              ? "20261020000000_single_media_bucket.sql"
-              : "20261018000000_settings_tabs.sql";
-      return `The database is missing the new settings columns – run supabase/migrations/${migration} in the Supabase SQL Editor.`;
+      if (/footer_text|shipping_/i.test(message)) {
+        const { data: current } = await supabase.from("site_settings").select("theme_gradients").eq("id", 1).maybeSingle();
+        const existingGradients =
+          current?.theme_gradients && typeof current.theme_gradients === "object" && !Array.isArray(current.theme_gradients)
+            ? { ...(current.theme_gradients as Record<string, unknown>) }
+            : {};
+        const fallbackPatch: Record<string, unknown> = { ...patch };
+        for (const k of META_FALLBACK_KEYS) {
+          if (k in fallbackPatch) {
+            existingGradients[k] = fallbackPatch[k];
+            delete fallbackPatch[k];
+          }
+        }
+        fallbackPatch.theme_gradients = existingGradients;
+        const retry = await supabase.from("site_settings").update(fallbackPatch).eq("id", 1).select("id").maybeSingle();
+        data = retry.data;
+        error = retry.error;
+      }
+      if (error) {
+        const errMsg = error.message ?? "";
+        const migration = /footer_text/i.test(errMsg)
+          ? "20261037000000_footer_text.sql"
+          : /shipping_/i.test(errMsg)
+            ? "20261036000000_shipping_settings.sql"
+            : /currency|bdt_rate/i.test(errMsg)
+              ? "20261025000000_currency.sql"
+              : /home_/i.test(errMsg)
+                ? "20261024000000_home_sections.sql"
+                : /media_id/i.test(errMsg)
+                  ? "20261020000000_single_media_bucket.sql"
+                  : "20261018000000_settings_tabs.sql";
+        return `The database is missing the new settings columns – run supabase/migrations/${migration} in the Supabase SQL Editor.`;
+      }
+    } else {
+      throw error;
     }
-    throw error;
   }
   if (!data) return "Settings row is missing – run the admin migration (20261016000000_admin.sql).";
   updateTag(SITE_SETTINGS_TAG); // header, footer, <title>, robots & sitemap pick the change up immediately
@@ -1069,6 +1095,7 @@ export async function updateGeneralSettings(_prev: AdminFormState, formData: For
   const values = echo(formData);
   const storeName = str(formData, "store_name", 60);
   const tagline = str(formData, "tagline", 160);
+  const footerText = str(formData, "footer_text", 160);
   const supportEmail = str(formData, "support_email", 120);
   const whatsappRaw = str(formData, "whatsapp", 40);
   const telegramRaw = str(formData, "telegram", 120);
@@ -1094,6 +1121,7 @@ export async function updateGeneralSettings(_prev: AdminFormState, formData: For
     const problem = await saveSiteSettings({
       store_name: storeName,
       tagline: tagline || null,
+      ...(formData.has("footer_text") ? { footer_text: footerText || null } : {}),
       support_email: supportEmail || null,
       whatsapp: whatsapp || null,
       telegram: telegram || null,
@@ -1252,12 +1280,23 @@ export async function updateTheme(_prev: AdminFormState, formData: FormData): Pr
     const gradients: ThemeGradientSets = normaliseGradients(parseThemeJson(str(formData, "theme_gradients", 20000)));
     const sync = bool(formData, "theme_sync");
 
+    const { supabase } = await adminClient();
+    const { data: current } = await supabase.from("site_settings").select("theme_gradients").eq("id", 1).maybeSingle();
+    const existingGradients =
+      current?.theme_gradients && typeof current.theme_gradients === "object" && !Array.isArray(current.theme_gradients)
+        ? (current.theme_gradients as Record<string, unknown>)
+        : {};
+    const mergedGradients: Record<string, unknown> = { ...gradients };
+    for (const k of META_FALLBACK_KEYS) {
+      if (k in existingGradients) mergedGradients[k] = existingGradients[k];
+    }
+
     const problem = await saveSiteSettings({
       theme_light: light,
       // With "use the same colors for both modes" on, the dark palette mirrors the light one
       // (stored, not just rendered, so switching the option off later keeps them in step).
       theme_dark: sync ? light : darkInput,
-      theme_gradients: gradients,
+      theme_gradients: mergedGradients,
       theme_sync: sync,
     });
     if (problem) return { error: problem, values };

@@ -109,10 +109,16 @@ export function GeneralSettingsForm({ settings, favicon }: { settings: SiteSetti
               <FieldError>{err.support_email}</FieldError>
             </Field>
           </div>
-          <Field>
-            <FieldLabel htmlFor="tagline">Tagline</FieldLabel>
-            <Input id="tagline" name="tagline" maxLength={160} placeholder="A modern storefront built with Next.js and Supabase." defaultValue={v.tagline ?? settings.tagline ?? ""} />
-          </Field>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="tagline">Tagline</FieldLabel>
+              <Input id="tagline" name="tagline" maxLength={160} placeholder="A modern storefront built with Next.js and Supabase." defaultValue={v.tagline ?? settings.tagline ?? ""} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="footer_text">Footer Text</FieldLabel>
+              <Input id="footer_text" name="footer_text" maxLength={160} placeholder="Built with Next.js, Supabase and shadcn/ui." defaultValue={v.footer_text ?? settings.footer_text ?? ""} />
+            </Field>
+          </div>
           <div className="grid gap-5 sm:grid-cols-2">
             <Field {...invalid(err.whatsapp)}>
               <FieldLabel htmlFor="whatsapp">WhatsApp number</FieldLabel>

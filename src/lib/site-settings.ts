@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
-import { FLAT_SHIPPING_MICROS, STORE_NAME } from "@/lib/config";
+import { DEFAULT_FOOTER_TEXT, FLAT_SHIPPING_MICROS, STORE_NAME } from "@/lib/config";
 import { isCurrencyCode, moneyFromSettings, type Money } from "@/lib/money";
 import { DEFAULT_THEME, normaliseColors, normaliseGradients, templateTheme } from "@/lib/theme";
 import type { SiteSettings } from "@/lib/types";
@@ -12,6 +12,7 @@ export const SITE_SETTINGS_TAG = "site-settings";
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   store_name: STORE_NAME,
   tagline: null,
+  footer_text: DEFAULT_FOOTER_TEXT,
   support_email: null,
   telegram: null,
   whatsapp: null,
@@ -62,9 +63,22 @@ const nonNegative = (v: unknown, fallback: number): number => {
  */
 export function normaliseSiteSettings(row: Record<string, unknown> | null | undefined): SiteSettings {
   if (!row) return DEFAULT_SITE_SETTINGS;
+  const meta =
+    row.theme_gradients && typeof row.theme_gradients === "object" && !Array.isArray(row.theme_gradients)
+      ? (row.theme_gradients as Record<string, unknown>)
+      : {};
+  const hasFooterCol = "footer_text" in row && row.footer_text !== undefined;
+  const hasFooterMeta = "footer_text" in meta && meta.footer_text !== undefined;
+  const footerText = hasFooterCol
+    ? text(row.footer_text)
+    : hasFooterMeta
+      ? text(meta.footer_text)
+      : DEFAULT_SITE_SETTINGS.footer_text;
+
   return {
     store_name: text(row.store_name) ?? DEFAULT_SITE_SETTINGS.store_name,
     tagline: text(row.tagline),
+    footer_text: footerText,
     support_email: text(row.support_email),
     telegram: text(row.telegram),
     whatsapp: text(row.whatsapp),
@@ -82,8 +96,8 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     manage_stock: flag(row.manage_stock, true),
     currency: isCurrencyCode(row.currency) ? row.currency : "USD",
     usd_to_bdt_rate: positive(row.usd_to_bdt_rate),
-    shipping_enabled: flag(row.shipping_enabled, true),
-    shipping_rate_micros: nonNegative(row.shipping_rate_micros, FLAT_SHIPPING_MICROS),
+    shipping_enabled: flag(row.shipping_enabled ?? meta.shipping_enabled, true),
+    shipping_rate_micros: nonNegative(row.shipping_rate_micros ?? meta.shipping_rate_micros, FLAT_SHIPPING_MICROS),
     home_show_categories: flag(row.home_show_categories, true),
     home_show_featured: flag(row.home_show_featured, true),
     home_show_filter: flag(row.home_show_filter, false),
