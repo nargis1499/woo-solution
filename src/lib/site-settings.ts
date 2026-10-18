@@ -3,6 +3,13 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { DEFAULT_FOOTER_TEXT, FLAT_SHIPPING_MICROS, STORE_NAME } from "@/lib/config";
+import {
+  DEFAULT_HOME_HERO_BADGE,
+  DEFAULT_HOME_HERO_PRIMARY_CTA_HREF,
+  DEFAULT_HOME_HERO_PRIMARY_CTA_TEXT,
+  DEFAULT_HOME_HERO_SECONDARY_CTA_HREF,
+  DEFAULT_HOME_HERO_SECONDARY_CTA_TEXT,
+} from "@/lib/home-sections";
 import { isCurrencyCode, moneyFromSettings, type Money } from "@/lib/money";
 import { DEFAULT_THEME, normaliseColors, normaliseGradients, templateTheme } from "@/lib/theme";
 import type { SiteSettings } from "@/lib/types";
@@ -32,6 +39,14 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   usd_to_bdt_rate: null,
   shipping_enabled: true,
   shipping_rate_micros: FLAT_SHIPPING_MICROS,
+  home_show_hero: true,
+  home_hero_badge: DEFAULT_HOME_HERO_BADGE,
+  home_hero_title: null,
+  home_hero_subtitle: null,
+  home_hero_primary_cta_text: DEFAULT_HOME_HERO_PRIMARY_CTA_TEXT,
+  home_hero_primary_cta_href: DEFAULT_HOME_HERO_PRIMARY_CTA_HREF,
+  home_hero_secondary_cta_text: DEFAULT_HOME_HERO_SECONDARY_CTA_TEXT,
+  home_hero_secondary_cta_href: DEFAULT_HOME_HERO_SECONDARY_CTA_HREF,
   home_show_categories: true,
   home_show_featured: true,
   home_show_filter: false,
@@ -98,6 +113,33 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     usd_to_bdt_rate: positive(row.usd_to_bdt_rate),
     shipping_enabled: flag(row.shipping_enabled ?? meta.shipping_enabled, true),
     shipping_rate_micros: nonNegative(row.shipping_rate_micros ?? meta.shipping_rate_micros, FLAT_SHIPPING_MICROS),
+    home_show_hero: flag(row.home_show_hero ?? meta.home_show_hero, true),
+    home_hero_badge:
+      "home_hero_badge" in row && row.home_hero_badge !== undefined
+        ? text(row.home_hero_badge)
+        : "home_hero_badge" in meta && meta.home_hero_badge !== undefined
+          ? text(meta.home_hero_badge)
+          : DEFAULT_HOME_HERO_BADGE,
+    home_hero_title: text(row.home_hero_title ?? meta.home_hero_title),
+    home_hero_subtitle: text(row.home_hero_subtitle ?? meta.home_hero_subtitle),
+    home_hero_primary_cta_text:
+      "home_hero_primary_cta_text" in row && row.home_hero_primary_cta_text !== undefined
+        ? text(row.home_hero_primary_cta_text)
+        : "home_hero_primary_cta_text" in meta && meta.home_hero_primary_cta_text !== undefined
+          ? text(meta.home_hero_primary_cta_text)
+          : DEFAULT_HOME_HERO_PRIMARY_CTA_TEXT,
+    home_hero_primary_cta_href:
+      text(row.home_hero_primary_cta_href ?? meta.home_hero_primary_cta_href) ??
+      DEFAULT_HOME_HERO_PRIMARY_CTA_HREF,
+    home_hero_secondary_cta_text:
+      "home_hero_secondary_cta_text" in row && row.home_hero_secondary_cta_text !== undefined
+        ? text(row.home_hero_secondary_cta_text)
+        : "home_hero_secondary_cta_text" in meta && meta.home_hero_secondary_cta_text !== undefined
+          ? text(meta.home_hero_secondary_cta_text)
+          : DEFAULT_HOME_HERO_SECONDARY_CTA_TEXT,
+    home_hero_secondary_cta_href:
+      text(row.home_hero_secondary_cta_href ?? meta.home_hero_secondary_cta_href) ??
+      DEFAULT_HOME_HERO_SECONDARY_CTA_HREF,
     home_show_categories: flag(row.home_show_categories, true),
     home_show_featured: flag(row.home_show_featured, true),
     home_show_filter: flag(row.home_show_filter, false),

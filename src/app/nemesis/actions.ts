@@ -5,7 +5,14 @@ import { redirect } from "next/navigation";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
-import { HOME_FILTER_TITLE_MAX } from "@/lib/home-sections";
+import {
+  HOME_FILTER_TITLE_MAX,
+  HOME_HERO_BADGE_MAX,
+  HOME_HERO_CTA_HREF_MAX,
+  HOME_HERO_CTA_TEXT_MAX,
+  HOME_HERO_SUBTITLE_MAX,
+  HOME_HERO_TITLE_MAX,
+} from "@/lib/home-sections";
 import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradientSets } from "@/lib/theme";
 import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
 import { isCategoryIconId } from "@/lib/category-icons";
@@ -1008,7 +1015,19 @@ function normaliseVerificationToken(input: string): string {
   return (fromMeta ? fromMeta[1] : input).trim();
 }
 
-const META_FALLBACK_KEYS = ["footer_text", "shipping_enabled", "shipping_rate_micros"] as const;
+const META_FALLBACK_KEYS = [
+  "footer_text",
+  "shipping_enabled",
+  "shipping_rate_micros",
+  "home_show_hero",
+  "home_hero_badge",
+  "home_hero_title",
+  "home_hero_subtitle",
+  "home_hero_primary_cta_text",
+  "home_hero_primary_cta_href",
+  "home_hero_secondary_cta_text",
+  "home_hero_secondary_cta_href",
+] as const;
 
 /** Writes `patch` onto the single settings row and refreshes everything that renders it. */
 async function saveSiteSettings(patch: Record<string, unknown>): Promise<string | null> {
@@ -1017,7 +1036,7 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
   if (error) {
     if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
       const message = error.message ?? "";
-      if (/footer_text|shipping_/i.test(message)) {
+      if (/footer_text|shipping_|home_show_hero|home_hero_/i.test(message)) {
         const { data: current } = await supabase.from("site_settings").select("theme_gradients").eq("id", 1).maybeSingle();
         const existingGradients =
           current?.theme_gradients && typeof current.theme_gradients === "object" && !Array.isArray(current.theme_gradients)
@@ -1231,12 +1250,52 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
  */
 export async function updateHomeSections(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
   const values = echo(formData);
+  const heroBadge = str(formData, "home_hero_badge", HOME_HERO_BADGE_MAX + 1);
+  const heroTitle = str(formData, "home_hero_title", HOME_HERO_TITLE_MAX + 1);
+  const heroSubtitle = str(formData, "home_hero_subtitle", HOME_HERO_SUBTITLE_MAX + 1);
+  const primaryCtaText = str(formData, "home_hero_primary_cta_text", HOME_HERO_CTA_TEXT_MAX + 1);
+  const primaryCtaHref = str(formData, "home_hero_primary_cta_href", HOME_HERO_CTA_HREF_MAX + 1);
+  const secondaryCtaText = str(formData, "home_hero_secondary_cta_text", HOME_HERO_CTA_TEXT_MAX + 1);
+  const secondaryCtaHref = str(formData, "home_hero_secondary_cta_href", HOME_HERO_CTA_HREF_MAX + 1);
   const title = str(formData, "home_filter_title", HOME_FILTER_TITLE_MAX + 1);
+
   const fieldErrors: Record<string, string> = {};
-  if (title.length > HOME_FILTER_TITLE_MAX) fieldErrors.home_filter_title = `Keep the title under ${HOME_FILTER_TITLE_MAX} characters.`;
+  if (heroBadge.length > HOME_HERO_BADGE_MAX) {
+    fieldErrors.home_hero_badge = `Keep the badge text under ${HOME_HERO_BADGE_MAX} characters.`;
+  }
+  if (heroTitle.length > HOME_HERO_TITLE_MAX) {
+    fieldErrors.home_hero_title = `Keep the hero heading under ${HOME_HERO_TITLE_MAX} characters.`;
+  }
+  if (heroSubtitle.length > HOME_HERO_SUBTITLE_MAX) {
+    fieldErrors.home_hero_subtitle = `Keep the hero description under ${HOME_HERO_SUBTITLE_MAX} characters.`;
+  }
+  if (primaryCtaText.length > HOME_HERO_CTA_TEXT_MAX) {
+    fieldErrors.home_hero_primary_cta_text = `Keep the primary button text under ${HOME_HERO_CTA_TEXT_MAX} characters.`;
+  }
+  if (primaryCtaHref.length > HOME_HERO_CTA_HREF_MAX) {
+    fieldErrors.home_hero_primary_cta_href = `Keep the primary button link under ${HOME_HERO_CTA_HREF_MAX} characters.`;
+  }
+  if (secondaryCtaText.length > HOME_HERO_CTA_TEXT_MAX) {
+    fieldErrors.home_hero_secondary_cta_text = `Keep the secondary link text under ${HOME_HERO_CTA_TEXT_MAX} characters.`;
+  }
+  if (secondaryCtaHref.length > HOME_HERO_CTA_HREF_MAX) {
+    fieldErrors.home_hero_secondary_cta_href = `Keep the secondary link URL under ${HOME_HERO_CTA_HREF_MAX} characters.`;
+  }
+  if (title.length > HOME_FILTER_TITLE_MAX) {
+    fieldErrors.home_filter_title = `Keep the title under ${HOME_FILTER_TITLE_MAX} characters.`;
+  }
   if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
+
   try {
     const problem = await saveSiteSettings({
+      home_show_hero: formData.has("home_show_hero") ? bool(formData, "home_show_hero") : true,
+      home_hero_badge: heroBadge || null,
+      home_hero_title: heroTitle || null,
+      home_hero_subtitle: heroSubtitle || null,
+      home_hero_primary_cta_text: primaryCtaText || null,
+      home_hero_primary_cta_href: primaryCtaHref || null,
+      home_hero_secondary_cta_text: secondaryCtaText || null,
+      home_hero_secondary_cta_href: secondaryCtaHref || null,
       home_show_categories: bool(formData, "home_show_categories"),
       home_show_featured: bool(formData, "home_show_featured"),
       home_show_filter: bool(formData, "home_show_filter"),

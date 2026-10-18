@@ -322,7 +322,15 @@ export type SiteSettings = {
   shipping_enabled: boolean;
   /** Flat checkout shipping rate in USD micro-dollars */
   shipping_rate_micros: number;
-  // Home page (UI → Home page): which sections the storefront home renders
+  // Home page (UI → Home page): which sections the storefront home renders + hero content
+  home_show_hero: boolean;
+  home_hero_badge: string | null;
+  home_hero_title: string | null;
+  home_hero_subtitle: string | null;
+  home_hero_primary_cta_text: string | null;
+  home_hero_primary_cta_href: string | null;
+  home_hero_secondary_cta_text: string | null;
+  home_hero_secondary_cta_href: string | null;
   home_show_categories: boolean;
   home_show_featured: boolean;
   home_show_filter: boolean;
