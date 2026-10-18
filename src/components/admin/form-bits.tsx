@@ -4,7 +4,7 @@ import { useId, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { StarIcon, Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, StarIcon, Trash2Icon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -339,7 +339,7 @@ export function SwitchField({ id, name, label, defaultSelected }: { id: string; 
 
 /**
  * Settings-style row: title + one-line description on the left, the switch on the right.
- * `children` (e.g. an extra input) renders underneath, inside the same bordered row.
+ * When `children` is present, the row is collapsible (collapsed by default) and expands smoothly.
  */
 export function SwitchRow({
   id,
@@ -347,6 +347,7 @@ export function SwitchRow({
   label,
   description,
   defaultSelected,
+  defaultOpen = false,
   children,
 }: {
   id: string;
@@ -354,24 +355,88 @@ export function SwitchRow({
   label: string;
   description?: string;
   defaultSelected: boolean;
+  defaultOpen?: boolean;
   children?: ReactNode;
 }) {
   const [selected, setSelected] = useSwitchValue(defaultSelected);
+  const [open, setOpen] = useState(defaultOpen);
+
+  if (!children) {
+    return (
+      <div
+        className="rounded-md border"
+        data-selected={selected || undefined}
+        data-slot="switch-row"
+      >
+        <FieldLabel htmlFor={id} className="has-[>[data-slot=field]]:border-0">
+          <Field orientation="horizontal" className="items-center">
+            <FieldContent>
+              <FieldTitle>{label}</FieldTitle>
+              {description && <FieldDescription>{description}</FieldDescription>}
+            </FieldContent>
+            <input type="hidden" name={name} value={selected ? "on" : "off"} />
+            <Switch id={id} isSelected={selected} onChange={setSelected} />
+          </Field>
+        </FieldLabel>
+      </div>
+    );
+  }
+
   return (
-    // The label card keeps its hover / selected / focus styling; the border moves to the
-    // wrapper so an extra field underneath sits inside the same box.
-    <div className="rounded-md border" data-selected={selected || undefined} data-slot="switch-row">
-      <FieldLabel htmlFor={id} className={cn("has-[>[data-slot=field]]:border-0", children && "has-[>[data-slot=field]]:rounded-b-none")}>
-        <Field orientation="horizontal" className="items-center">
+    <div
+      className={cn(
+        "rounded-md border transition-colors",
+        selected && "border-primary/35 bg-primary/[0.04]",
+      )}
+      data-selected={selected || undefined}
+      data-open={open || undefined}
+      data-slot="switch-row"
+    >
+      <div className="flex items-center justify-between gap-3 p-3">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          data-testid={`switch-row-collapse-${id}`}
+          className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
           <FieldContent>
             <FieldTitle>{label}</FieldTitle>
             {description && <FieldDescription>{description}</FieldDescription>}
           </FieldContent>
+          <ChevronDownIcon
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+              open && "rotate-180",
+            )}
+            aria-hidden
+          />
+        </button>
+
+        <div className="flex shrink-0 items-center pl-1">
           <input type="hidden" name={name} value={selected ? "on" : "off"} />
-          <Switch id={id} isSelected={selected} onChange={setSelected} />
-        </Field>
-      </FieldLabel>
-      {children && <div className="border-t p-3">{children}</div>}
+          <Switch
+            id={id}
+            aria-label={label}
+            isSelected={selected}
+            onChange={setSelected}
+          />
+        </div>
+      </div>
+
+      <div
+        aria-hidden={!open}
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          open
+            ? "grid-rows-[1fr] opacity-100"
+            : "pointer-events-none grid-rows-[0fr] opacity-0",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="border-t p-3">{children}</div>
+        </div>
+      </div>
     </div>
   );
 }

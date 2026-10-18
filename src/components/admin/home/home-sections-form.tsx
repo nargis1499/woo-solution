@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useId, useState } from "react";
+import { createElement, startTransition, useActionState, useId, useState } from "react";
 import {
   DndContext,
   MouseSensor,
@@ -29,7 +29,7 @@ import {
   SmartphoneIcon,
   type LucideIcon,
 } from "lucide-react";
-import { updateHomeSections } from "@/app/nemesis/actions";
+import { updateHomeSections, type AdminFormState } from "@/app/nemesis/actions";
 import { CATEGORY_ICON_BY_ID, DEFAULT_CATEGORY_ICON } from "@/lib/category-icons";
 import { FREE_SHIPPING_THRESHOLD_MICROS } from "@/lib/config";
 import {
@@ -60,9 +60,10 @@ import type {
   HomeCategorySectionConfig,
   SiteSettings,
 } from "@/lib/types";
-import { SwitchRow } from "@/components/admin/form-bits";
-import { SettingsCard } from "@/components/admin/settings-forms";
+import { useFormToast } from "@/components/admin/flash-toast";
+import { SubmitButton, SwitchRow } from "@/components/admin/form-bits";
 import { buttonVariants } from "@/components/ui/button-variants";
+import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -285,6 +286,14 @@ export function HomeSectionsForm({
   settings: SiteSettings;
   categories?: Category[];
 }) {
+  const [state, dispatch, isPending] = useActionState<AdminFormState, FormData>(
+    updateHomeSections,
+    null,
+  );
+  useFormToast(state);
+  const v = state?.values ?? {};
+  const err = state?.fieldErrors ?? {};
+
   const dndId = useId();
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
@@ -359,23 +368,51 @@ export function HomeSectionsForm({
   );
 
   return (
-    <SettingsCard
-      title="Home page sections"
-      description="Switch a section off and visitors no longer see it. Changes go live immediately."
-      action={updateHomeSections}
-      footer={
-        <a
-          href="/"
-          target="_blank"
-          rel="noreferrer"
-          className={buttonVariants({ variant: "ghost", size: "sm" })}
-        >
-          View home page <ExternalLinkIcon />
-        </a>
-      }
+    <form
+      noValidate
+      onSubmit={(e) => {
+        if (e.target !== e.currentTarget) return;
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+        startTransition(() => dispatch(formData));
+      }}
     >
-      {({ v, err }) => (
-        <div className="space-y-3" data-testid="home-sections">
+      <Card className="gap-0 overflow-visible py-0">
+        <div
+          className="sticky top-14 z-20 rounded-t-xl border-b bg-card/95 px-6 py-5 backdrop-blur supports-[backdrop-filter]:bg-card/85"
+          data-testid="home-sections-sticky-header"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-xl font-bold tracking-tight">
+                Home page sections
+              </CardTitle>
+              <CardDescription>
+                Switch a section off and visitors no longer see it. Changes go live immediately.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <SubmitButton pendingLabel="Saving…" pending={isPending}>
+                Save changes
+              </SubmitButton>
+              <a
+                href="/"
+                target="_blank"
+                rel="noreferrer"
+                className={buttonVariants({ variant: "outline", size: "default" })}
+              >
+                View home page <ExternalLinkIcon />
+              </a>
+            </div>
+          </div>
+          {state?.error && (
+            <div className="mt-2">
+              <FieldError>{state.error}</FieldError>
+            </div>
+          )}
+        </div>
+
+        <CardContent className="space-y-3 pt-5 pb-6" data-testid="home-sections">
           <input
             type="hidden"
             name="home_category_default_layout"
@@ -666,8 +703,8 @@ export function HomeSectionsForm({
               )}
             </SwitchRow>
           ))}
-        </div>
-      )}
-    </SettingsCard>
+        </CardContent>
+      </Card>
+    </form>
   );
 }

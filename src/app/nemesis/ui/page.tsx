@@ -10,7 +10,7 @@ import { UiTabs } from "@/components/admin/ui-tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DEFAULT_THEME } from "@/lib/theme";
 
-export const metadata: Metadata = { title: "Extra" };
+export const metadata: Metadata = { title: "UI" };
 
 type SearchParams = Promise<{ tab?: string; location?: string }>;
 
@@ -40,7 +40,7 @@ export default async function AdminUiPage({ searchParams }: { searchParams: Sear
 
   return (
     <>
-      <PageHeader title="Extra" description="How the storefront looks and navigates. Changes go live immediately." />
+      <PageHeader title="UI" description="How the storefront looks and navigates. Changes go live immediately." />
       <UiTabs
         panels={{
           menu: missingSchema ? (
