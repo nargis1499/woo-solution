@@ -278,17 +278,25 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                     className="w-fit rounded-lg border bg-muted/20 p-1"
                     data-testid="theme-mode"
                   >
-                    {MODES.map((m) => (
-                      <ToggleGroupItem
-                        key={m.id}
-                        id={m.id}
-                        size="sm"
-                        className="gap-2 rounded-md px-3 data-[selected]:bg-secondary data-[selected]:text-secondary-foreground data-[selected]:shadow-xs"
-                        data-testid={`theme-mode-${m.id}`}
-                      >
-                        {m.label}
-                      </ToggleGroupItem>
-                    ))}
+                    {MODES.map((m) => {
+                      const isSelected = m.id === mode;
+                      return (
+                        <ToggleGroupItem
+                          key={m.id}
+                          id={m.id}
+                          size="sm"
+                          className={cn(
+                            "gap-2 rounded-md px-3 transition-colors",
+                            isSelected
+                              ? "theme-button shadow-xs data-selected:bg-(--button) data-selected:bg-[image:var(--button-image)] data-selected:text-(--button-foreground) data-selected:hover:bg-(--button-hover) data-selected:hover:text-(--button-hover-foreground) data-[selected]:bg-(--button) data-[selected]:bg-[image:var(--button-image)] data-[selected]:text-(--button-foreground)"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                          )}
+                          data-testid={`theme-mode-${m.id}`}
+                        >
+                          {m.label}
+                        </ToggleGroupItem>
+                      );
+                    })}
                   </ToggleGroup>
                   <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-500" data-testid="theme-mode-active">
                     <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
