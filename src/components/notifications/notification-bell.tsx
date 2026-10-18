@@ -36,6 +36,7 @@ import { NotificationRow } from "./notification-row";
 export function NotificationBell({ basePath, className }: { basePath: string; className?: string }) {
   const notifications = useNotifications();
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number }>({ top: 64, right: 16 });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
@@ -45,6 +46,15 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
   // what made the bell close and instantly reopen on the same click.
   useEffect(() => {
     if (!open) return;
+    const updatePosition = () => {
+      const btn = triggerRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const top = Math.max(8, Math.round(rect.bottom + 8));
+      const right = Math.max(8, Math.round(window.innerWidth - rect.right));
+      setPos((prev) => (prev.top === top && prev.right === right ? prev : { top, right }));
+    };
+    updatePosition();
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (!target || boxRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
@@ -53,9 +63,13 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
+    window.addEventListener("scroll", updatePosition, { capture: true, passive: true });
+    window.addEventListener("resize", updatePosition, { passive: true });
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true); // capture: the dialog stops Escape from bubbling
     return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
     };
@@ -88,7 +102,17 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
-        onPress={() => setOpen((value) => !value)}
+        onPress={() => {
+          const btn = triggerRef.current;
+          if (btn) {
+            const rect = btn.getBoundingClientRect();
+            setPos({
+              top: Math.max(8, Math.round(rect.bottom + 8)),
+              right: Math.max(8, Math.round(window.innerWidth - rect.right)),
+            });
+          }
+          setOpen((value) => !value);
+        }}
         data-testid="notification-bell"
         data-unread={unread}
       >
@@ -114,7 +138,14 @@ export function NotificationBell({ basePath, className }: { basePath: string; cl
         placement="bottom end"
         offset={8}
         isNonModal
-        className="w-[min(92vw,400px)] gap-0 overflow-hidden p-0"
+        style={{
+          position: "fixed",
+          top: pos.top,
+          right: pos.right,
+          left: "auto",
+          bottom: "auto",
+        }}
+        className="!fixed w-[min(92vw,400px)] gap-0 overflow-hidden p-0"
       >
         <Dialog ref={boxRef} className="flex flex-col outline-none" data-testid="notification-popover">
           <div className="flex items-center gap-2 border-b px-4 py-3">
