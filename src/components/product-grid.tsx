@@ -1,19 +1,22 @@
 import { PackageSearchIcon } from "lucide-react";
-import type { Product } from "@/lib/types";
+import type { HomeCategoryDisplayMode, Product } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getSiteSettings } from "@/lib/site-settings";
 import { ProductCard } from "./product-card";
+import { ProductListCard } from "./product-list-card";
 
 export async function ProductGrid({
   products,
   emptyMessage = "No products found.",
   manageStock,
+  layout = "grid",
 }: {
   products: Product[];
   emptyMessage?: string;
   manageStock?: boolean;
+  layout?: HomeCategoryDisplayMode;
 }) {
   if (products.length === 0) {
     return (
@@ -30,8 +33,24 @@ export async function ProductGrid({
   }
 
   const resolvedManageStock = manageStock ?? (await getSiteSettings()).manage_stock;
+
+  if (layout === "list") {
+    return (
+      <div className="space-y-4" data-testid="product-list-view">
+        {products.map((product, i) => (
+          <ProductListCard
+            key={product.id}
+            product={product}
+            priority={i < 3}
+            manageStock={resolvedManageStock}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3" data-testid="product-grid-view">
       {products.map((product, i) => (
         <ProductCard
           key={product.id}

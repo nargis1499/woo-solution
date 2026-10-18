@@ -18,11 +18,12 @@ import {
   DEFAULT_HOME_HERO_SECONDARY_CTA_HREF,
   defaultHomeHeroSubtitle,
   defaultHomeHeroTitle,
+  resolveHomeCategorySections,
 } from "@/lib/home-sections";
 import { getSiteSettings } from "@/lib/site-settings";
 import { canonicalFor } from "@/lib/seo";
 import { formatMoney, moneyFromSettings } from "@/lib/money";
-import type { Category } from "@/lib/types";
+import type { Category, HomeCategoryBannerStyle } from "@/lib/types";
 import { CategoryCard } from "@/components/category-card";
 import { HomeProductFilter } from "@/components/home-product-filter";
 import { ProductGrid, ProductGridSkeleton } from "@/components/product-grid";
@@ -64,6 +65,61 @@ function resolveCategorySubtitle(category: Category): string {
   return `Explore our curated selection of ${category.name.toLowerCase()} products and essentials`;
 }
 
+function bannerStyleTokens(style: HomeCategoryBannerStyle) {
+  switch (style) {
+    case "dark-gradient":
+      return {
+        wrapper:
+          "rounded-2xl border border-zinc-800 bg-linear-to-r from-zinc-950 via-zinc-900 to-primary/35 px-5 py-4 text-white shadow-sm before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-1.5 before:bg-primary sm:px-6",
+        iconBadge: "bg-primary text-primary-foreground shadow-sm",
+        title: "text-white hover:text-white/85",
+        subtitle: "text-zinc-300",
+        countPill: "bg-white/15 text-white",
+        sectionPill: "bg-white/12 text-white hover:bg-white/20",
+      };
+    case "primary-gradient":
+      return {
+        wrapper:
+          "theme-hero rounded-2xl border border-primary/25 px-5 py-4 shadow-sm sm:px-6",
+        iconBadge: "bg-white/20 text-primary-foreground backdrop-blur-xs",
+        title: "text-primary-foreground hover:opacity-90",
+        subtitle: "text-primary-foreground/80",
+        countPill: "bg-white/20 text-primary-foreground",
+        sectionPill: "bg-white/20 text-primary-foreground hover:bg-white/30",
+      };
+    case "glass":
+      return {
+        wrapper:
+          "rounded-2xl border border-border/80 bg-card/85 px-5 py-4 shadow-xs backdrop-blur-md before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-1.5 before:bg-primary sm:px-6",
+        iconBadge: "bg-primary/15 text-primary",
+        title: "text-foreground hover:text-primary",
+        subtitle: "text-muted-foreground",
+        countPill: "bg-primary/12 text-primary",
+        sectionPill: "border border-border bg-muted/60 text-foreground hover:bg-muted",
+      };
+    case "minimal":
+      return {
+        wrapper: "border-b-2 border-primary/25 px-1 pb-4",
+        iconBadge: "bg-primary text-primary-foreground shadow-xs",
+        title: "text-foreground hover:text-primary",
+        subtitle: "text-muted-foreground",
+        countPill: "bg-primary/15 text-primary",
+        sectionPill: "bg-primary/12 text-primary hover:bg-primary/20",
+      };
+    case "soft":
+    default:
+      return {
+        wrapper:
+          "rounded-2xl border border-primary/15 bg-primary/[0.06] px-5 py-4 before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-1.5 before:bg-primary sm:px-6",
+        iconBadge: "bg-primary text-primary-foreground shadow-xs",
+        title: "text-foreground hover:text-primary",
+        subtitle: "text-muted-foreground",
+        countPill: "bg-primary/15 text-primary",
+        sectionPill: "bg-primary/12 text-primary hover:bg-primary/20",
+      };
+  }
+}
+
 /**
  * Hero + the sections switched on under UI → Home page. `getSiteSettings()` is cached and
  * tagged, so the choice of sections and hero copy is part of the static shell and flips the
@@ -75,7 +131,9 @@ export default async function HomePage() {
   const heroTitle = settings.home_hero_title || defaultHomeHeroTitle(store_name);
   const heroSubtitle =
     settings.home_hero_subtitle ||
-    defaultHomeHeroSubtitle(formatMoney(FREE_SHIPPING_THRESHOLD_MICROS, moneyFromSettings(settings)));
+    defaultHomeHeroSubtitle(
+      formatMoney(FREE_SHIPPING_THRESHOLD_MICROS, moneyFromSettings(settings)),
+    );
   const primaryCtaText = settings.home_hero_primary_cta_text;
   const primaryCtaHref = settings.home_hero_primary_cta_href || DEFAULT_HOME_HERO_PRIMARY_CTA_HREF;
   const secondaryCtaText = settings.home_hero_secondary_cta_text;
@@ -198,26 +256,39 @@ export default async function HomePage() {
 }
 
 async function CategoryProductSections() {
-  const [categories, products, { manage_stock }] = await Promise.all([
+  const [categories, products, settings] = await Promise.all([
     getCategories(),
     getProducts(),
     getSiteSettings(),
   ]);
 
-  const sections = categories
-    .map((category) => ({
-      category,
-      items: products.filter(
-        (p) => p.category_id === category.id || p.category?.slug === category.slug,
-      ),
-    }))
+  const orderedConfigs = resolveHomeCategorySections(
+    categories,
+    settings.home_category_sections,
+    settings.home_category_default_layout,
+  );
+
+  const sections = orderedConfigs
+    .filter((cfg) => cfg.enabled)
+    .map((cfg) => {
+      const allMatching = products.filter(
+        (p) => p.category_id === cfg.category.id || p.category?.slug === cfg.category.slug,
+      );
+      const items = cfg.limit > 0 ? allMatching.slice(0, cfg.limit) : allMatching;
+      return {
+        ...cfg,
+        items,
+      };
+    })
     .filter((section) => section.items.length > 0);
 
   if (sections.length === 0) return null;
 
+  const tokens = bannerStyleTokens(settings.home_category_banner_style);
+
   return (
     <div className="space-y-14" data-testid="home-category-sections">
-      {sections.map(({ category, items }, index) => {
+      {sections.map(({ category, items, layout }, index) => {
         const Icon = resolveCategorySectionIcon(category);
         const sectionNumber = String(index + 1).padStart(2, "0");
 
@@ -226,32 +297,50 @@ async function CategoryProductSections() {
             key={category.id}
             aria-labelledby={`home-cat-sec-${category.slug}`}
             data-testid={`home-category-section-${category.slug}`}
+            data-layout={layout}
             className="scroll-mt-20 space-y-6"
           >
             {/* Dedicated Category Section Header Banner */}
-            <div className="relative flex flex-wrap items-center justify-between gap-4 overflow-hidden rounded-2xl border border-primary/15 bg-primary/[0.06] px-5 py-4 before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-1.5 before:bg-primary sm:px-6">
+            <div
+              data-testid={`home-category-banner-${category.slug}`}
+              data-banner-style={settings.home_category_banner_style}
+              className={cn(
+                "relative flex flex-wrap items-center justify-between gap-4 overflow-hidden",
+                tokens.wrapper,
+              )}
+            >
               <div className="flex min-w-0 items-center gap-3.5 sm:gap-4">
-                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs">
+                <span
+                  className={cn(
+                    "grid size-11 shrink-0 place-items-center rounded-full",
+                    tokens.iconBadge,
+                  )}
+                >
                   <Icon className="size-5" aria-hidden />
                 </span>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2.5">
                     <h2
                       id={`home-cat-sec-${category.slug}`}
-                      className="text-xl font-extrabold tracking-tight text-foreground sm:text-2xl"
+                      className="text-xl font-extrabold tracking-tight sm:text-2xl"
                     >
                       <Link
                         href={`/shop?category=${category.slug}`}
-                        className="transition-colors hover:text-primary"
+                        className={cn("transition-colors", tokens.title)}
                       >
                         {category.name}
                       </Link>
                     </h2>
-                    <span className="inline-flex items-center rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                        tokens.countPill,
+                      )}
+                    >
                       {items.length} {items.length === 1 ? "Item" : "Items"}
                     </span>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
+                  <p className={cn("mt-0.5 truncate text-xs sm:text-sm", tokens.subtitle)}>
                     {resolveCategorySubtitle(category)}
                   </p>
                 </div>
@@ -259,13 +348,20 @@ async function CategoryProductSections() {
 
               <Link
                 href={`/shop?category=${category.slug}`}
-                className="inline-flex shrink-0 items-center rounded-full bg-primary/12 px-3.5 py-1 text-[11px] font-bold tracking-widest text-primary uppercase transition-colors hover:bg-primary/20"
+                className={cn(
+                  "inline-flex shrink-0 items-center rounded-full px-3.5 py-1 text-[11px] font-bold tracking-widest uppercase transition-colors",
+                  tokens.sectionPill,
+                )}
               >
                 VIEW ALL
               </Link>
             </div>
 
-            <ProductGrid products={items} manageStock={manage_stock} />
+            <ProductGrid
+              products={items}
+              manageStock={settings.manage_stock}
+              layout={layout}
+            />
           </section>
         );
       })}
@@ -279,7 +375,13 @@ async function FilteredProducts() {
     getProducts(),
     getSiteSettings(),
   ]);
-  return <HomeProductFilter categories={categories} products={products} manageStock={manage_stock} />;
+  return (
+    <HomeProductFilter
+      categories={categories}
+      products={products}
+      manageStock={manage_stock}
+    />
+  );
 }
 
 async function CategoryTiles() {
@@ -299,7 +401,10 @@ async function CategoryTiles() {
 
 function CategoryTilesSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6" aria-hidden>
+    <div
+      className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
+      aria-hidden
+    >
       {Array.from({ length: 6 }).map((_, i) => (
         <Skeleton key={i} className="h-20 rounded-2xl" />
       ))}

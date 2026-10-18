@@ -9,6 +9,9 @@ import {
   DEFAULT_HOME_HERO_PRIMARY_CTA_TEXT,
   DEFAULT_HOME_HERO_SECONDARY_CTA_HREF,
   DEFAULT_HOME_HERO_SECONDARY_CTA_TEXT,
+  isHomeCategoryBannerStyle,
+  isHomeCategoryDisplayMode,
+  normaliseHomeCategorySections,
 } from "@/lib/home-sections";
 import { isCurrencyCode, moneyFromSettings, type Money } from "@/lib/money";
 import { DEFAULT_THEME, normaliseColors, normaliseGradients, templateTheme } from "@/lib/theme";
@@ -49,6 +52,9 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   home_hero_secondary_cta_href: DEFAULT_HOME_HERO_SECONDARY_CTA_HREF,
   home_show_categories: true,
   home_show_category_sections: true,
+  home_category_default_layout: "grid",
+  home_category_banner_style: "soft",
+  home_category_sections: [],
   home_show_featured: true,
   home_show_filter: false,
   home_filter_title: null,
@@ -143,6 +149,19 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
       DEFAULT_HOME_HERO_SECONDARY_CTA_HREF,
     home_show_categories: flag(row.home_show_categories, true),
     home_show_category_sections: flag(row.home_show_category_sections ?? meta.home_show_category_sections, true),
+    home_category_default_layout: isHomeCategoryDisplayMode(
+      row.home_category_default_layout ?? meta.home_category_default_layout,
+    )
+      ? ((row.home_category_default_layout ?? meta.home_category_default_layout) as "grid" | "list")
+      : "grid",
+    home_category_banner_style: isHomeCategoryBannerStyle(
+      row.home_category_banner_style ?? meta.home_category_banner_style,
+    )
+      ? ((row.home_category_banner_style ?? meta.home_category_banner_style) as SiteSettings["home_category_banner_style"])
+      : "soft",
+    home_category_sections: normaliseHomeCategorySections(
+      row.home_category_sections ?? meta.home_category_sections,
+    ),
     home_show_featured: flag(row.home_show_featured, true),
     home_show_filter: flag(row.home_show_filter, false),
     home_filter_title: text(row.home_filter_title),

@@ -60,7 +60,7 @@ export default async function AdminUiPage({ searchParams }: { searchParams: Sear
                 </Alert>
               )}
               {settings ? (
-                <HomeSectionsForm settings={settings} />
+                <HomeSectionsForm settings={settings} categories={categories} />
               ) : (
                 <Alert variant="destructive">
                   <AlertTitle>Settings table missing</AlertTitle>

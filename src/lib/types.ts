@@ -94,6 +94,8 @@ export type Product = {
   sku?: string | null;
   /** Product brand label shown on storefront cards & product detail (e.g. "SONY", "APPLE"). */
   brand?: string | null;
+  /** Comma-separated product features shown in homepage List View cards (up to 3 with checkmarks). */
+  features?: string | null;
   /** Variable products only: the axes, in the order the admin defined them. */
   attributes?: ProductAttribute[];
   /** Variable products only: every combination, in display order. */
@@ -288,6 +290,23 @@ export type Profile = {
 };
 
 /** Row `site_settings` (id = 1) as edited in /nemesis/settings – one tab per group. */
+export type HomeCategoryDisplayMode = "grid" | "list";
+
+export type HomeCategoryBannerStyle =
+  | "soft"
+  | "dark-gradient"
+  | "primary-gradient"
+  | "glass"
+  | "minimal";
+
+export type HomeCategorySectionConfig = {
+  category_id: string;
+  enabled: boolean;
+  /** Max products to show in this category section (0 = show all). */
+  limit: number;
+  layout: HomeCategoryDisplayMode;
+};
+
 export type SiteSettings = {
   // General
   store_name: string;
@@ -335,6 +354,9 @@ export type SiteSettings = {
   home_hero_secondary_cta_href: string | null;
   home_show_categories: boolean;
   home_show_category_sections: boolean;
+  home_category_default_layout: HomeCategoryDisplayMode;
+  home_category_banner_style: HomeCategoryBannerStyle;
+  home_category_sections: HomeCategorySectionConfig[];
   home_show_featured: boolean;
   home_show_filter: boolean;
   /** Heading above the filtered-products section; null = no heading */

@@ -21,8 +21,8 @@ import type { AdminStats, Category, MediaRef, MenuItem, MenuLocation, Order, Ord
 
 const PRODUCT_COLUMNS_BASE =
   "id, category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, stock, is_active, is_featured, created_at, updated_at, category:categories(id, name, slug)";
-/** `type` / `sku` + the variation tables came with migration 14; `brand` came with migration 27. */
-const PRODUCT_COLUMNS = `${PRODUCT_COLUMNS_BASE}, type, sku, brand`;
+/** `type` / `sku` + the variation tables came with migration 14; `brand` & `features` came with migration 27. */
+const PRODUCT_COLUMNS = `${PRODUCT_COLUMNS_BASE}, type, sku, brand, features`;
 const PRODUCT_COLUMNS_NO_BRAND = `${PRODUCT_COLUMNS_BASE}, type, sku`;
 
 /** Media-library embeds (main image + ordered gallery). Only used where the form needs them. */

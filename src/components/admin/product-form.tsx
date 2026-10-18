@@ -151,7 +151,19 @@ export function ProductForm({
               </Field>
               <Field>
                 <FieldLabel htmlFor="description">Description</FieldLabel>
-                <Textarea id="description" name="description" rows={6} maxLength={5000} defaultValue={v.description ?? product?.description ?? ""} />
+                <Textarea id="description" name="description" rows={5} maxLength={5000} defaultValue={v.description ?? product?.description ?? ""} />
+              </Field>
+              <Field data-invalid={Boolean(err.features) || undefined}>
+                <FieldLabel htmlFor="features">Product features (comma separated)</FieldLabel>
+                <Input
+                  id="features"
+                  name="features"
+                  maxLength={500}
+                  placeholder="e.g. Custom Active Noise Cancellation, 30 Hours Battery, Speak-to-Chat Ambient Sensor"
+                  defaultValue={v.features ?? product?.features ?? ""}
+                  aria-invalid={Boolean(err.features) || undefined}
+                />
+                <FieldError>{err.features}</FieldError>
               </Field>
             </FieldGroup>
           </CardContent>

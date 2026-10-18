@@ -12,6 +12,9 @@ import {
   HOME_HERO_CTA_TEXT_MAX,
   HOME_HERO_SUBTITLE_MAX,
   HOME_HERO_TITLE_MAX,
+  isHomeCategoryBannerStyle,
+  isHomeCategoryDisplayMode,
+  normaliseHomeCategorySections,
 } from "@/lib/home-sections";
 import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradientSets } from "@/lib/theme";
 import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
@@ -140,6 +143,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   const isVariable = type === "variable";
   const sku = str(formData, "sku", 64).trim() || null;
   const brand = str(formData, "brand", 80).trim() || null;
+  const features = str(formData, "features", 500).trim() || null;
 
   // Variable products: the axes the admin defined and one row per combination.
   const jsonField = (field: string, max: number) => {
@@ -171,6 +175,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   if (!SLUG_RE.test(slug)) fieldErrors.slug = "Use lowercase letters, numbers and dashes only.";
   if (sku && sku.length > 64) fieldErrors.sku = "Keep the SKU under 64 characters.";
   if (brand && brand.length > 80) fieldErrors.brand = "Keep the brand under 80 characters.";
+  if (features && features.length > 500) fieldErrors.features = "Keep product features under 500 characters.";
   if (attributeError) fieldErrors.attributes = attributeError;
   if (variationError) fieldErrors.variations = variationError;
 
@@ -310,14 +315,14 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
         : { price_micros: priceMicros, compare_at_price_micros: compareAtMicros, stock }),
       ...image,
     };
-    const row = { ...baseRow, brand };
+    const row = { ...baseRow, brand, features };
 
     let result = isEdit
       ? await supabase.from("products").update(row).eq("id", id).select("id").single()
       : await supabase.from("products").insert(row).select("id").single();
     if (
       result.error &&
-      (result.error.code === "42703" || /column .*brand|schema cache/i.test(result.error.message ?? ""))
+      (result.error.code === "42703" || /column .*(brand|features)|schema cache/i.test(result.error.message ?? ""))
     ) {
       result = isEdit
         ? await supabase.from("products").update(baseRow).eq("id", id).select("id").single()
@@ -1039,6 +1044,9 @@ const META_FALLBACK_KEYS = [
   "home_hero_secondary_cta_text",
   "home_hero_secondary_cta_href",
   "home_show_category_sections",
+  "home_category_default_layout",
+  "home_category_banner_style",
+  "home_category_sections",
 ] as const;
 
 /** Writes `patch` onto the single settings row and refreshes everything that renders it. */
@@ -1048,7 +1056,7 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
   if (error) {
     if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
       const message = error.message ?? "";
-      if (/footer_text|shipping_|home_show_hero|home_hero_|home_show_category_sections/i.test(message)) {
+      if (/footer_text|shipping_|home_show_hero|home_hero_|home_show_category_sections|home_category_/i.test(message)) {
         const { data: current } = await supabase.from("site_settings").select("theme_gradients").eq("id", 1).maybeSingle();
         const existingGradients =
           current?.theme_gradients && typeof current.theme_gradients === "object" && !Array.isArray(current.theme_gradients)
@@ -1270,6 +1278,19 @@ export async function updateHomeSections(_prev: AdminFormState, formData: FormDa
   const secondaryCtaText = str(formData, "home_hero_secondary_cta_text", HOME_HERO_CTA_TEXT_MAX + 1);
   const secondaryCtaHref = str(formData, "home_hero_secondary_cta_href", HOME_HERO_CTA_HREF_MAX + 1);
   const title = str(formData, "home_filter_title", HOME_FILTER_TITLE_MAX + 1);
+  const rawDefaultLayout = str(formData, "home_category_default_layout", 20);
+  const defaultLayout = isHomeCategoryDisplayMode(rawDefaultLayout) ? rawDefaultLayout : "grid";
+  const rawBannerStyle = str(formData, "home_category_banner_style", 40);
+  const bannerStyle = isHomeCategoryBannerStyle(rawBannerStyle) ? rawBannerStyle : "soft";
+  const rawCategorySectionsJson = str(formData, "home_category_sections_json", 50000);
+  let categorySections = normaliseHomeCategorySections([]);
+  if (rawCategorySectionsJson) {
+    try {
+      categorySections = normaliseHomeCategorySections(JSON.parse(rawCategorySectionsJson));
+    } catch {
+      categorySections = [];
+    }
+  }
 
   const fieldErrors: Record<string, string> = {};
   if (heroBadge.length > HOME_HERO_BADGE_MAX) {
@@ -1310,6 +1331,9 @@ export async function updateHomeSections(_prev: AdminFormState, formData: FormDa
       home_hero_secondary_cta_href: secondaryCtaHref || null,
       home_show_categories: bool(formData, "home_show_categories"),
       home_show_category_sections: formData.has("home_show_category_sections") ? bool(formData, "home_show_category_sections") : true,
+      home_category_default_layout: defaultLayout,
+      home_category_banner_style: bannerStyle,
+      home_category_sections: categorySections,
       home_show_featured: bool(formData, "home_show_featured"),
       home_show_filter: bool(formData, "home_show_filter"),
       home_filter_title: title || null,

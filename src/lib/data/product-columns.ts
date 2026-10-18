@@ -9,8 +9,8 @@ import { MEDIA_REF_COLUMNS } from "@/lib/media/shared";
 const BASE =
   "id, category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, stock, is_active, is_featured, created_at, category:categories(id, name, slug)";
 
-/** Catalogue / list columns, with `type`, `sku`, and `brand`. */
-export const PRODUCT_COLUMNS = `${BASE}, type, sku, brand`;
+/** Catalogue / list columns, with `type`, `sku`, `brand`, and `features`. */
+export const PRODUCT_COLUMNS = `${BASE}, type, sku, brand, features`;
 
 /** Catalogue / list columns with `type` / `sku` but without `brand`. */
 export const PRODUCT_COLUMNS_NO_BRAND = `${BASE}, type, sku`;
@@ -33,9 +33,9 @@ export const PRODUCT_DETAIL_COLUMNS_LEGACY = `${PRODUCT_COLUMNS_LEGACY}, ${MEDIA
 
 type QueryError = { code?: string; message?: string } | null;
 
-const MISSING_VARIATIONS = /product_variations|product_attributes|"type"|"sku"|"brand"|column .*products|schema cache/i;
+const MISSING_VARIATIONS = /product_variations|product_attributes|"type"|"sku"|"brand"|"features"|column .*products|schema cache/i;
 
-/** True for the errors a database without `brand` or migration 14 raises for these column lists. */
+/** True for the errors a database without `brand`/`features` or migration 14 raises for these column lists. */
 export const isMissingVariationSchema = (error: QueryError): boolean =>
   Boolean(error) &&
   (error!.code === "42703" || error!.code === "42P01" || /does not exist|schema cache/i.test(error!.message ?? "")) &&
@@ -44,4 +44,4 @@ export const isMissingVariationSchema = (error: QueryError): boolean =>
 export const isMissingBrandColumn = (error: QueryError): boolean =>
   Boolean(error) &&
   (error!.code === "42703" || /does not exist|schema cache/i.test(error!.message ?? "")) &&
-  /\bbrand\b/i.test(`${error!.message ?? ""}`);
+  /\b(brand|features)\b/i.test(`${error!.message ?? ""}`);
