@@ -130,28 +130,6 @@ export function SimpleProductBlockCard({
         className="pointer-events-none absolute -right-24 -bottom-24 size-56 rounded-full bg-button/[0.05] blur-3xl"
       />
 
-      {/* Editor-only top indicator when showing the default sample card */}
-      {editorMode && isSample && (
-        <div className="relative z-10 mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/25 bg-primary/[0.07] px-3 py-1.5 text-xs">
-          <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-            <SparklesIcon className="size-3.5 text-primary" />
-            <span>Sample Simple Product Card — pick a store product in Block Settings</span>
-          </span>
-          {onRequestSelectProduct && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRequestSelectProduct();
-              }}
-              className="font-semibold text-primary underline-offset-4 hover:underline"
-            >
-              Choose product →
-            </button>
-          )}
-        </div>
-      )}
-
       <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-7">
         {/* Left: Product Image Frame + Floating Discount Pill */}
         <div className="relative mx-auto shrink-0 sm:mx-0">
