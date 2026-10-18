@@ -82,8 +82,8 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   const [gradients, setGradients] = useState<ThemeGradientSets>(saved.gradients);
   const [sync, setSync] = useState(saved.sync);
   const [resetOpen, setResetOpen] = useState(false);
-  const [colorsOpen, setColorsOpen] = useState(true);
-  const [presetsOpen, setPresetsOpen] = useState(false);
+  const [presetsOpen, setPresetsOpen] = useState(true);
+  const [colorsOpen, setColorsOpen] = useState(false);
   const [headerFooterOpen, setHeaderFooterOpen] = useState(false);
   const [gradientsOpen, setGradientsOpen] = useState(false);
 
@@ -274,51 +274,6 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
 
             <CardContent className="space-y-4 pt-5 pb-6">
 
-              <FieldSet className="rounded-lg border p-3.5" data-testid="theme-section-colors">
-                <button
-                  type="button"
-                  aria-expanded={colorsOpen}
-                  onClick={() => setColorsOpen((v) => !v)}
-                  className="flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                  data-testid="theme-section-colors-toggle"
-                >
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="text-sm font-medium">Colors</span>
-                    <span className="flex items-center gap-1" aria-hidden>
-                      {THEME_COLOR_FIELDS.map((field) => (
-                        <span
-                          key={field.key}
-                          className="size-3.5 rounded-[3px] border"
-                          style={{ backgroundColor: colors[field.key] ?? defaults[field.key] ?? "#000000" }}
-                        />
-                      ))}
-                    </span>
-                  </div>
-                  <ChevronDownIcon className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]", colorsOpen && "rotate-180")} aria-hidden />
-                </button>
-                <SmoothCollapse open={colorsOpen}>
-                  <FieldGroup className="mt-3 gap-3 border-t pt-3">
-                    {THEME_COLOR_FIELDS.map((field) => (
-                      <div key={field.key} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
-                        <div className="min-w-40">
-                          <p className="text-sm font-medium">{field.label}</p>
-                          <p className="text-xs text-muted-foreground">{field.description}</p>
-                        </div>
-                        <ThemeColorField
-                          id={`${mode}-${field.key}`}
-                          label={`${field.label} (${mode})`}
-                          value={colors[field.key]}
-                          fallback={defaults[field.key] ?? "#000000"}
-                          onChange={(value) => setColor(field.key, value)}
-                          onClear={() => setColor(field.key, null)}
-                          testId={`theme-color-${field.key}`}
-                        />
-                      </div>
-                    ))}
-                  </FieldGroup>
-                </SmoothCollapse>
-              </FieldSet>
-
               <FieldSet className="rounded-lg border p-3.5" data-testid="theme-section-presets">
                 <button
                   type="button"
@@ -405,6 +360,51 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                       })}
                     </div>
                   </div>
+                </SmoothCollapse>
+              </FieldSet>
+
+              <FieldSet className="rounded-lg border p-3.5" data-testid="theme-section-colors">
+                <button
+                  type="button"
+                  aria-expanded={colorsOpen}
+                  onClick={() => setColorsOpen((v) => !v)}
+                  className="flex w-full items-center justify-between gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  data-testid="theme-section-colors-toggle"
+                >
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="text-sm font-medium">Colors</span>
+                    <span className="flex items-center gap-1" aria-hidden>
+                      {THEME_COLOR_FIELDS.map((field) => (
+                        <span
+                          key={field.key}
+                          className="size-3.5 rounded-[3px] border"
+                          style={{ backgroundColor: colors[field.key] ?? defaults[field.key] ?? "#000000" }}
+                        />
+                      ))}
+                    </span>
+                  </div>
+                  <ChevronDownIcon className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]", colorsOpen && "rotate-180")} aria-hidden />
+                </button>
+                <SmoothCollapse open={colorsOpen}>
+                  <FieldGroup className="mt-3 gap-3 border-t pt-3">
+                    {THEME_COLOR_FIELDS.map((field) => (
+                      <div key={field.key} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+                        <div className="min-w-40">
+                          <p className="text-sm font-medium">{field.label}</p>
+                          <p className="text-xs text-muted-foreground">{field.description}</p>
+                        </div>
+                        <ThemeColorField
+                          id={`${mode}-${field.key}`}
+                          label={`${field.label} (${mode})`}
+                          value={colors[field.key]}
+                          fallback={defaults[field.key] ?? "#000000"}
+                          onChange={(value) => setColor(field.key, value)}
+                          onClear={() => setColor(field.key, null)}
+                          testId={`theme-color-${field.key}`}
+                        />
+                      </div>
+                    ))}
+                  </FieldGroup>
                 </SmoothCollapse>
               </FieldSet>
 
