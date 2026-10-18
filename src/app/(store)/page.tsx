@@ -261,7 +261,7 @@ async function CategoryProductSections() {
                 href={`/shop?category=${category.slug}`}
                 className="inline-flex shrink-0 items-center rounded-full bg-primary/12 px-3.5 py-1 text-[11px] font-bold tracking-widest text-primary uppercase transition-colors hover:bg-primary/20"
               >
-                SECTION {sectionNumber}
+                VIEW ALL
               </Link>
             </div>
 
