@@ -60,8 +60,8 @@ export function WishlistButton({
       className={cn(
         "inline-flex size-9 shrink-0 items-center justify-center rounded-xl border transition-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
         active
-          ? "border-rose-500/35 bg-rose-500/10 text-rose-500 hover:bg-rose-500/15"
-          : "border-border/80 bg-background text-muted-foreground hover:border-rose-500/40 hover:bg-rose-500/10 hover:text-rose-500",
+          ? "border-[color-mix(in_oklab,var(--button)_35%,transparent)] bg-[color-mix(in_oklab,var(--button)_12%,transparent)] text-(--button) hover:bg-[color-mix(in_oklab,var(--button)_20%,transparent)]"
+          : "border-border/80 bg-background text-muted-foreground hover:border-[color-mix(in_oklab,var(--button)_40%,transparent)] hover:bg-[color-mix(in_oklab,var(--button)_10%,transparent)] hover:text-(--button)",
         className,
       )}
     >

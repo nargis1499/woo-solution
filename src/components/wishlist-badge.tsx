@@ -56,7 +56,7 @@ export function WishlistBadge() {
         aria-label={`Wishlist, ${shown} item${shown === 1 ? "" : "s"}`}
         data-testid="wishlist-header-button"
       >
-        <HeartIcon className={cn("size-5", shown > 0 && "fill-rose-500 text-rose-500")} />
+        <HeartIcon className={cn("size-5", shown > 0 && "fill-(--button) text-(--button)")} />
         {shown > 0 && (
           <Badge className="absolute -top-1 -right-1 h-5 min-w-5 justify-center rounded-full px-1 text-[11px] tabular-nums">
             {shown > 99 ? "99+" : shown}
@@ -67,7 +67,7 @@ export function WishlistBadge() {
         <SheetHeader className="border-b pb-4">
           <div className="flex items-center justify-between pr-6">
             <SheetTitle className="flex items-center gap-2">
-              <HeartIcon className="size-4 fill-rose-500 text-rose-500" />
+              <HeartIcon className="size-4 fill-(--button) text-(--button)" />
               Wishlist ({shown})
             </SheetTitle>
             {shown > 0 && (

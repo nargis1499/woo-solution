@@ -174,7 +174,7 @@ export function SimpleProductBlockCard({
           {onSale && (
             <span
               data-testid="simple-product-discount-badge"
-              className="absolute -top-1 -right-1 z-10 inline-flex items-center rounded-full bg-rose-500 px-2.5 py-0.5 text-xs font-extrabold tracking-tight text-white shadow-sm ring-2 ring-card tabular-nums"
+              className="absolute -top-1 -right-1 z-10 inline-flex items-center rounded-full bg-(--button) bg-[image:var(--button-image)] px-2.5 py-0.5 text-xs font-extrabold tracking-tight text-(--button-foreground) shadow-sm ring-2 ring-card tabular-nums"
             >
               -{discountPct}%
             </span>

@@ -69,7 +69,7 @@ export function ProductListCard({
           discountPct > 0 && (
             <span
               data-testid="product-card-discount"
-              className="absolute top-2.5 right-2.5 z-10 rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs tabular-nums"
+              className="absolute top-2.5 right-2.5 z-10 rounded-full bg-(--button) bg-[image:var(--button-image)] px-2 py-0.5 text-[10px] font-bold text-(--button-foreground) shadow-xs tabular-nums"
             >
               -{discountPct}%
             </span>
