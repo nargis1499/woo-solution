@@ -10,12 +10,13 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CartTotals } from "./cart-totals";
-import { useMoney } from "./money-provider";
+import { useMoney, useShipping } from "./money-provider";
 import { ProductImage } from "./product-image";
 import { QuantityInput } from "./quantity-input";
 
 export function CartView({ manageStock = true }: { manageStock?: boolean }) {
   const money = useMoney();
+  const shippingConfig = useShipping();
   const formatPrice = (cents: number) => formatMoney(cents, money);
   const hydrated = useHydrated();
   const items = useCartStore((s) => s.items);
@@ -97,7 +98,9 @@ export function CartView({ manageStock = true }: { manageStock?: boolean }) {
           <LinkButton href="/checkout" size="lg" className="w-full">
             Proceed to checkout
           </LinkButton>
-          <p className="text-center text-xs text-muted-foreground">Shipping is calculated at checkout.</p>
+          {shippingConfig.enabled && (
+            <p className="text-center text-xs text-muted-foreground">Shipping is calculated at checkout.</p>
+          )}
         </CardFooter>
       </Card>
     </div>

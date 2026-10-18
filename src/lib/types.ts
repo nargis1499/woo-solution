@@ -317,6 +317,10 @@ export type SiteSettings = {
   currency: CurrencyCode;
   /** 1 USD = this many BDT; required while currency = BDT */
   usd_to_bdt_rate: number | null;
+  /** Whether shipping is calculated at checkout (false = free shipping on all orders) */
+  shipping_enabled: boolean;
+  /** Flat checkout shipping rate in USD micro-dollars */
+  shipping_rate_micros: number;
   // Home page (UI → Home page): which sections the storefront home renders
   home_show_categories: boolean;
   home_show_featured: boolean;

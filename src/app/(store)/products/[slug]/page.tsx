@@ -86,9 +86,14 @@ async function ProductDetails({ params }: { params: Params }) {
           <ProductPurchasePanel product={product} manageStock={manage_stock} />
           <Separator />
           <ul className="space-y-2 text-sm text-muted-foreground">
-            <li className="flex items-center gap-2">
-              <TruckIcon className="size-4" aria-hidden /> Free shipping on orders over {formatMoney(FREE_SHIPPING_THRESHOLD_MICROS, money)}.
-            </li>
+            {settings.shipping_enabled && (
+              <li className="flex items-center gap-2">
+                <TruckIcon className="size-4" aria-hidden />{" "}
+                {settings.shipping_rate_micros === 0
+                  ? "Free shipping on all orders."
+                  : `Shipping: ${formatMoney(settings.shipping_rate_micros, money)} (free on orders over ${formatMoney(FREE_SHIPPING_THRESHOLD_MICROS, money)}).`}
+              </li>
+            )}
             <li className="flex items-center gap-2">
               <BanknoteIcon className="size-4" aria-hidden /> Cash on delivery available.
             </li>

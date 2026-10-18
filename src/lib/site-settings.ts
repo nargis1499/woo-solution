@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
-import { STORE_NAME } from "@/lib/config";
+import { FLAT_SHIPPING_MICROS, STORE_NAME } from "@/lib/config";
 import { isCurrencyCode, moneyFromSettings, type Money } from "@/lib/money";
 import { DEFAULT_THEME, normaliseColors, normaliseGradients, templateTheme } from "@/lib/theme";
 import type { SiteSettings } from "@/lib/types";
@@ -29,6 +29,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   manage_stock: true,
   currency: "USD",
   usd_to_bdt_rate: null,
+  shipping_enabled: true,
+  shipping_rate_micros: FLAT_SHIPPING_MICROS,
   home_show_categories: true,
   home_show_featured: true,
   home_show_filter: false,
@@ -46,6 +48,10 @@ const flag = (v: unknown, fallback: boolean): boolean => (typeof v === "boolean"
 const positive = (v: unknown): number | null => {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : Number.NaN;
   return Number.isFinite(n) && n > 0 ? n : null;
+};
+const nonNegative = (v: unknown, fallback: number): number => {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : Number.NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : fallback;
 };
 
 /**
@@ -76,6 +82,8 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     manage_stock: flag(row.manage_stock, true),
     currency: isCurrencyCode(row.currency) ? row.currency : "USD",
     usd_to_bdt_rate: positive(row.usd_to_bdt_rate),
+    shipping_enabled: flag(row.shipping_enabled, true),
+    shipping_rate_micros: nonNegative(row.shipping_rate_micros, FLAT_SHIPPING_MICROS),
     home_show_categories: flag(row.home_show_categories, true),
     home_show_featured: flag(row.home_show_featured, true),
     home_show_filter: flag(row.home_show_filter, false),

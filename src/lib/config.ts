@@ -14,7 +14,20 @@ export const FREE_SHIPPING_THRESHOLD_MICROS = 50_000_000; // free at or above $5
 
 export const MAX_QTY_PER_LINE = 10;
 
-export function calculateShippingMicros(subtotalMicros: number): number {
-  if (subtotalMicros <= 0) return 0;
-  return subtotalMicros >= FREE_SHIPPING_THRESHOLD_MICROS ? 0 : FLAT_SHIPPING_MICROS;
+export type ShippingConfig = {
+  enabled: boolean;
+  rateMicros: number;
+};
+
+export const DEFAULT_SHIPPING_CONFIG: ShippingConfig = {
+  enabled: true,
+  rateMicros: FLAT_SHIPPING_MICROS,
+};
+
+export function calculateShippingMicros(
+  subtotalMicros: number,
+  shipping: ShippingConfig = DEFAULT_SHIPPING_CONFIG,
+): number {
+  if (subtotalMicros <= 0 || !shipping.enabled) return 0;
+  return Math.max(0, shipping.rateMicros);
 }

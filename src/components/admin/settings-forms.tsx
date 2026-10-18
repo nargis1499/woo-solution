@@ -1,15 +1,34 @@
 "use client";
 
 import { startTransition, useActionState, useState, type ReactNode } from "react";
+import { TruckIcon } from "lucide-react";
 import { updateGeneralSettings, updateSeoSettings, updateShopSettings, type AdminFormState } from "@/app/nemesis/actions";
-import { CURRENCIES, CURRENCY_CODES, formatExchangeRate, isCurrencyCode, type CurrencyCode } from "@/lib/money";
+import {
+  CURRENCIES,
+  CURRENCY_CODES,
+  USD_MONEY,
+  formatExchangeRate,
+  formatMoney,
+  inputFromMicros,
+  isCurrencyCode,
+  moneyFromSettings,
+  parseExchangeRate,
+  parseMoneyInput,
+  toBaseMicros,
+  usdMicros,
+  type CurrencyCode,
+  type Money,
+} from "@/lib/money";
 import type { MediaRef, SiteSettings } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSeparator, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { useFormToast } from "./flash-toast";
 import { SubmitButton, SwitchField } from "./form-bits";
 import { BRANDING_FOLDER, FAVICON_MIME_TYPES, SHARE_IMAGE_MIME_TYPES, brandingFileProblem } from "@/lib/media/shared";
@@ -214,14 +233,42 @@ export function SeoSettingsForm({ settings, shareImage }: { settings: SiteSettin
 export function ShopSettingsForm({ settings }: { settings: SiteSettings }) {
   return (
     <SettingsCard title="WooCommerce" action={updateShopSettings}>
-      {({ v, err }) => (
-        <FieldGroup className="gap-5">
-          <SwitchField id="manage_stock" name="manage_stock" label="Manage stock – track quantities for all products and stop selling when they run out" defaultSelected={settings.manage_stock} />
-          <FieldSeparator />
-          <CurrencyFields settings={settings} v={v} err={err} />
-        </FieldGroup>
-      )}
+      {({ v, err }) => <ShopSettingsBody settings={settings} v={v} err={err} />}
     </SettingsCard>
+  );
+}
+
+function ShopSettingsBody({ settings, v, err }: { settings: SiteSettings; v: Record<string, string>; err: Record<string, string> }) {
+  const [currency, setCurrency] = useState<CurrencyCode>(isCurrencyCode(v.currency) ? v.currency : settings.currency);
+  const [rateText, setRateText] = useState<string>(
+    v.usd_to_bdt_rate ?? (settings.usd_to_bdt_rate ? formatExchangeRate(settings.usd_to_bdt_rate) : ""),
+  );
+
+  const parsedRate = parseExchangeRate(rateText);
+  const activeMoney: Money =
+    currency === "BDT" && Number.isFinite(parsedRate) && parsedRate > 0
+      ? { currency: "BDT", rate: parsedRate }
+      : moneyFromSettings({ currency, usd_to_bdt_rate: settings.usd_to_bdt_rate });
+
+  return (
+    <FieldGroup className="gap-5">
+      <SwitchField
+        id="manage_stock"
+        name="manage_stock"
+        label="Manage stock – track quantities for all products and stop selling when they run out"
+        defaultSelected={settings.manage_stock}
+      />
+      <FieldSeparator />
+      <CurrencyFields
+        currency={currency}
+        onCurrencyChange={setCurrency}
+        rateText={rateText}
+        onRateTextChange={setRateText}
+        err={err}
+      />
+      <FieldSeparator />
+      <ShippingFields settings={settings} money={activeMoney} v={v} err={err} />
+    </FieldGroup>
   );
 }
 
@@ -229,16 +276,26 @@ export function ShopSettingsForm({ settings }: { settings: SiteSettings }) {
  * Store currency + the USD→BDT rate. Prices stay in USD in the database; the rate field
  * only exists while BDT is selected (a failed save keeps whatever was typed).
  */
-function CurrencyFields({ settings, v, err }: { settings: SiteSettings; v: Record<string, string>; err: Record<string, string> }) {
-  const [currency, setCurrency] = useState<CurrencyCode>(isCurrencyCode(v.currency) ? v.currency : settings.currency);
-  const rateShown = v.usd_to_bdt_rate ?? (settings.usd_to_bdt_rate ? formatExchangeRate(settings.usd_to_bdt_rate) : "");
+function CurrencyFields({
+  currency,
+  onCurrencyChange,
+  rateText,
+  onRateTextChange,
+  err,
+}: {
+  currency: CurrencyCode;
+  onCurrencyChange: (next: CurrencyCode) => void;
+  rateText: string;
+  onRateTextChange: (next: string) => void;
+  err: Record<string, string>;
+}) {
   return (
     <FieldSet data-testid="currency-settings">
       <FieldLegend variant="label">Currency</FieldLegend>
       <FieldGroup className="gap-4">
         <Field>
           <FieldLabel htmlFor="currency">Store currency</FieldLabel>
-          <Select name="currency" selectedKey={currency} onSelectionChange={(key) => isCurrencyCode(key) && setCurrency(key)} aria-label="Store currency">
+          <Select name="currency" selectedKey={currency} onSelectionChange={(key) => isCurrencyCode(key) && onCurrencyChange(key)} aria-label="Store currency">
             <SelectTrigger id="currency" className="w-full sm:max-w-xs">
               <SelectValue />
             </SelectTrigger>
@@ -264,7 +321,8 @@ function CurrencyFields({ settings, v, err }: { settings: SiteSettings; v: Recor
                 inputMode="decimal"
                 placeholder="120"
                 required
-                defaultValue={rateShown}
+                value={rateText}
+                onChange={(e) => onRateTextChange(e.target.value)}
                 aria-invalid={Boolean(err.usd_to_bdt_rate) || undefined}
               />
               <InputGroupAddon align="inline-end">
@@ -275,6 +333,150 @@ function CurrencyFields({ settings, v, err }: { settings: SiteSettings; v: Recor
           </Field>
         )}
       </FieldGroup>
+    </FieldSet>
+  );
+}
+
+const SHIPPING_PRESET_USD = [0, 5, 10, 15] as const;
+
+function ShippingFields({
+  settings,
+  money,
+  v,
+  err,
+}: {
+  settings: SiteSettings;
+  money: Money;
+  v: Record<string, string>;
+  err: Record<string, string>;
+}) {
+  const defaultEnabled = v.shipping_enabled ? v.shipping_enabled === "on" : settings.shipping_enabled;
+  const [shippingEnabled, setShippingEnabled] = useState<boolean>(defaultEnabled);
+  const [seenDefaultEnabled, setSeenDefaultEnabled] = useState<boolean>(settings.shipping_enabled);
+  if (seenDefaultEnabled !== settings.shipping_enabled) {
+    setSeenDefaultEnabled(settings.shipping_enabled);
+    setShippingEnabled(settings.shipping_enabled);
+  }
+
+  const initialRateInput = inputFromMicros(settings.shipping_rate_micros, money);
+  const [shippingRate, setShippingRate] = useState<string>(v.shipping_rate ?? initialRateInput);
+  const [seenInitialRate, setSeenInitialRate] = useState<string>(initialRateInput);
+  if (seenInitialRate !== initialRateInput) {
+    setSeenInitialRate(initialRateInput);
+    setShippingRate(initialRateInput);
+  }
+
+  const parsedMinor = parseMoneyInput(shippingRate);
+  const previewMicros =
+    parsedMinor !== null && !Number.isNaN(parsedMinor)
+      ? toBaseMicros(parsedMinor, money)
+      : settings.shipping_rate_micros;
+  const previewLabel = !shippingEnabled
+    ? "Disabled"
+    : previewMicros === 0
+      ? "Free"
+      : formatMoney(previewMicros, money);
+
+  return (
+    <FieldSet data-testid="shipping-settings">
+      <FieldLegend variant="label">Shipping options</FieldLegend>
+      <div
+        className={cn(
+          "overflow-hidden rounded-xl border transition-colors",
+          shippingEnabled ? "border-primary/30 bg-primary/[0.02]" : "border-border bg-muted/15",
+        )}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              aria-hidden
+              className={cn(
+                "grid size-9 shrink-0 place-items-center rounded-lg transition-colors",
+                shippingEnabled ? "bg-primary/15 text-primary ring-1 ring-primary/25" : "bg-muted text-muted-foreground",
+              )}
+            >
+              <TruckIcon className="size-4" />
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <label htmlFor="shipping_enabled" className="cursor-pointer text-sm font-medium leading-none">
+                Enable shipping calculation
+              </label>
+              <Badge variant={shippingEnabled ? "default" : "secondary"} className="h-5 px-2 text-[11px] leading-none">
+                {shippingEnabled ? "Enabled" : "Disabled"}
+              </Badge>
+              {shippingEnabled && (
+                <Badge variant="outline" className="h-5 border-primary/30 bg-background px-2 text-[11px] font-semibold tabular-nums text-primary leading-none" data-testid="shipping-rate-preview">
+                  {previewLabel}
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          <label className="flex cursor-pointer items-center gap-2.5 select-none">
+            <input type="hidden" name="shipping_enabled" value={shippingEnabled ? "on" : "off"} />
+            <Switch
+              id="shipping_enabled"
+              isSelected={shippingEnabled}
+              onChange={setShippingEnabled}
+              aria-label="Enable shipping calculation"
+              data-testid="shipping-enabled-switch"
+            />
+          </label>
+        </div>
+
+        {shippingEnabled && (
+          <div className="border-t border-border/70 bg-background/50 p-4" data-testid="shipping-rate-panel">
+            <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+              <Field data-invalid={Boolean(err.shipping_rate) || undefined}>
+                <FieldLabel htmlFor="shipping_rate">Shipping rate</FieldLabel>
+                <InputGroup className="sm:max-w-xs">
+                  <InputGroupAddon>
+                    <InputGroupText>{CURRENCIES[money.currency].symbol}</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    id="shipping_rate"
+                    name="shipping_rate"
+                    inputMode="decimal"
+                    placeholder="5.00"
+                    required
+                    value={shippingRate}
+                    onChange={(e) => setShippingRate(e.target.value)}
+                    aria-invalid={Boolean(err.shipping_rate) || undefined}
+                    data-testid="shipping-rate-input"
+                  />
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupText>{money.currency}</InputGroupText>
+                  </InputGroupAddon>
+                </InputGroup>
+                <FieldError>{err.shipping_rate}</FieldError>
+              </Field>
+
+              <div className="flex flex-wrap items-center gap-1.5 pb-0.5">
+                {SHIPPING_PRESET_USD.map((usd) => {
+                  const micros = usdMicros(usd);
+                  const val = inputFromMicros(micros, money);
+                  const active = shippingRate === val;
+                  return (
+                    <button
+                      key={usd}
+                      type="button"
+                      onClick={() => setShippingRate(val)}
+                      className={cn(
+                        "inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium tabular-nums transition-colors",
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                      )}
+                    >
+                      {usd === 0 ? "Free" : formatMoney(micros, money)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </FieldSet>
   );
 }

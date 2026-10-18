@@ -36,13 +36,17 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     gradients: settings.theme_gradients,
     sync: settings.theme_sync,
   };
+  const shipping = {
+    enabled: settings.shipping_enabled,
+    rateMicros: settings.shipping_rate_micros,
+  };
   return (
     // suppressHydrationWarning: next-themes sets the `class`/`style` on <html> before React hydrates
     <html lang="en" className={`${inter.variable} h-full font-sans`} suppressHydrationWarning>
       <body className="flex min-h-full flex-col">
         <ThemeCustomizationProvider theme={theme}>
         <Providers>
-          <MoneyProvider money={money}>
+          <MoneyProvider money={money} shipping={shipping}>
             <Suspense fallback={null}>
               <TopLoader />
             </Suspense>

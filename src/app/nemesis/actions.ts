@@ -1015,13 +1015,15 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
   if (error) {
     if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
       const message = error.message ?? "";
-      const migration = /currency|bdt_rate/i.test(message)
-        ? "20261025000000_currency.sql"
-        : /home_/i.test(message)
-          ? "20261024000000_home_sections.sql"
-          : /media_id/i.test(message)
-            ? "20261020000000_single_media_bucket.sql"
-            : "20261018000000_settings_tabs.sql";
+      const migration = /shipping_/i.test(message)
+        ? "20261036000000_shipping_settings.sql"
+        : /currency|bdt_rate/i.test(message)
+          ? "20261025000000_currency.sql"
+          : /home_/i.test(message)
+            ? "20261024000000_home_sections.sql"
+            : /media_id/i.test(message)
+              ? "20261020000000_single_media_bucket.sql"
+              : "20261018000000_settings_tabs.sql";
       return `The database is missing the new settings columns – run supabase/migrations/${migration} in the Supabase SQL Editor.`;
     }
     throw error;
@@ -1159,16 +1161,36 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
   const currencyInput = str(formData, "currency", 10);
   const currency = isCurrencyCode(currencyInput) ? currencyInput : null;
   const rateInput = str(formData, "usd_to_bdt_rate", 20);
+  const shippingEnabled = formData.has("shipping_enabled") ? bool(formData, "shipping_enabled") : true;
+  const shippingRateInput = str(formData, "shipping_rate", 20);
   const fieldErrors: Record<string, string> = {};
   if (!currency) fieldErrors.currency = "Pick USD or BDT.";
   // The rate only matters (and is only shown) for BDT; a USD store keeps the last rate for later.
   const rate = currency === "BDT" ? parseExchangeRate(rateInput) : null;
   if (currency === "BDT" && (rate === null || Number.isNaN(rate))) fieldErrors.usd_to_bdt_rate = `Enter how many BDT one USD is worth, e.g. 120 (up to ${MAX_EXCHANGE_RATE.toLocaleString("en-US")}).`;
+
+  let shippingRateMicros: number | null = null;
+  if (shippingEnabled && formData.has("shipping_rate")) {
+    const minor = parseMoneyInput(shippingRateInput);
+    if (minor === null || Number.isNaN(minor) || minor < 0) {
+      fieldErrors.shipping_rate = "Enter a valid shipping rate (0 or higher).";
+    } else {
+      const effectiveMoney: Money = currency === "BDT" && rate && !Number.isNaN(rate) ? { currency: "BDT", rate } : USD_MONEY;
+      shippingRateMicros = toBaseMicros(minor, effectiveMoney);
+    }
+  }
+
   if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
   try {
     const { supabase } = await adminClient();
     const { data: before } = await supabase.from("site_settings").select("manage_stock").eq("id", 1).maybeSingle();
-    const problem = await saveSiteSettings({ manage_stock: manageStock, currency, ...(rate ? { usd_to_bdt_rate: rate } : {}) });
+    const problem = await saveSiteSettings({
+      manage_stock: manageStock,
+      currency,
+      ...(rate ? { usd_to_bdt_rate: rate } : {}),
+      shipping_enabled: shippingEnabled,
+      ...(shippingRateMicros !== null ? { shipping_rate_micros: shippingRateMicros } : {}),
+    });
     if (problem) return { error: problem, values };
     const stockChanged = before && typeof before.manage_stock === "boolean" && before.manage_stock !== manageStock;
     const success = stockChanged
