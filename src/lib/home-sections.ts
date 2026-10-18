@@ -12,7 +12,7 @@ export type HomeSectionId = "home_show_categories" | "home_show_featured" | "hom
 
 export const HOME_SECTIONS: readonly { id: HomeSectionId; label: string; description: string }[] = [
   { id: "home_show_categories", label: "Shop by category", description: "A tile for every category, linking into the shop." },
-  { id: "home_show_featured", label: "Featured products", description: "Up to eight products marked as featured (the newest products while none are)." },
+  { id: "home_show_featured", label: "Featured products", description: "Up to eight products marked as featured (hidden when none are featured)." },
   { id: "home_show_filter", label: "Filtered products", description: "The shop's category filter with the matching products, right on the home page." },
 ];
 

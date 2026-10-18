@@ -65,19 +65,9 @@ export default async function HomePage() {
 
       {/* Featured products */}
       {settings.home_show_featured && (
-        <section aria-labelledby="home-featured" data-testid="home-featured">
-          <div className="mb-5 flex items-end justify-between">
-            <h2 id="home-featured" className="text-2xl font-bold tracking-tight">
-              Featured products
-            </h2>
-            <Link href="/shop" className={buttonVariants({ variant: "link" })}>
-              View all <ArrowRightIcon />
-            </Link>
-          </div>
-          <Suspense fallback={<ProductGridSkeleton count={4} />}>
-            <FeaturedProducts />
-          </Suspense>
-        </section>
+        <Suspense fallback={null}>
+          <FeaturedProducts />
+        </Suspense>
       )}
 
       {/* Filtered products – the shop's category filter, heading set by the admin */}
@@ -121,7 +111,19 @@ function CategoryTilesSkeleton() {
 }
 
 async function FeaturedProducts() {
-  let products = await getProducts({ featuredOnly: true, limit: 8 });
-  if (products.length === 0) products = await getProducts({ limit: 8 });
-  return <ProductGrid products={products} emptyMessage="No products yet — run supabase/seed.sql to add the demo catalog." />;
+  const products = await getProducts({ featuredOnly: true, limit: 8 });
+  if (products.length === 0) return null;
+  return (
+    <section aria-labelledby="home-featured" data-testid="home-featured">
+      <div className="mb-5 flex items-end justify-between">
+        <h2 id="home-featured" className="text-2xl font-bold tracking-tight">
+          Featured products
+        </h2>
+        <Link href="/shop" className={buttonVariants({ variant: "link" })}>
+          View all <ArrowRightIcon />
+        </Link>
+      </div>
+      <ProductGrid products={products} />
+    </section>
+  );
 }
