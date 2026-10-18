@@ -14,6 +14,7 @@ import { slidesFor } from "@/lib/media/shared";
 import { ProductGrid } from "@/components/product-grid";
 import { Badge } from "@/components/ui/badge";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
+import { WishlistButton } from "@/components/wishlist-button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProductPurchasePanel } from "./product-detail";
@@ -72,14 +73,24 @@ async function ProductDetails({ params }: { params: Params }) {
         <ProductGallery slides={slidesFor(product)} />
         <div className="space-y-6">
           <div>
-            {product.category && (
-              <Link href={`/shop?category=${product.category.slug}`}>
-                <Badge variant="secondary" className="mb-3">
-                  {product.category.name}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              {product.brand && (
+                <Badge className="rounded-full bg-zinc-900 px-3 py-0.5 text-[11px] font-bold tracking-wider text-white uppercase dark:bg-zinc-100 dark:text-zinc-900">
+                  {product.brand}
                 </Badge>
-              </Link>
-            )}
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{product.name}</h1>
+              )}
+              {product.category && (
+                <Link href={`/shop?category=${product.category.slug}`}>
+                  <Badge variant="secondary">
+                    {product.category.name}
+                  </Badge>
+                </Link>
+              )}
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{product.name}</h1>
+              <WishlistButton product={product} />
+            </div>
             <Price micros={product.price_micros} regularMicros={product.compare_at_price_micros} from={isVariable} className="mt-3 text-2xl" />
           </div>
           {product.description && <p className="leading-relaxed text-muted-foreground">{product.description}</p>}

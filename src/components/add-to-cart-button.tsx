@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon, ShoppingCartIcon, ZapIcon } from "lucide-react";
+import { CheckIcon, ShoppingBagIcon, ShoppingCartIcon, ZapIcon } from "lucide-react";
 import { useCartStore } from "@/lib/cart-store";
 import type { Product } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,10 @@ type Props = {
   className?: string;
   /** "add" keeps the user on the page, "buy" jumps straight to checkout */
   mode?: "add" | "buy";
+  /** Optional custom button text (e.g. "Add" on product grid cards) */
+  label?: string;
+  /** Icon to render before the label */
+  icon?: "cart" | "bag";
   /**
    * Settings → WooCommerce → stock management. Passed down from the page's
    * dynamic data (never from a layout/context) so a toggle in the dashboard is
@@ -27,7 +31,17 @@ type Props = {
   manageStock?: boolean;
 };
 
-export function AddToCartButton({ product, variation = null, quantity = 1, size = "default", className, mode = "add", manageStock = true }: Props) {
+export function AddToCartButton({
+  product,
+  variation = null,
+  quantity = 1,
+  size = "default",
+  className,
+  mode = "add",
+  label,
+  icon = "cart",
+  manageStock = true,
+}: Props) {
   const addItem = useCartStore((s) => s.addItem);
   const [added, setAdded] = useState(false);
   const router = useRouter();
@@ -64,19 +78,28 @@ export function AddToCartButton({ product, variation = null, quantity = 1, size 
     );
   }
 
+  const Icon = icon === "bag" ? ShoppingBagIcon : ShoppingCartIcon;
+
   return (
-    <Button variant={mode === "buy" ? "secondary" : "default"} size={size} className={className} onPress={handlePress} aria-live="polite">
+    <Button
+      variant={mode === "buy" ? "secondary" : "default"}
+      size={size}
+      className={className}
+      onPress={handlePress}
+      aria-live="polite"
+      data-testid="add-to-cart-button"
+    >
       {added ? (
         <>
-          <CheckIcon /> Added
+          <CheckIcon className="size-3.5" /> Added
         </>
       ) : mode === "buy" ? (
         <>
-          <ZapIcon /> Buy now
+          <ZapIcon className="size-3.5" /> {label ?? "Buy now"}
         </>
       ) : (
         <>
-          <ShoppingCartIcon /> Add to cart
+          <Icon className="size-3.5" /> {label ?? "Add to cart"}
         </>
       )}
     </Button>

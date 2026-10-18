@@ -30,11 +30,15 @@ export function Price({
   const onSale = regularMicros != null && regularMicros > micros;
   return (
     <span className={cn("inline-flex items-baseline gap-2", className)}>
-      <span className={cn("font-semibold tabular-nums", onSale && "text-primary")}>
+      <span className="font-extrabold text-foreground tabular-nums">
         {from && <span className="mr-1 text-sm font-normal text-muted-foreground">From</span>}
         {formatMoney(micros, m)}
       </span>
-      {onSale && <span className="text-sm text-muted-foreground line-through">{formatMoney(regularMicros as number, m)}</span>}
+      {onSale && (
+        <span className="text-xs font-normal text-muted-foreground line-through tabular-nums">
+          {formatMoney(regularMicros as number, m)}
+        </span>
+      )}
     </span>
   );
 }

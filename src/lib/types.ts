@@ -92,6 +92,8 @@ export type Product = {
   /** `simple` (own price/stock) or `variable` (price/stock come from `variations`). */
   type?: ProductType;
   sku?: string | null;
+  /** Product brand label shown on storefront cards & product detail (e.g. "SONY", "APPLE"). */
+  brand?: string | null;
   /** Variable products only: the axes, in the order the admin defined them. */
   attributes?: ProductAttribute[];
   /** Variable products only: every combination, in display order. */
@@ -332,6 +334,7 @@ export type SiteSettings = {
   home_hero_secondary_cta_text: string | null;
   home_hero_secondary_cta_href: string | null;
   home_show_categories: boolean;
+  home_show_category_sections: boolean;
   home_show_featured: boolean;
   home_show_filter: boolean;
   /** Heading above the filtered-products section; null = no heading */

@@ -139,6 +139,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   const type: ProductType = str(formData, "type", 10) === "variable" ? "variable" : "simple";
   const isVariable = type === "variable";
   const sku = str(formData, "sku", 64).trim() || null;
+  const brand = str(formData, "brand", 80).trim() || null;
 
   // Variable products: the axes the admin defined and one row per combination.
   const jsonField = (field: string, max: number) => {
@@ -169,6 +170,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   if (!name) fieldErrors.name = "Name is required.";
   if (!SLUG_RE.test(slug)) fieldErrors.slug = "Use lowercase letters, numbers and dashes only.";
   if (sku && sku.length > 64) fieldErrors.sku = "Keep the SKU under 64 characters.";
+  if (brand && brand.length > 80) fieldErrors.brand = "Keep the brand under 80 characters.";
   if (attributeError) fieldErrors.attributes = attributeError;
   if (variationError) fieldErrors.variations = variationError;
 
@@ -292,7 +294,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
 
     // A variable product's price/stock live on its variations: on update they are left alone
     // (the trigger owns them), on insert they start at 0 and the variations fill them in.
-    const row = {
+    const baseRow = {
       name,
       slug,
       description: description || null,
@@ -308,10 +310,19 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
         : { price_micros: priceMicros, compare_at_price_micros: compareAtMicros, stock }),
       ...image,
     };
+    const row = { ...baseRow, brand };
 
-    const result = isEdit
+    let result = isEdit
       ? await supabase.from("products").update(row).eq("id", id).select("id").single()
       : await supabase.from("products").insert(row).select("id").single();
+    if (
+      result.error &&
+      (result.error.code === "42703" || /column .*brand|schema cache/i.test(result.error.message ?? ""))
+    ) {
+      result = isEdit
+        ? await supabase.from("products").update(baseRow).eq("id", id).select("id").single()
+        : await supabase.from("products").insert(baseRow).select("id").single();
+    }
     if (result.error) throw result.error;
     const productId = result.data.id as string;
 
@@ -1027,6 +1038,7 @@ const META_FALLBACK_KEYS = [
   "home_hero_primary_cta_href",
   "home_hero_secondary_cta_text",
   "home_hero_secondary_cta_href",
+  "home_show_category_sections",
 ] as const;
 
 /** Writes `patch` onto the single settings row and refreshes everything that renders it. */
@@ -1036,7 +1048,7 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
   if (error) {
     if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
       const message = error.message ?? "";
-      if (/footer_text|shipping_|home_show_hero|home_hero_/i.test(message)) {
+      if (/footer_text|shipping_|home_show_hero|home_hero_|home_show_category_sections/i.test(message)) {
         const { data: current } = await supabase.from("site_settings").select("theme_gradients").eq("id", 1).maybeSingle();
         const existingGradients =
           current?.theme_gradients && typeof current.theme_gradients === "object" && !Array.isArray(current.theme_gradients)
@@ -1297,6 +1309,7 @@ export async function updateHomeSections(_prev: AdminFormState, formData: FormDa
       home_hero_secondary_cta_text: secondaryCtaText || null,
       home_hero_secondary_cta_href: secondaryCtaHref || null,
       home_show_categories: bool(formData, "home_show_categories"),
+      home_show_category_sections: formData.has("home_show_category_sections") ? bool(formData, "home_show_category_sections") : true,
       home_show_featured: bool(formData, "home_show_featured"),
       home_show_filter: bool(formData, "home_show_filter"),
       home_filter_title: title || null,

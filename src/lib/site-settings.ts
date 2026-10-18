@@ -48,6 +48,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   home_hero_secondary_cta_text: DEFAULT_HOME_HERO_SECONDARY_CTA_TEXT,
   home_hero_secondary_cta_href: DEFAULT_HOME_HERO_SECONDARY_CTA_HREF,
   home_show_categories: true,
+  home_show_category_sections: true,
   home_show_featured: true,
   home_show_filter: false,
   home_filter_title: null,
@@ -141,6 +142,7 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
       text(row.home_hero_secondary_cta_href ?? meta.home_hero_secondary_cta_href) ??
       DEFAULT_HOME_HERO_SECONDARY_CTA_HREF,
     home_show_categories: flag(row.home_show_categories, true),
+    home_show_category_sections: flag(row.home_show_category_sections ?? meta.home_show_category_sections, true),
     home_show_featured: flag(row.home_show_featured, true),
     home_show_filter: flag(row.home_show_filter, false),
     home_filter_title: text(row.home_filter_title),

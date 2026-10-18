@@ -32,12 +32,14 @@ export function defaultHomeHeroSubtitle(freeShippingFormatted: string): string {
 export type HomeSectionId =
   | "home_show_hero"
   | "home_show_categories"
+  | "home_show_category_sections"
   | "home_show_featured"
   | "home_show_filter";
 
 export const HOME_SECTIONS: readonly { id: HomeSectionId; label: string; description: string }[] = [
   { id: "home_show_hero", label: "Hero section", description: "Main promotional banner at the top of the home page." },
   { id: "home_show_categories", label: "Shop by category", description: "A tile for every category, linking into the shop." },
+  { id: "home_show_category_sections", label: "Category product sections", description: "Dedicated sections showing products grouped under each category banner." },
   { id: "home_show_featured", label: "Featured products", description: "Up to eight products marked as featured (hidden when none are featured)." },
   { id: "home_show_filter", label: "Filtered products", description: "The shop's category filter with the matching products, right on the home page." },
 ];
@@ -50,6 +52,7 @@ export function homeSectionsOf(settings: SiteSettings): Record<HomeSectionId, bo
   return {
     home_show_hero: settings.home_show_hero,
     home_show_categories: settings.home_show_categories,
+    home_show_category_sections: settings.home_show_category_sections,
     home_show_featured: settings.home_show_featured,
     home_show_filter: settings.home_show_filter,
   };

@@ -1,8 +1,16 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
-import { isMissingVariationSchema } from "@/lib/data/product-columns";
-import { PRODUCT_COLUMNS, PRODUCT_DETAIL_COLUMNS, PRODUCT_DETAIL_COLUMNS_LEGACY, PRODUCT_COLUMNS_LEGACY } from "@/lib/data/product-columns";
+import {
+  isMissingBrandColumn,
+  isMissingVariationSchema,
+  PRODUCT_COLUMNS,
+  PRODUCT_COLUMNS_LEGACY,
+  PRODUCT_COLUMNS_NO_BRAND,
+  PRODUCT_DETAIL_COLUMNS,
+  PRODUCT_DETAIL_COLUMNS_LEGACY,
+  PRODUCT_DETAIL_COLUMNS_NO_BRAND,
+} from "@/lib/data/product-columns";
 import { withSortedVariations } from "@/lib/variations";
 import { PRODUCTS_PER_PAGE } from "@/lib/catalog";
 import { pageCount } from "@/lib/pagination";
@@ -56,7 +64,10 @@ export async function getProducts(options: {
     return query;
   };
 
-  const { data, error } = await build(PRODUCT_COLUMNS);
+  let { data, error } = await build(PRODUCT_COLUMNS);
+  if (error && isMissingBrandColumn(error)) {
+    ({ data, error } = await build(PRODUCT_COLUMNS_NO_BRAND));
+  }
   if (error) {
     // A database that has not run migration 14 yet simply has no `type` / `sku`.
     if (!isMissingVariationSchema(error)) throw new Error(`Failed to load products: ${error.message}`);
@@ -99,6 +110,7 @@ export async function getProductPage(options: { categoryId?: string; search?: st
       .range(from, from + perPage - 1);
 
   let { data, error } = await run(PRODUCT_COLUMNS);
+  if (error && isMissingBrandColumn(error)) ({ data, error } = await run(PRODUCT_COLUMNS_NO_BRAND));
   if (error && isMissingVariationSchema(error)) ({ data, error } = await run(PRODUCT_COLUMNS_LEGACY));
   if (error) throw new Error(`Failed to load products: ${error.message}`);
   return { items: (data ?? []) as unknown as Product[], total, page, pages, perPage };
@@ -107,8 +119,11 @@ export async function getProductPage(options: { categoryId?: string; search?: st
 export async function getProductBySlug(slug: string): Promise<Product | null> {
   const supabase = await createClient();
   const load = (columns: string) => supabase.from("products").select(columns).eq("slug", slug).eq("is_active", true).maybeSingle();
-  // Full row first (media + attributes + variations); older databases fall back one step at a time.
+  // Full row first (media + attributes + variations + brand); older databases fall back one step at a time.
   let { data, error } = await load(PRODUCT_DETAIL_COLUMNS);
+  if (error && isMissingBrandColumn(error)) {
+    ({ data, error } = await load(PRODUCT_DETAIL_COLUMNS_NO_BRAND));
+  }
   if (error && /product_variations|product_attributes/i.test(`${error.message} ${error.code}`)) {
     ({ data, error } = await load(PRODUCT_DETAIL_COLUMNS_LEGACY));
   }
@@ -132,6 +147,9 @@ export async function getSimpleProductsByIds(ids: string[]): Promise<Product[]> 
   const run = (columns: string) =>
     supabase.from("products").select(columns).in("id", validIds).eq("is_active", true);
   let { data, error } = await run(PRODUCT_COLUMNS);
+  if (error && isMissingBrandColumn(error)) {
+    ({ data, error } = await run(PRODUCT_COLUMNS_NO_BRAND));
+  }
   if (error && isMissingVariationSchema(error)) {
     ({ data, error } = await run(PRODUCT_COLUMNS_LEGACY));
   }

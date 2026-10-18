@@ -6,6 +6,7 @@ import { getMenu } from "@/lib/menu";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { NotificationBellGate, NotificationBellSkeleton } from "@/components/notifications/notification-bell-gate";
 import { CartBadge } from "./cart-badge";
+import { WishlistBadge } from "./wishlist-badge";
 import { PresenceGate } from "./presence-gate";
 import { MobileNav } from "./mobile-nav";
 import { NavLink } from "./nav-link";
@@ -50,6 +51,7 @@ export async function Header() {
             <NotificationBellGate basePath="/notifications" />
           </Suspense>
           <ThemeToggle />
+          <WishlistBadge />
           <CartBadge />
         </div>
       </div>

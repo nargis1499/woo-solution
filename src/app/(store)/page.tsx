@@ -1,7 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { ArrowRightIcon, SparklesIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  Gamepad2Icon,
+  HeadphonesIcon,
+  LaptopIcon,
+  SmartphoneIcon,
+  SparklesIcon,
+  type LucideIcon,
+} from "lucide-react";
+import { CATEGORY_ICON_BY_ID, DEFAULT_CATEGORY_ICON } from "@/lib/category-icons";
 import { getCategories, getProducts } from "@/lib/data/products";
 import { FREE_SHIPPING_THRESHOLD_MICROS } from "@/lib/config";
 import {
@@ -13,6 +22,7 @@ import {
 import { getSiteSettings } from "@/lib/site-settings";
 import { canonicalFor } from "@/lib/seo";
 import { formatMoney, moneyFromSettings } from "@/lib/money";
+import type { Category } from "@/lib/types";
 import { CategoryCard } from "@/components/category-card";
 import { HomeProductFilter } from "@/components/home-product-filter";
 import { ProductGrid, ProductGridSkeleton } from "@/components/product-grid";
@@ -23,6 +33,35 @@ import { cn } from "@/lib/utils";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { alternates: await canonicalFor("/") };
+}
+
+function resolveCategorySectionIcon(category: Category): LucideIcon {
+  if (category.icon && CATEGORY_ICON_BY_ID[category.icon]) {
+    return CATEGORY_ICON_BY_ID[category.icon];
+  }
+  const slug = category.slug.toLowerCase();
+  if (slug.includes("laptop") || slug.includes("computer")) return LaptopIcon;
+  if (slug.includes("mobile") || slug.includes("phone")) return SmartphoneIcon;
+  if (slug.includes("electr") || slug.includes("audio")) return HeadphonesIcon;
+  if (slug.includes("gam") || slug.includes("access")) return Gamepad2Icon;
+  return DEFAULT_CATEGORY_ICON;
+}
+
+function resolveCategorySubtitle(category: Category): string {
+  const slug = category.slug.toLowerCase();
+  if (slug.includes("electr") || slug.includes("audio")) {
+    return "Audio, wearables, smart gadgets, and high-tech accessories";
+  }
+  if (slug.includes("laptop") || slug.includes("computer")) {
+    return "High-performance ultrabooks, gaming laptops, and creator workstations";
+  }
+  if (slug.includes("mobile") || slug.includes("phone")) {
+    return "Flagship 5G smartphones, foldable devices, and pro camera phones";
+  }
+  if (slug.includes("gam") || slug.includes("access")) {
+    return "Mechanical keyboards, pro gaming mice, 4K monitors, and high-speed storage";
+  }
+  return `Explore our curated selection of ${category.name.toLowerCase()} products and essentials`;
 }
 
 /**
@@ -130,6 +169,13 @@ export default async function HomePage() {
         </Suspense>
       )}
 
+      {/* Products organized by dedicated category sections */}
+      {settings.home_show_category_sections && (
+        <Suspense fallback={<ProductGridSkeleton count={6} />}>
+          <CategoryProductSections />
+        </Suspense>
+      )}
+
       {/* Filtered products – the shop's category filter, heading set by the admin */}
       {settings.home_show_filter && (
         <section
@@ -142,11 +188,87 @@ export default async function HomePage() {
               {settings.home_filter_title}
             </h2>
           )}
-          <Suspense fallback={<ProductGridSkeleton count={8} />}>
+          <Suspense fallback={<ProductGridSkeleton count={6} />}>
             <FilteredProducts />
           </Suspense>
         </section>
       )}
+    </div>
+  );
+}
+
+async function CategoryProductSections() {
+  const [categories, products, { manage_stock }] = await Promise.all([
+    getCategories(),
+    getProducts(),
+    getSiteSettings(),
+  ]);
+
+  const sections = categories
+    .map((category) => ({
+      category,
+      items: products.filter(
+        (p) => p.category_id === category.id || p.category?.slug === category.slug,
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
+
+  if (sections.length === 0) return null;
+
+  return (
+    <div className="space-y-14" data-testid="home-category-sections">
+      {sections.map(({ category, items }, index) => {
+        const Icon = resolveCategorySectionIcon(category);
+        const sectionNumber = String(index + 1).padStart(2, "0");
+
+        return (
+          <section
+            key={category.id}
+            aria-labelledby={`home-cat-sec-${category.slug}`}
+            data-testid={`home-category-section-${category.slug}`}
+            className="scroll-mt-20 space-y-6"
+          >
+            {/* Dedicated Category Section Header Banner */}
+            <div className="relative flex flex-wrap items-center justify-between gap-4 overflow-hidden rounded-2xl border border-primary/15 bg-primary/[0.06] px-5 py-4 before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-1.5 before:bg-primary sm:px-6">
+              <div className="flex min-w-0 items-center gap-3.5 sm:gap-4">
+                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs">
+                  <Icon className="size-5" aria-hidden />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h2
+                      id={`home-cat-sec-${category.slug}`}
+                      className="text-xl font-extrabold tracking-tight text-foreground sm:text-2xl"
+                    >
+                      <Link
+                        href={`/shop?category=${category.slug}`}
+                        className="transition-colors hover:text-primary"
+                      >
+                        {category.name}
+                      </Link>
+                    </h2>
+                    <span className="inline-flex items-center rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                      {items.length} {items.length === 1 ? "Item" : "Items"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
+                    {resolveCategorySubtitle(category)}
+                  </p>
+                </div>
+              </div>
+
+              <Link
+                href={`/shop?category=${category.slug}`}
+                className="inline-flex shrink-0 items-center rounded-full bg-primary/12 px-3.5 py-1 text-[11px] font-bold tracking-widest text-primary uppercase transition-colors hover:bg-primary/20"
+              >
+                SECTION {sectionNumber}
+              </Link>
+            </div>
+
+            <ProductGrid products={items} manageStock={manage_stock} />
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -186,7 +308,7 @@ function CategoryTilesSkeleton() {
 }
 
 async function FeaturedProducts() {
-  const products = await getProducts({ featuredOnly: true, limit: 8 });
+  const products = await getProducts({ featuredOnly: true, limit: 6 });
   if (products.length === 0) return null;
   return (
     <section aria-labelledby="home-featured" data-testid="home-featured">

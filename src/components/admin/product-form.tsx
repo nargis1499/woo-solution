@@ -55,6 +55,7 @@ export function ProductForm({
 
   const [type, setType] = useState<"simple" | "variable">((v.type as "simple" | "variable") ?? product?.type ?? "simple");
   const [sku, setSku] = useState(v.sku ?? product?.sku ?? "");
+  const [brand, setBrand] = useState(v.brand ?? product?.brand ?? "");
   const [attributes, setAttributes] = useState<DraftAttribute[]>(() => (v.attributes_json ? (JSON.parse(v.attributes_json) as DraftAttribute[]) : initialAttributes(product)));
   const [variations, setVariations] = useState<DraftVariation[]>(() => (v.variations_json ? (JSON.parse(v.variations_json) as DraftVariation[]).map((row) => ({ ...row, key: row.id ?? crypto.randomUUID(), image_preview: row.image_url ?? "" })) : initialVariations(product, money)));
 
@@ -84,25 +85,40 @@ export function ProductForm({
           </CardHeader>
           <CardContent>
             <FieldGroup className="gap-5">
-              <Field data-invalid={Boolean(err.type) || undefined}>
-                <FieldLabel htmlFor="product_type">Product type</FieldLabel>
-                <Select
-                  name="product_type"
-                  defaultSelectedKey={type}
-                  onSelectionChange={(key) => setType(String(key) as "simple" | "variable")}
-                  aria-label="Product type"
-                  isInvalid={Boolean(err.type)}
-                >
-                  <SelectTrigger id="product_type" className="w-full sm:max-w-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem id="simple">Simple product</SelectItem>
-                    <SelectItem id="variable">Variable product</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FieldError>{err.type}</FieldError>
-              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field data-invalid={Boolean(err.type) || undefined}>
+                  <FieldLabel htmlFor="product_type">Product type</FieldLabel>
+                  <Select
+                    name="product_type"
+                    defaultSelectedKey={type}
+                    onSelectionChange={(key) => setType(String(key) as "simple" | "variable")}
+                    aria-label="Product type"
+                    isInvalid={Boolean(err.type)}
+                  >
+                    <SelectTrigger id="product_type" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem id="simple">Simple product</SelectItem>
+                      <SelectItem id="variable">Variable product</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FieldError>{err.type}</FieldError>
+                </Field>
+                <Field data-invalid={Boolean(err.brand) || undefined}>
+                  <FieldLabel htmlFor="brand">Brand</FieldLabel>
+                  <Input
+                    id="brand"
+                    name="brand"
+                    maxLength={80}
+                    placeholder="e.g. Apple, Sony, Asus, Samsung"
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    aria-invalid={Boolean(err.brand) || undefined}
+                  />
+                  <FieldError>{err.brand}</FieldError>
+                </Field>
+              </div>
               <Field data-invalid={Boolean(err.name) || undefined}>
                 <FieldLabel htmlFor="name">Name</FieldLabel>
                 <Input
