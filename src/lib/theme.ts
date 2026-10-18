@@ -499,9 +499,31 @@ export function normaliseTheme(raw: {
 
 export type ThemePaletteKey = (typeof THEME_PALETTE_KEYS)[number];
 
+export type ThemePresetCategory =
+  | "tech"
+  | "vibrant"
+  | "cool"
+  | "nature"
+  | "minimal"
+  | "pastel";
+
+export const THEME_PRESET_CATEGORIES: readonly {
+  id: "all" | ThemePresetCategory;
+  label: string;
+}[] = [
+  { id: "all", label: "All" },
+  { id: "tech", label: "Tech & Modern" },
+  { id: "vibrant", label: "Vibrant & Warm" },
+  { id: "cool", label: "Cool & Oceanic" },
+  { id: "nature", label: "Nature & Earth" },
+  { id: "minimal", label: "Dark & Minimal" },
+  { id: "pastel", label: "Pastel & Soft" },
+];
+
 export type ThemePreset = {
   id: string;
   name: string;
+  category: ThemePresetCategory;
   light: Record<ThemePaletteKey, string>;
   dark: Record<ThemePaletteKey, string>;
   /** Hero gradient that ships with the palette – seeded into the mode a preset is applied to. */
@@ -512,6 +534,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "indigo",
     name: "Modern Indigo",
+    category: "tech",
     light: { primary: "#4f46e5", secondary: "#eef2ff", button: "#4f46e5", button_hover: "#4338ca", loader: "#6366f1" },
     dark: { primary: "#a5b4fc", secondary: "#27272a", button: "#6366f1", button_hover: "#818cf8", loader: "#818cf8" },
     hero: { from: "#4f46e5", to: "#0ea5e9", angle: 120 },
@@ -519,6 +542,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "emerald",
     name: "Emerald Tech",
+    category: "tech",
     light: { primary: "#059669", secondary: "#ecfdf5", button: "#10b981", button_hover: "#059669", loader: "#34d399" },
     dark: { primary: "#6ee7b7", secondary: "#1f2937", button: "#10b981", button_hover: "#34d399", loader: "#34d399" },
     hero: { from: "#047857", to: "#0f766e", angle: 135 },
@@ -526,6 +550,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "coral",
     name: "Sunset Coral",
+    category: "vibrant",
     light: { primary: "#e11d48", secondary: "#fff1f2", button: "#f43f5e", button_hover: "#e11d48", loader: "#fb7185" },
     dark: { primary: "#fda4af", secondary: "#2b1d22", button: "#f43f5e", button_hover: "#fb7185", loader: "#fb7185" },
     hero: { from: "#f97316", to: "#e11d48", angle: 115 },
@@ -533,6 +558,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "ocean",
     name: "Ocean Cyan",
+    category: "cool",
     light: { primary: "#0891b2", secondary: "#ecfeff", button: "#06b6d4", button_hover: "#0e7490", loader: "#22d3ee" },
     dark: { primary: "#67e8f9", secondary: "#183038", button: "#06b6d4", button_hover: "#22d3ee", loader: "#22d3ee" },
     hero: { from: "#0369a1", to: "#06b6d4", angle: 125 },
@@ -540,6 +566,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "violet",
     name: "Violet Dusk",
+    category: "minimal",
     light: { primary: "#7c3aed", secondary: "#f5f3ff", button: "#8b5cf6", button_hover: "#7c3aed", loader: "#a78bfa" },
     dark: { primary: "#c4b5fd", secondary: "#241f37", button: "#8b5cf6", button_hover: "#a78bfa", loader: "#a78bfa" },
     hero: { from: "#4c1d95", to: "#a855f7", angle: 130 },
@@ -547,6 +574,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "rose",
     name: "Rose Quartz",
+    category: "pastel",
     light: { primary: "#db2777", secondary: "#fdf2f8", button: "#ec4899", button_hover: "#db2777", loader: "#f472b6" },
     dark: { primary: "#f9a8d4", secondary: "#2b1c25", button: "#ec4899", button_hover: "#f472b6", loader: "#f472b6" },
     hero: { from: "#9d174d", to: "#f472b6", angle: 120 },
@@ -554,6 +582,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "amber",
     name: "Amber Sunrise",
+    category: "vibrant",
     light: { primary: "#b45309", secondary: "#fffbeb", button: "#f59e0b", button_hover: "#d97706", loader: "#fbbf24" },
     dark: { primary: "#fcd34d", secondary: "#2e2416", button: "#f59e0b", button_hover: "#fbbf24", loader: "#fbbf24" },
     hero: { from: "#d97706", to: "#fbbf24", angle: 110 },
@@ -561,6 +590,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "forest",
     name: "Forest Pine",
+    category: "nature",
     light: { primary: "#15803d", secondary: "#f0fdf4", button: "#16a34a", button_hover: "#15803d", loader: "#4ade80" },
     dark: { primary: "#86efac", secondary: "#16241c", button: "#22c55e", button_hover: "#4ade80", loader: "#4ade80" },
     hero: { from: "#166534", to: "#22c55e", angle: 140 },
@@ -568,6 +598,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "teal",
     name: "Teal Lagoon",
+    category: "cool",
     light: { primary: "#0f766e", secondary: "#f0fdfa", button: "#14b8a6", button_hover: "#0f766e", loader: "#2dd4bf" },
     dark: { primary: "#5eead4", secondary: "#152a2a", button: "#14b8a6", button_hover: "#2dd4bf", loader: "#2dd4bf" },
     hero: { from: "#134e4a", to: "#2dd4bf", angle: 135 },
@@ -575,6 +606,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "sky",
     name: "Sky Breeze",
+    category: "cool",
     light: { primary: "#0369a1", secondary: "#f0f9ff", button: "#0ea5e9", button_hover: "#0284c7", loader: "#38bdf8" },
     dark: { primary: "#7dd3fc", secondary: "#14252f", button: "#0ea5e9", button_hover: "#38bdf8", loader: "#38bdf8" },
     hero: { from: "#075985", to: "#38bdf8", angle: 125 },
@@ -582,6 +614,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "crimson",
     name: "Crimson Ember",
+    category: "vibrant",
     light: { primary: "#b91c1c", secondary: "#fef2f2", button: "#dc2626", button_hover: "#991b1b", loader: "#ef4444" },
     dark: { primary: "#fca5a5", secondary: "#2b1a1a", button: "#dc2626", button_hover: "#ef4444", loader: "#f87171" },
     hero: { from: "#7f1d1d", to: "#ef4444", angle: 115 },
@@ -589,9 +622,106 @@ export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "graphite",
     name: "Graphite",
+    category: "minimal",
     light: { primary: "#334155", secondary: "#f1f5f9", button: "#334155", button_hover: "#1e293b", loader: "#64748b" },
     dark: { primary: "#cbd5e1", secondary: "#1e293b", button: "#475569", button_hover: "#94a3b8", loader: "#94a3b8" },
     hero: { from: "#0f172a", to: "#475569", angle: 120 },
+  },
+  {
+    id: "cyberpunk",
+    name: "Cyberpunk Neon",
+    category: "tech",
+    light: { primary: "#d946ef", secondary: "#fdf4ff", button: "#e879f9", button_hover: "#c026d3", loader: "#06b6d4" },
+    dark: { primary: "#f0abfc", secondary: "#1a1025", button: "#d946ef", button_hover: "#e879f9", loader: "#22d3ee" },
+    hero: { from: "#d946ef", to: "#06b6d4", angle: 125 },
+  },
+  {
+    id: "nordic-frost",
+    name: "Nordic Frost",
+    category: "cool",
+    light: { primary: "#0284c7", secondary: "#f0f9ff", button: "#38bdf8", button_hover: "#0284c7", loader: "#7dd3fc" },
+    dark: { primary: "#bae6fd", secondary: "#0f172a", button: "#38bdf8", button_hover: "#7dd3fc", loader: "#bae6fd" },
+    hero: { from: "#0284c7", to: "#7dd3fc", angle: 130 },
+  },
+  {
+    id: "midnight-tokyo",
+    name: "Midnight Tokyo",
+    category: "minimal",
+    light: { primary: "#312e81", secondary: "#eef2ff", button: "#3730a3", button_hover: "#1e1b4b", loader: "#ec4899" },
+    dark: { primary: "#818cf8", secondary: "#111827", button: "#4f46e5", button_hover: "#6366f1", loader: "#f472b6" },
+    hero: { from: "#1e1b4b", to: "#db2777", angle: 135 },
+  },
+  {
+    id: "lavender-mist",
+    name: "Lavender Mist",
+    category: "pastel",
+    light: { primary: "#9333ea", secondary: "#faf5ff", button: "#a855f7", button_hover: "#9333ea", loader: "#c084fc" },
+    dark: { primary: "#d8b4fe", secondary: "#23192d", button: "#a855f7", button_hover: "#c084fc", loader: "#d8b4fe" },
+    hero: { from: "#7e22ce", to: "#c084fc", angle: 120 },
+  },
+  {
+    id: "golden-sand",
+    name: "Golden Sand",
+    category: "nature",
+    light: { primary: "#ca8a04", secondary: "#fefce8", button: "#eab308", button_hover: "#a16207", loader: "#facc15" },
+    dark: { primary: "#fde047", secondary: "#292214", button: "#eab308", button_hover: "#facc15", loader: "#fde047" },
+    hero: { from: "#a16207", to: "#facc15", angle: 115 },
+  },
+  {
+    id: "electric-violet",
+    name: "Electric Violet",
+    category: "tech",
+    light: { primary: "#6d28d9", secondary: "#f5f3ff", button: "#7c3aed", button_hover: "#5b21b6", loader: "#8b5cf6" },
+    dark: { primary: "#a78bfa", secondary: "#1e1633", button: "#7c3aed", button_hover: "#8b5cf6", loader: "#c4b5fd" },
+    hero: { from: "#5b21b6", to: "#2563eb", angle: 125 },
+  },
+  {
+    id: "matcha-latte",
+    name: "Matcha Latte",
+    category: "nature",
+    light: { primary: "#4d7c0f", secondary: "#f7fee7", button: "#65a30d", button_hover: "#3f6212", loader: "#84cc16" },
+    dark: { primary: "#bef264", secondary: "#1d2614", button: "#65a30d", button_hover: "#84cc16", loader: "#a3e635" },
+    hero: { from: "#3f6212", to: "#84cc16", angle: 135 },
+  },
+  {
+    id: "coral-reef",
+    name: "Coral Reef",
+    category: "vibrant",
+    light: { primary: "#ea580c", secondary: "#fff7ed", button: "#f97316", button_hover: "#c2410c", loader: "#fb923c" },
+    dark: { primary: "#fdba74", secondary: "#2c1a12", button: "#f97316", button_hover: "#fb923c", loader: "#fdba74" },
+    hero: { from: "#ea580c", to: "#fb7185", angle: 120 },
+  },
+  {
+    id: "slate-minimal",
+    name: "Slate Minimal",
+    category: "minimal",
+    light: { primary: "#18181b", secondary: "#f4f4f5", button: "#27272a", button_hover: "#09090b", loader: "#52525b" },
+    dark: { primary: "#e4e4e7", secondary: "#18181b", button: "#52525b", button_hover: "#71717a", loader: "#a1a1aa" },
+    hero: { from: "#18181b", to: "#52525b", angle: 120 },
+  },
+  {
+    id: "berry-smoothie",
+    name: "Berry Smoothie",
+    category: "pastel",
+    light: { primary: "#be185d", secondary: "#fdf2f8", button: "#db2777", button_hover: "#9d174d", loader: "#ec4899" },
+    dark: { primary: "#f472b6", secondary: "#2a1623", button: "#db2777", button_hover: "#ec4899", loader: "#f9a8d4" },
+    hero: { from: "#831843", to: "#ec4899", angle: 130 },
+  },
+  {
+    id: "deep-space",
+    name: "Deep Space",
+    category: "minimal",
+    light: { primary: "#1e3a8a", secondary: "#eff6ff", button: "#1d4ed8", button_hover: "#1e40af", loader: "#3b82f6" },
+    dark: { primary: "#93c5fd", secondary: "#0b132b", button: "#2563eb", button_hover: "#3b82f6", loader: "#60a5fa" },
+    hero: { from: "#0f172a", to: "#1d4ed8", angle: 135 },
+  },
+  {
+    id: "minty-fresh",
+    name: "Minty Fresh",
+    category: "nature",
+    light: { primary: "#0d9488", secondary: "#f0fdfa", button: "#2dd4bf", button_hover: "#0d9488", loader: "#5eead4" },
+    dark: { primary: "#99f6e4", secondary: "#112826", button: "#14b8a6", button_hover: "#5eead4", loader: "#99f6e4" },
+    hero: { from: "#0d9488", to: "#5eead4", angle: 130 },
   },
 ];
 

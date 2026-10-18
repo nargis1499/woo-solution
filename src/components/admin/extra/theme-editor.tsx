@@ -14,6 +14,7 @@ import {
   syncedForeground,
   templateTheme,
   THEME_GRADIENT_FIELDS,
+  THEME_PRESET_CATEGORIES,
   THEME_PRESETS,
   gradientCss,
   presetColors,
@@ -27,6 +28,8 @@ import {
   type ThemeGradientKey,
   type ThemeGradientSets,
   type ThemeMode,
+  type ThemePreset,
+  type ThemePresetCategory,
 } from "@/lib/theme";
 import { startTransition, useActionState } from "react";
 import { AlertDialog, AlertDialogCancel, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -99,6 +102,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   const [sync, setSync] = useState(saved.sync);
   const [resetOpen, setResetOpen] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(true);
+  const [presetCategory, setPresetCategory] = useState<"all" | ThemePresetCategory>("all");
   const [colorsOpen, setColorsOpen] = useState(false);
   const [headerFooterOpen, setHeaderFooterOpen] = useState(false);
   const [gradientsOpen, setGradientsOpen] = useState(false);
@@ -154,8 +158,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
    * in the light. With "same colors for both modes" on there is one palette, so
    * both take it.
    */
-  function applyPreset(index: number) {
-    const preset = THEME_PRESETS[index];
+  function applyPreset(preset: ThemePreset) {
     if (sync) {
       setLight((c) => presetColors(preset, "light", true, c));
       setDark((c) => presetColors(preset, "dark", true, c));
@@ -343,10 +346,41 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                 </button>
                 <SmoothCollapse open={presetsOpen}>
                   <div className="mt-3 space-y-3 border-t pt-3">
+                    <div
+                      className="flex flex-wrap items-center gap-2"
+                      role="group"
+                      aria-label="Filter color presets"
+                      data-testid="theme-preset-filters"
+                    >
+                      {THEME_PRESET_CATEGORIES.map((cat) => {
+                        const isSelected = presetCategory === cat.id;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setPresetCategory(cat.id)}
+                            aria-pressed={isSelected}
+                            data-testid={`theme-preset-filter-${cat.id}`}
+                            className={cn(
+                              "rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                              isSelected
+                                ? "theme-button border-transparent font-semibold shadow-xs"
+                                : "border-border/80 bg-muted/30 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                            )}
+                          >
+                            {cat.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     {/* Each mode owns its palette: a click paints the mode being edited, so the
                         Light and Dark chips below can name two different presets. */}
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="theme-presets">
-                      {THEME_PRESETS.map((preset, index) => {
+                      {(presetCategory === "all"
+                        ? THEME_PRESETS
+                        : THEME_PRESETS.filter((p) => p.category === presetCategory)
+                      ).map((preset) => {
                         const set = sync || mode === "light" ? preset.light : preset.dark;
                         const swatches = [set.primary, set.secondary, set.button, set.button_hover, set.loader];
                         const isActive = activePreset[mode] === preset.id;
@@ -357,7 +391,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
                           <button
                             key={preset.id}
                             type="button"
-                            onClick={() => applyPreset(index)}
+                            onClick={() => applyPreset(preset)}
                             aria-pressed={isActive}
                             data-active={isActive ? "true" : undefined}
                             data-testid={`theme-preset-${preset.id}`}
