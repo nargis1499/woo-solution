@@ -16,6 +16,7 @@ export type BlockType =
   | "paragraph"
   | "callout"
   | "image"
+  | "simple_product"
   | "cta"
   | "list"
   | "quote"
@@ -25,7 +26,8 @@ export type HeadingLevel = "h1" | "h2" | "h3" | "h4";
 export type TextAlign = "left" | "center" | "right";
 export type ParagraphVariant = "normal" | "lead" | "muted";
 export type CalloutTone = "info" | "success" | "warning" | "danger";
-export type ImageLayout = "wide" | "full" | "custom";
+export type ImageLayout = "full" | "custom";
+export type ProductImageShape = "circle" | "rounded";
 export type CtaVariant = "primary" | "secondary" | "outline";
 export type ListStyle = "bullet" | "ordered";
 export type DividerStyle = "solid" | "dashed" | "dots";
@@ -51,6 +53,25 @@ export type PageBlock = {
   imageLayout?: ImageLayout;
   imageWidth?: number | null;
   imageHeight?: number | null;
+  imageMaxHeight?: number | null;
+  // Simple Product (horizontal product card)
+  productId?: string | null;
+  productSlug?: string;
+  productName?: string;
+  productCategoryName?: string | null;
+  productCategorySlug?: string | null;
+  productImageUrl?: string | null;
+  productPriceMicros?: number;
+  productCompareAtMicros?: number | null;
+  productStock?: number;
+  productDescription?: string | null;
+  productImageShape?: ProductImageShape;
+  productBadgeText?: string;
+  productShowRating?: boolean;
+  productRating?: string;
+  productReviewCount?: string;
+  productShowDescription?: boolean;
+  productButtonText?: string;
   // CTA Button
   ctaHeading?: string;
   ctaSubtext?: string;
@@ -103,6 +124,13 @@ export const BLOCK_DEFINITIONS: BlockDefinition[] = [
     description: "Full width image with caption",
     badge: "IMG",
     keywords: ["image", "hero", "banner", "photo", "picture", "media"],
+  },
+  {
+    type: "simple_product",
+    label: "Simple Product",
+    description: "Horizontal simple product card with quantity & add to cart",
+    badge: "PRD",
+    keywords: ["product", "simple", "card", "shop", "cart", "buy", "horizontal", "ecommerce"],
   },
   {
     type: "cta",
@@ -161,6 +189,29 @@ export function createBlock(type: BlockType, id: string, overrides?: Partial<Pag
         imageHeight: null,
         imageMaxHeight: null,
         align: "center",
+        ...overrides,
+      };
+    case "simple_product":
+      return {
+        ...base,
+        productId: null,
+        productSlug: "",
+        productName: "Sony WH-1000XM5 Noise-Canceling",
+        productCategoryName: "AUDIO GEAR",
+        productCategorySlug: null,
+        productImageUrl: null,
+        productPriceMicros: 348_000_000,
+        productCompareAtMicros: 399_990_000,
+        productStock: 25,
+        productDescription:
+          "Industry-leading noise cancellation with 30-hour battery life and ultra-comfortable lightweight design.",
+        productImageShape: "circle",
+        productBadgeText: "",
+        productShowRating: true,
+        productRating: "4.9",
+        productReviewCount: "420",
+        productShowDescription: false,
+        productButtonText: "ADD TO CART",
         ...overrides,
       };
     case "cta":
@@ -233,6 +284,8 @@ export function isBlockEmpty(block: PageBlock): boolean {
       return stripTags(block.html ?? "") === "" && !(block.quoteAuthor ?? "").trim();
     case "image":
       return !(block.src ?? "").trim();
+    case "simple_product":
+      return false;
     case "cta":
       return !(block.buttonText ?? "").trim() && !(block.ctaHeading ?? "").trim();
     case "list":
@@ -315,6 +368,16 @@ export function blocksToHtml(blocks: PageBlock[]): string {
             : "";
           return `<figure class="page-block-image page-image-${escapeAttr(layout)} page-image-align-${escapeAttr(align)}" data-block-id="${escapeAttr(block.id)}" data-block-type="image" data-block-json="${meta}" style="text-align: ${align}"><img src="${src}" alt="${alt}"${mediaAttr}${dimAttrs}${imgStyle} loading="lazy" />${captionHtml}</figure>`;
         }
+        case "simple_product": {
+          // IMPORTANT: No nested <div> inside `.page-block-product` so `extractContentSegments`
+          // can split `<div ... data-block-type="simple_product" ...>...</div>` deterministically.
+          const name = escapeHtml(block.productName?.trim() || "Simple Product");
+          const cat = escapeHtml(
+            (block.productBadgeText?.trim() || block.productCategoryName || "FEATURED").toUpperCase(),
+          );
+          const href = block.productSlug ? `/products/${escapeAttr(block.productSlug)}` : "/shop";
+          return `<div class="page-block-product" data-block-id="${escapeAttr(block.id)}" data-block-type="simple_product" data-block-json="${meta}"><p class="page-product-fallback"><span class="page-product-badge">${cat}</span> <strong><a href="${href}">${name}</a></strong></p></div>`;
+        }
         case "cta": {
           const variant = block.buttonVariant ?? "primary";
           const targetAttr = block.newTab ? ' target="_blank" rel="noopener noreferrer"' : "";
@@ -357,6 +420,52 @@ function unescapeAttr(raw: string): string {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
+}
+
+export type PageContentSegment =
+  | { kind: "html"; html: string }
+  | { kind: "simple_product"; block: PageBlock };
+
+/**
+ * Splits sanitised page HTML into static rich-text segments and interactive
+ * `simple_product` blocks so `PageArticle` can mount `<SimpleProductBlockCard />`
+ * directly in place while keeping surrounding rich text untouched.
+ */
+export function extractContentSegments(sanitizedHtml: string): PageContentSegment[] {
+  if (!sanitizedHtml || !sanitizedHtml.includes('data-block-type="simple_product"')) {
+    return sanitizedHtml ? [{ kind: "html", html: sanitizedHtml }] : [];
+  }
+
+  const segments: PageContentSegment[] = [];
+  const re = /<div\b[^>]*data-block-type="simple_product"[^>]*>[\s\S]*?<\/div>/gi;
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = re.exec(sanitizedHtml)) !== null) {
+    const before = sanitizedHtml.slice(lastIdx, match.index).trim();
+    if (before) segments.push({ kind: "html", html: before });
+
+    const blockEl = match[0];
+    const jsonMatch = blockEl.match(/data-block-json="([^"]+)"/i);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(unescapeAttr(jsonMatch[1])) as PageBlock;
+        if (parsed && parsed.type === "simple_product") {
+          segments.push({ kind: "simple_product", block: parsed });
+        }
+      } catch {
+        segments.push({ kind: "html", html: blockEl });
+      }
+    } else {
+      segments.push({ kind: "html", html: blockEl });
+    }
+    lastIdx = match.index + blockEl.length;
+  }
+
+  const tail = sanitizedHtml.slice(lastIdx).trim();
+  if (tail) segments.push({ kind: "html", html: tail });
+
+  return segments;
 }
 
 /**

@@ -6,7 +6,7 @@ import { checkPageSlug, savePage } from "@/app/nemesis/pages/actions";
 import type { AdminFormState } from "@/lib/admin/form";
 import { formatDate } from "@/lib/format";
 import { PAGE_TITLE_MAX, featuredImage, pageHref, pagePreviewHref, shareImage, slugifyPage } from "@/lib/pages/shared";
-import type { Page } from "@/lib/types";
+import type { Page, Product } from "@/lib/types";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -34,6 +34,8 @@ type PageFormProps = {
   page?: Page | null;
   /** Names of every existing tag (autocomplete). */
   tagSuggestions: string[];
+  /** Simple products available for the "Simple Product" block. */
+  simpleProducts?: Product[];
   /** Settings → SEO → site URL (null when unknown). */
   siteUrl: string | null;
   storeName: string;
@@ -54,6 +56,7 @@ export function PageForm(props: PageFormProps) {
 function PageFields({
   page,
   tagSuggestions,
+  simpleProducts = [],
   siteUrl,
   storeName,
   returnTo = "/nemesis/pages",
@@ -208,6 +211,8 @@ function PageFields({
                 <FieldLabel>Page content</FieldLabel>
                 <BlockEditorCanvas
                   controller={blockController}
+                  simpleProducts={simpleProducts}
+                  onFocusInspector={() => setInspectorTab("block")}
                   name="content"
                   invalid={Boolean(err.content)}
                 />
@@ -354,7 +359,7 @@ function PageFields({
           </div>
 
           <div className={cn(inspectorTab !== "block" && "hidden")}>
-            <BlockSettingsInspector controller={blockController} />
+            <BlockSettingsInspector controller={blockController} simpleProducts={simpleProducts} />
           </div>
 
           <div className={cn("space-y-5 p-4", inspectorTab !== "meta" && "hidden")}>

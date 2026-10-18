@@ -36,6 +36,7 @@ import {
   RemoveFormattingIcon,
   RotateCcwIcon,
   SearchIcon,
+  ShoppingBagIcon,
   StrikethroughIcon,
   Trash2Icon,
   TypeIcon,
@@ -56,14 +57,27 @@ import {
   type ListStyle,
   type PageBlock,
   type ParagraphVariant,
+  type ProductImageShape,
   type TextAlign,
 } from "@/lib/pages/blocks";
+import { formatMoney } from "@/lib/money";
 import { mediaUrl } from "@/lib/media/shared";
-import type { MediaItem } from "@/lib/types";
+import type { MediaItem, Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  useComboboxAnchor,
+} from "@/components/ui/combobox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { MediaPickerDialog } from "@/components/admin/media/media-picker";
+import { useMoney } from "@/components/money-provider";
+import { SimpleProductBlockCard } from "@/components/simple-product-block-card";
 
 /*
  * Adaptive chromatic text colours (no forced white or black so text stays
@@ -323,6 +337,12 @@ export function BlockTypeIcon({
       return (
         <span className={boxClass}>
           <ImageIcon className="size-4" />
+        </span>
+      );
+    case "simple_product":
+      return (
+        <span className={boxClass}>
+          <ShoppingBagIcon className="size-4" />
         </span>
       );
     case "cta":
@@ -1057,16 +1077,24 @@ function RichEditable({
 
 export function BlockEditorCanvas({
   controller,
+  simpleProducts = [],
+  onFocusInspector,
   name,
   invalid,
 }: {
   controller: BlockEditorController;
+  simpleProducts?: Product[];
+  onFocusInspector?: () => void;
   name: string;
   invalid?: boolean;
 }) {
   const [pinnedToolbarBlockId, setPinnedToolbarBlockId] = useState<string | null>(null);
   const [inlineToolbarVisible, setInlineToolbarVisible] = useState(false);
   const [mediaPickerBlockId, setMediaPickerBlockId] = useState<string | null>(null);
+  const productsById = useMemo(
+    () => new Map(simpleProducts.map((p) => [p.id, p])),
+    [simpleProducts],
+  );
 
   // Global "/" shortcut when not typing inside an input/textarea/contenteditable
   useEffect(() => {
@@ -1409,6 +1437,24 @@ export function BlockEditorCanvas({
                       </div>
                     )}
                   </div>
+                )}
+
+                {block.type === "simple_product" && (
+                  <SimpleProductBlockCard
+                    block={block}
+                    product={block.productId ? (productsById.get(block.productId) ?? null) : null}
+                    editorMode
+                    onRequestSelectProduct={() => {
+                      controller.setActiveBlockId(block.id);
+                      onFocusInspector?.();
+                      setTimeout(() => {
+                        const input = document.querySelector<HTMLInputElement>(
+                          '[data-testid="simple-product-search-input"]',
+                        );
+                        input?.focus();
+                      }, 40);
+                    }}
+                  />
                 )}
 
                 {block.type === "cta" && (
@@ -1763,7 +1809,13 @@ function parseDimensionInput(raw: string): number | null {
   return Number.isFinite(num) && num > 0 ? Math.min(num, 4000) : null;
 }
 
-export function BlockSettingsInspector({ controller }: { controller: BlockEditorController }) {
+export function BlockSettingsInspector({
+  controller,
+  simpleProducts = [],
+}: {
+  controller: BlockEditorController;
+  simpleProducts?: Product[];
+}) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const block = controller.activeBlock;
 
@@ -2086,6 +2138,15 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
         </div>
       )}
 
+      {/* Simple Product Settings (Searchable React Aria Combobox + Product List) */}
+      {block.type === "simple_product" && (
+        <SimpleProductInspectorSection
+          block={block}
+          controller={controller}
+          simpleProducts={simpleProducts}
+        />
+      )}
+
       {/* Call to Action Button Settings */}
       {block.type === "cta" && (
         <div className="space-y-4">
@@ -2316,6 +2377,381 @@ function AlignmentControl({
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Simple Product Inspector Section (React Aria Combobox + Searchable List)
+ * ────────────────────────────────────────────────────────────────────────── */
+
+function SimpleProductInspectorSection({
+  block,
+  controller,
+  simpleProducts,
+}: {
+  block: PageBlock;
+  controller: BlockEditorController;
+  simpleProducts: Product[];
+}) {
+  const money = useMoney();
+  const anchor = useComboboxAnchor();
+  const [query, setQuery] = useState("");
+
+  // Only simple products are eligible for this block
+  const eligibleProducts = useMemo(
+    () => simpleProducts.filter((p) => (p.type ?? "simple") === "simple"),
+    [simpleProducts],
+  );
+
+  const filteredProducts = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return eligibleProducts;
+    return eligibleProducts.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.slug.toLowerCase().includes(q) ||
+        (p.sku && p.sku.toLowerCase().includes(q)) ||
+        (p.category?.name && p.category.name.toLowerCase().includes(q)),
+    );
+  }, [eligibleProducts, query]);
+
+  const selectedProduct = useMemo(
+    () =>
+      block.productId ? (eligibleProducts.find((p) => p.id === block.productId) ?? null) : null,
+    [block.productId, eligibleProducts],
+  );
+
+  const selectProduct = (product: Product) => {
+    controller.updateBlock(block.id, {
+      productId: product.id,
+      productSlug: product.slug,
+      productName: product.name,
+      productCategoryName: product.category?.name ?? "FEATURED",
+      productCategorySlug: product.category?.slug ?? null,
+      productImageUrl: product.image_url ?? null,
+      productPriceMicros: product.price_micros,
+      productCompareAtMicros: product.compare_at_price_micros ?? null,
+      productStock: product.stock,
+      productDescription: product.description ?? null,
+    });
+  };
+
+  const resetToSample = () => {
+    controller.updateBlock(block.id, {
+      productId: null,
+      productSlug: "",
+      productName: "Sony WH-1000XM5 Noise-Canceling",
+      productCategoryName: "AUDIO GEAR",
+      productCategorySlug: null,
+      productImageUrl: null,
+      productPriceMicros: 348_000_000,
+      productCompareAtMicros: 399_990_000,
+      productStock: 25,
+      productDescription:
+        "Industry-leading noise cancellation with 30-hour battery life and ultra-comfortable lightweight design.",
+    });
+    setQuery("");
+  };
+
+  return (
+    <div className="space-y-4" data-testid="simple-product-inspector">
+      {/* React Aria Searchable Combobox */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <label className="block text-xs font-medium text-muted-foreground">
+            Choose Simple Product
+          </label>
+          {block.productId && (
+            <button
+              type="button"
+              data-testid="simple-product-reset-sample"
+              onClick={resetToSample}
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+            >
+              <RotateCcwIcon className="size-3" /> Sample Card
+            </button>
+          )}
+        </div>
+
+        <Combobox<Product>
+          aria-label="Choose Simple Product"
+          items={filteredProducts}
+          selectedKey={block.productId ?? null}
+          inputValue={query}
+          onInputChange={setQuery}
+          onSelectionChange={(key) => {
+            if (!key) return;
+            const picked = eligibleProducts.find((p) => p.id === String(key));
+            if (picked) {
+              selectProduct(picked);
+              setQuery("");
+            }
+          }}
+          menuTrigger="focus"
+          allowsEmptyCollection
+          className="w-full"
+          data-testid="simple-product-combobox"
+        >
+          <div ref={anchor} className="w-full">
+            <ComboboxInput
+              placeholder="Search simple product by name or category..."
+              showTrigger
+              showClear
+              className="w-full"
+              data-testid="simple-product-search-input"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                }
+              }}
+            />
+          </div>
+          <ComboboxContent anchor={anchor} className="w-(--trigger-width) min-w-[280px]">
+            <ComboboxList<Product>>
+              {(item) => (
+                <ComboboxItem
+                  id={item.id}
+                  textValue={`${item.name} ${item.category?.name ?? ""} ${item.sku ?? ""}`}
+                  data-testid={`combobox-product-option-${item.slug}`}
+                  className="py-2"
+                >
+                  <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold">{item.name}</p>
+                      <p className="truncate text-[10px] opacity-75">
+                        {item.category?.name ?? "Uncategorized"} · Stock: {item.stock}
+                      </p>
+                    </div>
+                    <span className="shrink-0 font-mono text-xs font-bold tabular-nums">
+                      {formatMoney(item.price_micros, money)}
+                    </span>
+                  </div>
+                </ComboboxItem>
+              )}
+            </ComboboxList>
+            <ComboboxEmpty>No simple products match &ldquo;{query}&rdquo;</ComboboxEmpty>
+          </ComboboxContent>
+        </Combobox>
+      </div>
+
+      {/* Inline Searchable Simple Product List */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+          <span>Simple Products ({filteredProducts.length})</span>
+          <span className="font-mono text-[10px]">
+            {selectedProduct ? "Selected" : "Using sample"}
+          </span>
+        </div>
+
+        <div
+          data-testid="simple-product-list"
+          className="max-h-56 space-y-1 overflow-y-auto rounded-xl border border-border bg-background/60 p-1.5"
+        >
+          {filteredProducts.length === 0 ? (
+            <p className="py-5 text-center text-xs text-muted-foreground">
+              No simple products found.
+            </p>
+          ) : (
+            filteredProducts.map((product) => {
+              const isSelected = block.productId === product.id;
+              const onSale =
+                product.compare_at_price_micros != null &&
+                product.compare_at_price_micros > product.price_micros;
+
+              return (
+                <button
+                  key={product.id}
+                  type="button"
+                  data-testid={`simple-product-item-${product.slug}`}
+                  onClick={() => selectProduct(product)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors",
+                    isSelected
+                      ? "border-primary bg-primary/12 text-foreground shadow-2xs"
+                      : "border-transparent hover:border-border/70 hover:bg-muted/50",
+                  )}
+                >
+                  {/* Thumbnail */}
+                  <div className="size-9 shrink-0 overflow-hidden rounded-full border border-border bg-muted">
+                    {product.image_url ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={product.image_url}
+                        alt={product.name}
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <div className="grid size-full place-items-center text-muted-foreground">
+                        <ShoppingBagIcon className="size-4" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Name & Category */}
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={cn(
+                        "truncate text-xs font-semibold",
+                        isSelected ? "text-primary" : "text-foreground",
+                      )}
+                    >
+                      {product.name}
+                    </p>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <span className="truncate uppercase">
+                        {product.category?.name ?? "Simple"}
+                      </span>
+                      <span>·</span>
+                      <span
+                        className={cn(
+                          product.stock <= 0 && "font-semibold text-destructive",
+                        )}
+                      >
+                        {product.stock > 0 ? `${product.stock} in stock` : "Sold out"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Price & Check */}
+                  <div className="flex shrink-0 flex-col items-end gap-0.5">
+                    <span className="text-xs font-bold text-foreground tabular-nums">
+                      {formatMoney(product.price_micros, money)}
+                    </span>
+                    {onSale && product.compare_at_price_micros != null && (
+                      <span className="text-[10px] text-muted-foreground line-through tabular-nums">
+                        {formatMoney(product.compare_at_price_micros, money)}
+                      </span>
+                    )}
+                  </div>
+                  {isSelected && <CheckIcon className="size-3.5 shrink-0 text-primary" />}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <hr className="border-border/70" />
+
+      {/* Card Layout & Style Options */}
+      <div className="space-y-3.5">
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-muted-foreground">
+            Image Frame Shape
+          </label>
+          <Select
+            aria-label="Image Frame Shape"
+            selectedKey={block.productImageShape ?? "circle"}
+            onSelectionChange={(key) => {
+              if (key) {
+                controller.updateBlock(block.id, {
+                  productImageShape: String(key) as ProductImageShape,
+                });
+              }
+            }}
+          >
+            <SelectTrigger className="w-full" data-testid="simple-product-shape-select">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem id="circle">Circular Frame (Default)</SelectItem>
+              <SelectItem id="rounded">Rounded Square Frame</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-muted-foreground">
+              Badge Override
+            </label>
+            <input
+              type="text"
+              value={block.productBadgeText ?? ""}
+              onChange={(e) =>
+                controller.updateBlock(block.id, { productBadgeText: e.target.value })
+              }
+              placeholder={selectedProduct?.category?.name?.toUpperCase() || "AUDIO GEAR"}
+              data-testid="simple-product-badge-input"
+              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground outline-none focus:border-primary"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-muted-foreground">
+              Button Text
+            </label>
+            <input
+              type="text"
+              value={block.productButtonText ?? "ADD TO CART"}
+              onChange={(e) =>
+                controller.updateBlock(block.id, { productButtonText: e.target.value })
+              }
+              placeholder="ADD TO CART"
+              data-testid="simple-product-button-input"
+              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground outline-none focus:border-primary"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2 rounded-lg border border-border/70 bg-background/60 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Show rating badge</span>
+            <Switch
+              isSelected={block.productShowRating !== false}
+              onChange={(next) =>
+                controller.updateBlock(block.id, { productShowRating: next })
+              }
+              aria-label="Show rating badge"
+              data-testid="simple-product-rating-switch"
+            />
+          </div>
+
+          {block.productShowRating !== false && (
+            <div className="grid grid-cols-2 gap-2 pt-1.5">
+              <div className="space-y-1">
+                <label className="block text-[11px] text-muted-foreground">Rating</label>
+                <input
+                  type="text"
+                  value={block.productRating ?? "4.9"}
+                  onChange={(e) =>
+                    controller.updateBlock(block.id, { productRating: e.target.value })
+                  }
+                  placeholder="4.9"
+                  className="h-8 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground outline-none focus:border-primary"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-[11px] text-muted-foreground">Reviews</label>
+                <input
+                  type="text"
+                  value={block.productReviewCount ?? "420"}
+                  onChange={(e) =>
+                    controller.updateBlock(block.id, { productReviewCount: e.target.value })
+                  }
+                  placeholder="420"
+                  className="h-8 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border border-border/70 bg-background/60 px-3 py-2">
+          <span className="text-xs font-medium text-muted-foreground">
+            Show short description
+          </span>
+          <Switch
+            isSelected={Boolean(block.productShowDescription)}
+            onChange={(next) =>
+              controller.updateBlock(block.id, { productShowDescription: next })
+            }
+            aria-label="Show short description"
+            data-testid="simple-product-description-switch"
+          />
+        </div>
       </div>
     </div>
   );

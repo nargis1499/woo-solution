@@ -140,6 +140,28 @@ export async function adminGetProduct(id: string): Promise<Product | null> {
   return data ? withSortedVariations(withSortedGallery(data as unknown as Product)) : null;
 }
 
+/** Simple products selectable inside the Pages Block Editor ("Simple Product" block). */
+export async function adminListSimpleProducts(): Promise<Product[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const run = (columns: string, filterSimple: boolean) => {
+    let q = supabase
+      .from("products")
+      .select(columns)
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .limit(500);
+    if (filterSimple) q = q.eq("type", "simple");
+    return q;
+  };
+  let { data, error } = await run(PRODUCT_COLUMNS, true);
+  if (error && isMissingVariationSchema(error)) {
+    ({ data, error } = await run(PRODUCT_COLUMNS_LEGACY, false));
+  }
+  if (error) throw new Error(`Failed to load simple products: ${error.message}`);
+  return ((data ?? []) as unknown as Product[]).filter((p) => (p.type ?? "simple") === "simple");
+}
+
 // ─── Pages (CMS) ────────────────────────────────────────────────────────────
 
 export type PageListOptions = PageRequest & { q?: string; status?: PageStatus | ""; sort?: PageSort };

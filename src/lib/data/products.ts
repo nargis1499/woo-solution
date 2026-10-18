@@ -117,3 +117,24 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
   if (error) throw new Error(`Failed to load product: ${error.message}`);
   return data ? withSortedVariations(withSortedGallery(data as unknown as Product)) : null;
 }
+
+/** Active simple products by id (used by CMS pages rendering `simple_product` blocks). */
+export async function getSimpleProductsByIds(ids: string[]): Promise<Product[]> {
+  const validIds = [
+    ...new Set(
+      ids.filter((id) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id),
+      ),
+    ),
+  ];
+  if (validIds.length === 0) return [];
+  const supabase = await createClient();
+  const run = (columns: string) =>
+    supabase.from("products").select(columns).in("id", validIds).eq("is_active", true);
+  let { data, error } = await run(PRODUCT_COLUMNS);
+  if (error && isMissingVariationSchema(error)) {
+    ({ data, error } = await run(PRODUCT_COLUMNS_LEGACY));
+  }
+  if (error) return [];
+  return ((data ?? []) as unknown as Product[]).filter((p) => (p.type ?? "simple") === "simple");
+}

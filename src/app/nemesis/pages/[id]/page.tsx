@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { adminGetPage, adminListTags } from "@/lib/admin/data";
+import { adminGetPage, adminListSimpleProducts, adminListTags } from "@/lib/admin/data";
 import { getSiteSettingsFresh, resolveSiteUrl } from "@/lib/site-settings";
 import { safeListReturn } from "@/lib/admin/pagination";
 import { deletePage } from "@/app/nemesis/pages/actions";
@@ -14,7 +14,12 @@ export default async function EditPagePage({ params, searchParams }: { params: P
   const [{ id }, { from }] = await Promise.all([params, searchParams]);
   // Back / Cancel return to the exact list page the admin came from.
   const backHref = safeListReturn(from, "/nemesis/pages") ?? "/nemesis/pages";
-  const [page, tags, settings] = await Promise.all([adminGetPage(id), adminListTags(), getSiteSettingsFresh()]);
+  const [page, tags, settings, simpleProducts] = await Promise.all([
+    adminGetPage(id),
+    adminListTags(),
+    getSiteSettingsFresh(),
+    adminListSimpleProducts(),
+  ]);
   if (!page) notFound();
 
   return (
@@ -28,7 +33,14 @@ export default async function EditPagePage({ params, searchParams }: { params: P
       />
       {/* No remount key: the editor is fully controlled and redraws itself from the fresh row
           after a save – remounting would close the SEO panel and the editor mid-edit. */}
-      <PageForm page={page} tagSuggestions={tags.map((t) => t.name)} siteUrl={resolveSiteUrl(settings)} storeName={settings.store_name} returnTo={backHref} />
+      <PageForm
+        page={page}
+        tagSuggestions={tags.map((t) => t.name)}
+        simpleProducts={simpleProducts}
+        siteUrl={resolveSiteUrl(settings)}
+        storeName={settings.store_name}
+        returnTo={backHref}
+      />
     </>
   );
 }
