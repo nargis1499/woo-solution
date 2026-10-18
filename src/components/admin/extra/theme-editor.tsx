@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useTheme } from "next-themes";
 import { CheckIcon, ChevronDownIcon, MoonIcon, PaintbrushIcon, RotateCcwIcon, ShoppingBagIcon, SunIcon } from "lucide-react";
 import type { Key } from "react-aria-components";
 import { updateTheme, type AdminFormState } from "@/app/nemesis/actions";
@@ -48,6 +50,14 @@ const MODES: { id: Mode; label: string }[] = [
   { id: "dark", label: "Dark mode" },
 ];
 
+function resolveActiveThemeMode(resolvedTheme?: string): Mode {
+  if (resolvedTheme === "dark" || resolvedTheme === "light") return resolvedTheme;
+  if (typeof document !== "undefined") {
+    return document.documentElement.classList.contains("dark") ? "dark" : "light";
+  }
+  return "light";
+}
+
 function SmoothCollapse({ open, children }: { open: boolean; children: ReactNode }) {
   return (
     <div
@@ -76,7 +86,13 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   const [state, dispatch, isPending] = useActionState<AdminFormState, FormData>(updateTheme, null);
   useFormToast(state);
 
-  const [mode, setMode] = useState<Mode>("light");
+  const { resolvedTheme } = useTheme();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const routeKey = `${pathname}?${searchParams.toString()}`;
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  const [mode, setMode] = useState<Mode>(() => resolveActiveThemeMode(resolvedTheme));
   const [light, setLight] = useState<ThemeColors>(saved.light);
   const [dark, setDark] = useState<ThemeColors>(saved.dark);
   const [gradients, setGradients] = useState<ThemeGradientSets>(saved.gradients);
@@ -86,6 +102,28 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   const [colorsOpen, setColorsOpen] = useState(false);
   const [headerFooterOpen, setHeaderFooterOpen] = useState(false);
   const [gradientsOpen, setGradientsOpen] = useState(false);
+
+  // Sync the active editor mode with the current theme mode on mount, when the global
+  // theme mode is toggled, and when navigation routes change.
+  useEffect(() => {
+    setMode(resolveActiveThemeMode(resolvedTheme));
+  }, [resolvedTheme, routeKey]);
+
+  // Also sync when switching into the Extra tab inside /nemesis/ui (where TabsContent uses shouldForceMount).
+  useEffect(() => {
+    const panel = formRef.current?.closest('[role="tabpanel"]');
+    if (!panel) return;
+    const observer = new MutationObserver(() => {
+      if (!panel.hasAttribute("data-inert") && !panel.hasAttribute("inert")) {
+        setMode(resolveActiveThemeMode(resolvedTheme));
+      }
+    });
+    observer.observe(panel, {
+      attributes: true,
+      attributeFilter: ["data-inert", "inert", "hidden"],
+    });
+    return () => observer.disconnect();
+  }, [resolvedTheme]);
 
   const colors = mode === "light" ? light : dark;
   const defaults = TEMPLATE_DEFAULTS[mode];
@@ -146,7 +184,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
     setDark(theme.dark);
     setGradients(theme.gradients);
     setSync(false);
-    setMode("light");
+    setMode(resolveActiveThemeMode(resolvedTheme));
     setResetOpen(false);
   }
 
@@ -166,6 +204,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
 
   return (
     <form
+      ref={formRef}
       noValidate
       onSubmit={(e) => {
         e.preventDefault();
