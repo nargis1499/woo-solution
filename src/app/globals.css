@@ -509,6 +509,120 @@
   .rich-text td > p:last-child {
     margin-bottom: 0;
   }
+  .rich-text .page-block-lead {
+    font-size: 1.2em;
+    line-height: 1.65;
+    color: var(--foreground);
+  }
+  .rich-text .page-block-muted {
+    color: var(--muted-foreground);
+  }
+  .rich-text .page-block-callout {
+    margin: 1.75em 0;
+    padding: 1rem 1.25rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    border-inline-start-width: 4px;
+    background: var(--muted);
+  }
+  .rich-text .page-callout-info {
+    border-inline-start-color: var(--primary);
+  }
+  .rich-text .page-callout-success {
+    border-inline-start-color: #10b981;
+  }
+  .rich-text .page-callout-warning {
+    border-inline-start-color: #f59e0b;
+  }
+  .rich-text .page-callout-danger {
+    border-inline-start-color: #ef4444;
+  }
+  .rich-text .page-callout-title {
+    margin: 0 0 0.35rem;
+    font-size: 0.95em;
+    color: var(--foreground);
+  }
+  .rich-text .page-callout-body {
+    margin: 0;
+    color: var(--muted-foreground);
+  }
+  .rich-text .page-block-cta {
+    margin: 2em 0;
+    padding: 1.5rem;
+    border-radius: 0.875rem;
+    border: 1px solid var(--border);
+    background: var(--card);
+  }
+  .rich-text .page-cta-heading {
+    margin: 0 0 0.35rem;
+    font-size: 1.25em;
+  }
+  .rich-text .page-cta-subtext {
+    margin: 0 0 1rem;
+    color: var(--muted-foreground);
+  }
+  .rich-text .page-cta-action {
+    margin: 0;
+  }
+  .rich-text a.page-cta-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: opacity 0.15s ease;
+  }
+  .rich-text a.page-cta-button-primary {
+    background: var(--button);
+    color: var(--button-foreground);
+  }
+  .rich-text a.page-cta-button-secondary {
+    background: var(--secondary);
+    color: var(--secondary-foreground);
+  }
+  .rich-text a.page-cta-button-outline {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--foreground);
+  }
+  .rich-text .page-block-code {
+    margin: 1.75em 0;
+    overflow: hidden;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--muted);
+  }
+  .rich-text .page-code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+  }
+  .rich-text .page-block-code pre {
+    margin: 0;
+    border-radius: 0;
+  }
+  .rich-text .page-quote-author {
+    margin-top: 0.5rem;
+    font-style: normal;
+    font-size: 0.85em;
+    color: var(--muted-foreground);
+  }
+  .rich-text hr.page-divider-dashed {
+    border-top-style: dashed;
+  }
+  .rich-text hr.page-divider-dots {
+    border-top-style: dotted;
+    border-top-width: 2px;
+  }
 }
 .rich-text p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);

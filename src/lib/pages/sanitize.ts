@@ -27,12 +27,16 @@ const TEXT_ALIGN = [/^left$/, /^center$/, /^right$/, /^justify$/];
 const OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: ALLOWED_TAGS,
   allowedAttributes: {
-    a: ["href", "title", "target", "rel"],
-    img: ["src", "alt", "title", "width", "height", "loading", "data-media-id"],
+    a: ["href", "title", "target", "rel", "class"],
+    img: ["src", "alt", "title", "width", "height", "loading", "data-media-id", "class"],
     td: ["colspan", "rowspan", "colwidth"],
     th: ["colspan", "rowspan", "colwidth"],
-    ol: ["start", "type"],
-    "*": ["style"],
+    ol: ["start", "type", "data-block-id", "data-block-type", "data-block-json", "class"],
+    ul: ["data-block-id", "data-block-type", "data-block-json", "class"],
+    "*": ["style", "data-block-id", "data-block-type", "data-block-json", "class"],
+  },
+  allowedClasses: {
+    "*": [/^page-[a-z0-9-]+$/, /^language-[a-z0-9-]+$/],
   },
   allowedStyles: {
     "*": { "text-align": TEXT_ALIGN },

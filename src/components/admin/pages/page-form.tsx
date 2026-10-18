@@ -15,11 +15,12 @@ import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/
 import { Spinner } from "@/components/ui/spinner";
 import { useFormToast } from "../flash-toast";
 import { MediaRefField } from "../media/media-ref-field";
+import { BlockEditorCanvas, BlockSettingsInspector, useBlockEditorState } from "./block-editor";
 import { PageStatusBadge } from "./page-status-badge";
-import { RichTextEditor } from "./rich-text-editor";
 import { SeoSettings } from "./seo-settings";
 import { TagInput } from "./tag-input";
 import { useUnsavedChanges } from "./use-unsaved-changes";
+import { cn } from "@/lib/utils";
 
 type Intent = "draft" | "publish" | "update" | "unpublish";
 
@@ -74,6 +75,7 @@ function PageFields({
   const [slugTouched, setSlugTouched] = useState(Boolean(page?.slug));
   const [slug, setSlug] = useState(v.slug ?? page?.slug ?? "");
   const [content, setContent] = useState(v.content ?? page?.content ?? "");
+  const [inspectorTab, setInspectorTab] = useState<"block" | "meta">("block");
   const featured = page ? featuredImage(page) : null;
   const [featuredPicked, setFeaturedPicked] = useState(Boolean(featured));
   const intentRef = useRef<Intent>("draft");
@@ -81,6 +83,13 @@ function PageFields({
 
   // ── unsaved changes ───────────────────────────────────────────────────────
   const [dirty, setDirty] = useState(false);
+  const blockController = useBlockEditorState({
+    initialHtml: content,
+    onChange: (nextHtml) => {
+      setContent(nextHtml);
+      setDirty(true);
+    },
+  });
   const [seenState, setSeenState] = useState(state);
   if (seenState !== state) {
     // derived-state reset during render: a successful save means nothing is unsaved any more
@@ -123,108 +132,93 @@ function PageFields({
           </CardHeader>
           <CardContent>
             <FieldGroup className="gap-5">
-              <Field data-invalid={Boolean(err.title) || undefined}>
-                <FieldLabel htmlFor="title">Title</FieldLabel>
-                <Input
-                  id="title"
-                  name="title"
-                  required
-                  maxLength={PAGE_TITLE_MAX}
-                  value={title}
-                  placeholder="About us"
-                  className="text-base font-medium"
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    if (!slugTouched) setSlug(slugifyPage(e.target.value));
-                  }}
-                  aria-invalid={Boolean(err.title) || undefined}
-                />
-                <FieldError>{err.title}</FieldError>
-              </Field>
-
-              <Field data-invalid={Boolean(slugError) || undefined}>
-                <FieldLabel htmlFor="slug">URL slug</FieldLabel>
-                <InputGroup>
-                  <InputGroupAddon>
-                    <InputGroupText className="max-w-48 truncate" title={siteUrl ?? undefined}>
-                      {siteUrl ? siteUrl.replace(/^https?:\/\//, "") : ""}/
-                    </InputGroupText>
-                  </InputGroupAddon>
-                  <InputGroupInput
-                    id="slug"
-                    name="slug"
-                    value={slug}
-                    placeholder="about-us"
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field data-invalid={Boolean(err.title) || undefined}>
+                  <FieldLabel htmlFor="title">Title</FieldLabel>
+                  <Input
+                    id="title"
+                    name="title"
+                    required
+                    maxLength={PAGE_TITLE_MAX}
+                    value={title}
+                    placeholder="About us"
+                    className="text-base font-medium"
                     onChange={(e) => {
-                      setSlugTouched(true);
-                      setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
+                      setTitle(e.target.value);
+                      if (!slugTouched) setSlug(slugifyPage(e.target.value));
                     }}
-                    onBlur={() => setSlug((s) => slugifyPage(s))}
-                    pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-                    aria-invalid={Boolean(slugError) || undefined}
-                    aria-describedby="slug-hint"
+                    aria-invalid={Boolean(err.title) || undefined}
                   />
-                  {slugCheck?.pending && (
-                    <InputGroupAddon align="inline-end">
-                      <Spinner className="size-3.5" />
+                  <FieldError>{err.title}</FieldError>
+                </Field>
+
+                <Field data-invalid={Boolean(slugError) || undefined}>
+                  <FieldLabel htmlFor="slug">URL slug</FieldLabel>
+                  <InputGroup>
+                    <InputGroupAddon>
+                      <InputGroupText className="max-w-36 truncate" title={siteUrl ?? undefined}>
+                        {siteUrl ? siteUrl.replace(/^https?:\/\//, "") : ""}/
+                      </InputGroupText>
                     </InputGroupAddon>
+                    <InputGroupInput
+                      id="slug"
+                      name="slug"
+                      value={slug}
+                      placeholder="about-us"
+                      onChange={(e) => {
+                        setSlugTouched(true);
+                        setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
+                      }}
+                      onBlur={() => setSlug((s) => slugifyPage(s))}
+                      pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                      aria-invalid={Boolean(slugError) || undefined}
+                      aria-describedby="slug-hint"
+                    />
+                    {slugCheck?.pending && (
+                      <InputGroupAddon align="inline-end">
+                        <Spinner className="size-3.5" />
+                      </InputGroupAddon>
+                    )}
+                  </InputGroup>
+                  {slugError ? (
+                    <FieldError>
+                      {slugError}
+                      {slugCheck?.suggestion && !err.slug && (
+                        <>
+                          {" "}
+                          <button type="button" className="underline underline-offset-4" onClick={() => { setSlugTouched(true); setSlug(slugCheck.suggestion!); }}>
+                            Use it
+                          </button>
+                        </>
+                      )}
+                    </FieldError>
+                  ) : (
+                    <FieldDescription id="slug-hint">
+                      {isEdit && page?.slug !== slug && slug ? (
+                        <span className="text-amber-600 dark:text-amber-400">Changing the slug changes the public URL – old links will stop working.</span>
+                      ) : (
+                        <>Public address: <span className="font-mono">{pageHref(slug || "about-us")}</span></>
+                      )}
+                    </FieldDescription>
                   )}
-                </InputGroup>
-                {slugError ? (
-                  <FieldError>
-                    {slugError}
-                    {slugCheck?.suggestion && !err.slug && (
-                      <>
-                        {" "}
-                        <button type="button" className="underline underline-offset-4" onClick={() => { setSlugTouched(true); setSlug(slugCheck.suggestion!); }}>
-                          Use it
-                        </button>
-                      </>
-                    )}
-                  </FieldError>
-                ) : (
-                  <FieldDescription id="slug-hint">
-                    {isEdit && page?.slug !== slug && slug ? (
-                      <span className="text-amber-600 dark:text-amber-400">Changing the slug changes the public URL – old links will stop working.</span>
-                    ) : (
-                      <>Lowercase letters, numbers and dashes. Public address: <span className="font-mono">{pageHref(slug || "about-us")}</span></>
-                    )}
-                  </FieldDescription>
-                )}
-              </Field>
+                </Field>
+              </div>
 
               <Field data-invalid={Boolean(err.content) || undefined}>
-                <FieldLabel htmlFor="content-editor">Page content</FieldLabel>
-                <RichTextEditor id="content-editor" name="content" label="Page content" defaultValue={content} invalid={Boolean(err.content)} onChange={(html) => { setContent(html); setDirty(true); }} />
+                <FieldLabel>Page content</FieldLabel>
+                <BlockEditorCanvas
+                  controller={blockController}
+                  name="content"
+                  invalid={Boolean(err.content)}
+                />
                 <FieldError>{err.content}</FieldError>
               </Field>
             </FieldGroup>
           </CardContent>
         </Card>
-
-        <SeoSettings
-          values={{
-            seo_title: v.seo_title ?? page?.seo_title ?? "",
-            seo_description: v.seo_description ?? page?.seo_description ?? "",
-            canonical_url: v.canonical_url ?? page?.canonical_url ?? "",
-            robots_index: v.robots_index ? v.robots_index !== "off" : (page?.robots_index ?? true),
-            robots_follow: v.robots_follow ? v.robots_follow !== "off" : (page?.robots_follow ?? true),
-            og_title: v.og_title ?? page?.og_title ?? "",
-            og_description: v.og_description ?? page?.og_description ?? "",
-          }}
-          errors={err}
-          pageTitle={title}
-          slug={slug}
-          contentHtml={content}
-          siteUrl={siteUrl}
-          storeName={storeName}
-          ogImage={page ? shareImage(page) : null}
-          hasFeaturedImage={featuredPicked}
-          defaultOpen={Boolean(err.seo_title || err.seo_description || err.canonical_url || err.og_title || err.og_description || err.og_image_media_id)}
-        />
       </div>
 
-      {/* ── sidebar: publish, featured image, tags ─────────────────────────── */}
+      {/* ── sidebar: publish + Block Settings / Page Meta inspector ─────────── */}
       <aside className="space-y-6">
         <Card data-testid="publish-card">
           <CardHeader>
@@ -300,41 +294,98 @@ function PageFields({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Featured image</CardTitle>
-            <CardDescription>Shown at the top of the page and used as the social share image unless you pick another one.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <MediaRefField
-              name="featured_image"
-              label="Image"
-              shape="wide"
-              currentUrl={featured?.src ?? null}
-              currentMedia={featured?.media ?? null}
-              error={err.featured_image_media_id ?? err.featured_image_url}
-              allowUrl
-              onChange={(has) => { setFeaturedPicked(has); setDirty(true); }}
-              picker={{
-                kind: "image",
-                title: "Featured image",
-                description: "Pick an image from the Media Library or upload a new one. Its alt text (editable in the library) is used on the page.",
-                confirmLabel: "Use as featured image",
-              }}
-            />
-          </CardContent>
-        </Card>
+        {/* Block Settings | Page Meta Tabbed Inspector matching image-1.png & image-3.png */}
+        <div className="overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xs">
+          <div className="grid grid-cols-2 border-b border-border" role="tablist" aria-label="Editor inspector">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={inspectorTab === "block"}
+              data-testid="tab-block-settings"
+              onClick={() => setInspectorTab("block")}
+              className={cn(
+                "border-b-2 py-3 text-center text-xs font-semibold transition-colors",
+                inspectorTab === "block"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Block Settings
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={inspectorTab === "meta"}
+              data-testid="tab-page-meta"
+              onClick={() => setInspectorTab("meta")}
+              className={cn(
+                "border-b-2 py-3 text-center text-xs font-semibold transition-colors",
+                inspectorTab === "meta"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Page Meta
+            </button>
+          </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Tags</CardTitle>
-            <CardDescription>Optional. Type and press Enter – existing tags are suggested.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TagInput id="tags" name="tags" suggestions={tagSuggestions} defaultValue={v.tags ? v.tags.split("\n") : (page?.tags ?? []).map((t) => t.name)} onChange={() => setDirty(true)} />
-            <FieldError className="mt-2">{err.tags}</FieldError>
-          </CardContent>
-        </Card>
+          <div className={cn(inspectorTab !== "block" && "hidden")}>
+            <BlockSettingsInspector controller={blockController} />
+          </div>
+
+          <div className={cn("space-y-5 p-4", inspectorTab !== "meta" && "hidden")}>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground">Featured image</p>
+              <MediaRefField
+                name="featured_image"
+                label="Image"
+                shape="wide"
+                currentUrl={featured?.src ?? null}
+                currentMedia={featured?.media ?? null}
+                error={err.featured_image_media_id ?? err.featured_image_url}
+                allowUrl
+                onChange={(has) => { setFeaturedPicked(has); setDirty(true); }}
+                picker={{
+                  kind: "image",
+                  title: "Featured image",
+                  description: "Pick an image from the Media Library or upload a new one. Its alt text (editable in the library) is used on the page.",
+                  confirmLabel: "Use as featured image",
+                }}
+              />
+            </div>
+
+            <hr className="border-border/70" />
+
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground">Tags</p>
+              <TagInput id="tags" name="tags" suggestions={tagSuggestions} defaultValue={v.tags ? v.tags.split("\n") : (page?.tags ?? []).map((t) => t.name)} onChange={() => setDirty(true)} />
+              <FieldError className="mt-2">{err.tags}</FieldError>
+            </div>
+
+            <hr className="border-border/70" />
+
+            <SeoSettings
+              values={{
+                seo_title: v.seo_title ?? page?.seo_title ?? "",
+                seo_description: v.seo_description ?? page?.seo_description ?? "",
+                canonical_url: v.canonical_url ?? page?.canonical_url ?? "",
+                robots_index: v.robots_index ? v.robots_index !== "off" : (page?.robots_index ?? true),
+                robots_follow: v.robots_follow ? v.robots_follow !== "off" : (page?.robots_follow ?? true),
+                og_title: v.og_title ?? page?.og_title ?? "",
+                og_description: v.og_description ?? page?.og_description ?? "",
+              }}
+              errors={err}
+              pageTitle={title}
+              slug={slug}
+              contentHtml={content}
+              siteUrl={siteUrl}
+              storeName={storeName}
+              ogImage={page ? shareImage(page) : null}
+              hasFeaturedImage={featuredPicked}
+              defaultOpen={Boolean(err.seo_title || err.seo_description || err.canonical_url || err.og_title || err.og_description || err.og_image_media_id)}
+            />
+          </div>
+        </div>
       </aside>
     </form>
   );
