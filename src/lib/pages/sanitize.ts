@@ -39,7 +39,14 @@ const OPTIONS: sanitizeHtml.IOptions = {
     "*": [/^page-[a-z0-9-]+$/, /^language-[a-z0-9-]+$/],
   },
   allowedStyles: {
-    "*": { "text-align": TEXT_ALIGN },
+    "*": {
+      "text-align": TEXT_ALIGN,
+      color: [
+        /^#[0-9a-fA-F]{3,8}$/,
+        /^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/,
+        /^var\(--primary\)$/,
+      ],
+    },
     img: {
       width: [/^\d{1,5}px$/, /^100%$/],
       height: [/^\d{1,5}px$/, /^auto$/],

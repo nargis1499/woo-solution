@@ -156,9 +156,11 @@ export function createBlock(type: BlockType, id: string, overrides?: Partial<Pag
         mediaId: null,
         alt: "",
         caption: "",
-        imageLayout: "wide",
-        imageWidth: 800,
-        imageHeight: 450,
+        imageLayout: "full",
+        imageWidth: null,
+        imageHeight: null,
+        imageMaxHeight: null,
+        align: "center",
         ...overrides,
       };
     case "cta":
@@ -276,11 +278,9 @@ export function blocksToHtml(blocks: PageBlock[]): string {
           return `<div class="page-block-callout page-callout-${escapeAttr(tone)}" data-block-id="${escapeAttr(block.id)}" data-block-type="callout" data-block-json="${meta}">${titleHtml}<div class="page-callout-body">${block.html ?? ""}</div></div>`;
         }
         case "image": {
-          const rawLayout = block.imageLayout;
-          const layout: ImageLayout =
-            rawLayout === "custom" || rawLayout === "full" || rawLayout === "wide"
-              ? rawLayout
-              : "wide";
+          const rawLayout = block.imageLayout as string | undefined;
+          const layout: ImageLayout = rawLayout === "custom" ? "custom" : "full";
+          const align: TextAlign = block.align ?? "center";
           const mediaAttr = block.mediaId ? ` data-media-id="${escapeAttr(block.mediaId)}"` : "";
           const alt = escapeAttr(block.alt ?? "");
           const src = escapeAttr(block.src ?? "");
@@ -292,18 +292,28 @@ export function blocksToHtml(blocks: PageBlock[]): string {
             layout === "custom" && block.imageHeight && block.imageHeight > 0
               ? Math.round(block.imageHeight)
               : null;
+          const maxH =
+            block.imageMaxHeight && block.imageMaxHeight > 0
+              ? Math.round(block.imageMaxHeight)
+              : null;
           const dimAttrs = `${w ? ` width="${w}"` : ""}${h ? ` height="${h}"` : ""}`;
           const styleParts: string[] = [];
           if (layout === "custom") {
             if (w) styleParts.push(`width: ${w}px`);
             if (h) styleParts.push(`height: ${h}px`);
             styleParts.push("object-fit: cover");
+          } else {
+            styleParts.push("width: 100%");
+          }
+          if (maxH) {
+            styleParts.push(`max-height: ${maxH}px`);
+            if (!styleParts.includes("object-fit: cover")) styleParts.push("object-fit: cover");
           }
           const imgStyle = styleParts.length ? ` style="${styleParts.join("; ")}"` : "";
           const captionHtml = block.caption?.trim()
             ? `<figcaption>${escapeHtml(block.caption.trim())}</figcaption>`
             : "";
-          return `<figure class="page-block-image page-image-${escapeAttr(layout)}" data-block-id="${escapeAttr(block.id)}" data-block-type="image" data-block-json="${meta}"><img src="${src}" alt="${alt}"${mediaAttr}${dimAttrs}${imgStyle} loading="lazy" />${captionHtml}</figure>`;
+          return `<figure class="page-block-image page-image-${escapeAttr(layout)} page-image-align-${escapeAttr(align)}" data-block-id="${escapeAttr(block.id)}" data-block-type="image" data-block-json="${meta}" style="text-align: ${align}"><img src="${src}" alt="${alt}"${mediaAttr}${dimAttrs}${imgStyle} loading="lazy" />${captionHtml}</figure>`;
         }
         case "cta": {
           const variant = block.buttonVariant ?? "primary";
@@ -364,8 +374,10 @@ export function htmlToBlocks(html: string): PageBlock[] {
     try {
       const obj = JSON.parse(unescapeAttr(match[1])) as PageBlock;
       if (obj && typeof obj === "object" && obj.type && obj.id && validTypes.has(obj.type)) {
-        if (obj.type === "image" && (obj.imageLayout as string) === "standard") {
-          obj.imageLayout = "custom";
+        if (obj.type === "image") {
+          const l = obj.imageLayout as string | undefined;
+          if (l === "standard") obj.imageLayout = "custom";
+          else if (l === "wide" || !l) obj.imageLayout = "full";
         }
         parsed.push(obj);
       }

@@ -22,7 +22,6 @@ import {
   CopyIcon,
   ExternalLinkIcon,
   FolderOpenIcon,
-  HighlighterIcon,
   ImageIcon,
   ItalicIcon,
   Link2Icon,
@@ -31,9 +30,11 @@ import {
   ListOrderedIcon,
   MinusIcon,
   MousePointerClickIcon,
+  PaletteIcon,
   PlusIcon,
   QuoteIcon,
   RemoveFormattingIcon,
+  RotateCcwIcon,
   SearchIcon,
   StrikethroughIcon,
   Trash2Icon,
@@ -63,6 +64,22 @@ import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { MediaPickerDialog } from "@/components/admin/media/media-picker";
+
+/*
+ * Adaptive chromatic text colours (no forced white or black so text stays
+ * legible across both Light and Dark modes). "Default" clears the inline colour.
+ */
+const TEXT_COLOR_SWATCHES = [
+  { id: "primary", label: "Theme Primary", value: "var(--primary)" },
+  { id: "emerald", label: "Emerald", value: "#10b981" },
+  { id: "blue", label: "Blue", value: "#3b82f6" },
+  { id: "violet", label: "Violet", value: "#8b5cf6" },
+  { id: "amber", label: "Amber", value: "#f59e0b" },
+  { id: "orange", label: "Orange", value: "#f97316" },
+  { id: "rose", label: "Rose", value: "#f43f5e" },
+  { id: "cyan", label: "Cyan", value: "#06b6d4" },
+  { id: "slate", label: "Slate", value: "#64748b" },
+] as const;
 
 export type BlockEditorController = {
   blocks: PageBlock[];
@@ -336,7 +353,7 @@ export function BlockTypeIcon({
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Floating Inline Selection Toolbar (Bubble Menu with Active Link & New Tab)
+ * Floating Inline Selection Toolbar (Bubble Menu with Text Color & Link)
  * ────────────────────────────────────────────────────────────────────────── */
 
 function findAnchorFromSelection(range: Range): HTMLAnchorElement | null {
@@ -365,6 +382,16 @@ function findAnchorFromSelection(range: Range): HTMLAnchorElement | null {
   return null;
 }
 
+function findColorFromSelection(range: Range): string | null {
+  const startNode =
+    range.startContainer instanceof HTMLElement
+      ? range.startContainer
+      : range.startContainer.parentElement;
+  const colored = startNode?.closest<HTMLElement>("[style*='color']");
+  if (colored && colored.style.color) return colored.style.color;
+  return null;
+}
+
 function FloatingInlineToolbar({
   controller,
   pinnedBlockId,
@@ -378,6 +405,8 @@ function FloatingInlineToolbar({
 }) {
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [linkInputOpen, setLinkInputOpen] = useState(false);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [activeTextColor, setActiveTextColor] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState("");
   const [openInNewTab, setOpenInNewTab] = useState(false);
   const [activeAnchorHref, setActiveAnchorHref] = useState<string | null>(null);
@@ -405,6 +434,8 @@ function FloatingInlineToolbar({
           savedRangeRef.current = range.cloneRange();
           const foundAnchor = findAnchorFromSelection(range);
           activeAnchorRef.current = foundAnchor;
+          setActiveTextColor(findColorFromSelection(range));
+
           if (foundAnchor) {
             const href = foundAnchor.getAttribute("href") ?? "";
             const isBlank = foundAnchor.getAttribute("target") === "_blank";
@@ -412,6 +443,7 @@ function FloatingInlineToolbar({
             setLinkUrl(href);
             setOpenInNewTab(isBlank);
             setLinkInputOpen(true);
+            setColorPickerOpen(false);
           } else {
             setActiveAnchorHref(null);
             setLinkInputOpen(false);
@@ -443,6 +475,7 @@ function FloatingInlineToolbar({
     setCoords(null);
     setActiveAnchorHref(null);
     setLinkInputOpen(false);
+    setColorPickerOpen(false);
     onVisibilityChange?.(false);
   }, [onVisibilityChange, pinnedBlockId]);
 
@@ -468,7 +501,9 @@ function FloatingInlineToolbar({
 
   const syncEditableNode = (node?: Node | null) => {
     const base =
-      node instanceof HTMLElement ? node : node?.parentElement ?? (document.activeElement as HTMLElement | null);
+      node instanceof HTMLElement
+        ? node
+        : node?.parentElement ?? (document.activeElement as HTMLElement | null);
     const editable = base?.closest<HTMLElement>('[contenteditable="true"]');
     if (editable) {
       editable.dispatchEvent(new Event("input", { bubbles: true }));
@@ -491,13 +526,62 @@ function FloatingInlineToolbar({
     syncEditableNode(savedRangeRef.current?.commonAncestorContainer);
   };
 
-  const wrapHighlight = () => {
+  const applyTextColor = (color: string | null) => {
     restoreSelection();
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) return;
-    const text = sel.toString();
-    document.execCommand("insertHTML", false, `<mark>${text}</mark>`);
-    syncEditableNode(savedRangeRef.current?.commonAncestorContainer);
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const editable = (
+      range.commonAncestorContainer instanceof HTMLElement
+        ? range.commonAncestorContainer
+        : range.commonAncestorContainer.parentElement
+    )?.closest<HTMLElement>('[contenteditable="true"]');
+
+    if (!color) {
+      // Reset to default theme text colour: remove inline color styles in the selection/editable
+      if (editable) {
+        const coloredNodes = editable.querySelectorAll<HTMLElement>("[style*='color'], font[color]");
+        coloredNodes.forEach((node) => {
+          if (range.intersectsNode(node)) {
+            node.style.removeProperty("color");
+            node.removeAttribute("color");
+            if (
+              node.tagName === "SPAN" &&
+              !node.getAttribute("style")?.trim() &&
+              !node.className
+            ) {
+              const parent = node.parentNode;
+              if (parent) {
+                while (node.firstChild) parent.insertBefore(node.firstChild, node);
+                parent.removeChild(node);
+              }
+            }
+          }
+        });
+        syncEditableNode(editable);
+      }
+      setActiveTextColor(null);
+      return;
+    }
+
+    if (range.collapsed) return;
+    const fragment = range.extractContents();
+    // Strip any existing nested color styles inside the selected fragment first
+    fragment.querySelectorAll<HTMLElement>("[style*='color']").forEach((el) => {
+      el.style.removeProperty("color");
+    });
+    const span = document.createElement("span");
+    span.style.color = color;
+    span.appendChild(fragment);
+    range.insertNode(span);
+
+    const nextRange = document.createRange();
+    nextRange.selectNodeContents(span);
+    sel.removeAllRanges();
+    sel.addRange(nextRange);
+    savedRangeRef.current = nextRange.cloneRange();
+    setActiveTextColor(color);
+    syncEditableNode(editable ?? span);
   };
 
   const applyLink = () => {
@@ -569,13 +653,15 @@ function FloatingInlineToolbar({
 
   const activeBlock = controller.activeBlock;
   const isLinkActive = Boolean(activeAnchorHref) || linkInputOpen;
+  const isColorActive = Boolean(activeTextColor) || colorPickerOpen;
+  const hasSubRow = linkInputOpen || colorPickerOpen;
 
   return createPortal(
     <div
       ref={toolbarRef}
       data-testid="inline-floating-toolbar"
       style={{
-        top: Math.max(12, coords.top - (linkInputOpen ? 84 : 44)),
+        top: Math.max(12, coords.top - (hasSubRow ? 84 : 44)),
         left: coords.left,
       }}
       onMouseDown={(e) => {
@@ -656,8 +742,26 @@ function FloatingInlineToolbar({
           <ToolbarBtn title="Inline Code" onClick={wrapCode}>
             <Code2Icon className="size-3.5" />
           </ToolbarBtn>
-          <ToolbarBtn title="Highlight" onClick={wrapHighlight}>
-            <HighlighterIcon className="size-3.5" />
+
+          {/* Text Color button (replaces Highlight) */}
+          <ToolbarBtn
+            title="Text Color"
+            active={isColorActive}
+            onClick={() => {
+              setColorPickerOpen((prev) => {
+                const next = !prev;
+                if (next) setLinkInputOpen(false);
+                return next;
+              });
+            }}
+          >
+            <span className="relative flex flex-col items-center">
+              <PaletteIcon className="size-3.5" />
+              <span
+                className="mt-0.5 h-0.5 w-3.5 rounded-full"
+                style={{ backgroundColor: activeTextColor ?? "var(--foreground)" }}
+              />
+            </span>
           </ToolbarBtn>
 
           <span className="mx-1 h-4 w-px bg-border" />
@@ -666,7 +770,11 @@ function FloatingInlineToolbar({
             title="Link"
             active={isLinkActive}
             onClick={() => {
-              setLinkInputOpen((prev) => !prev);
+              setLinkInputOpen((prev) => {
+                const next = !prev;
+                if (next) setColorPickerOpen(false);
+                return next;
+              });
             }}
           >
             <Link2Icon className="size-3.5" />
@@ -714,7 +822,49 @@ function FloatingInlineToolbar({
           )}
         </div>
 
-        {/* Active Link Bar (shows automatically when selecting linked text or clicking Link button) */}
+        {/* Text Color Swatch Bar (Default resets other colors; no forced white or black) */}
+        {colorPickerOpen && (
+          <div
+            data-testid="inline-color-bar"
+            className="flex flex-wrap items-center gap-1.5 border-t border-border/80 bg-muted/35 px-2.5 py-1.5"
+          >
+            <button
+              type="button"
+              data-testid="inline-color-default"
+              onClick={() => applyTextColor(null)}
+              className={cn(
+                "inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition-colors",
+                !activeTextColor
+                  ? "border-primary bg-primary/15 text-primary"
+                  : "border-border bg-background text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <RotateCcwIcon className="size-3" /> Default
+            </button>
+            <span className="mx-0.5 h-4 w-px bg-border" />
+            {TEXT_COLOR_SWATCHES.map((swatch) => {
+              const selected = activeTextColor === swatch.value;
+              return (
+                <button
+                  key={swatch.id}
+                  type="button"
+                  title={swatch.label}
+                  data-testid={`inline-color-${swatch.id}`}
+                  onClick={() => applyTextColor(swatch.value)}
+                  className={cn(
+                    "grid size-6 place-items-center rounded-full border transition-transform hover:scale-110",
+                    selected ? "border-foreground ring-2 ring-primary/50" : "border-border/80",
+                  )}
+                  style={{ backgroundColor: swatch.value }}
+                >
+                  {selected && <CheckIcon className="size-3 text-white drop-shadow" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Active Link Bar */}
         {linkInputOpen && (
           <div
             data-testid="inline-link-bar"
@@ -892,10 +1042,8 @@ function RichEditable({
         }}
         className={cn(
           "min-h-[1.5em] w-full outline-none",
-          // Highlight linked text inside the block editor
           "[&_a]:rounded-sm [&_a]:bg-primary/20 [&_a]:px-1 [&_a]:py-0.5 [&_a]:font-medium [&_a]:text-primary [&_a]:underline [&_a]:decoration-primary [&_a]:underline-offset-4",
           "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em]",
-          "[&_mark]:rounded-sm [&_mark]:bg-amber-400/30 [&_mark]:px-1 [&_mark]:text-foreground",
           className,
         )}
       />
@@ -1156,29 +1304,41 @@ export function BlockEditorCanvas({
                   <div className="space-y-3">
                     {block.src ? (
                       <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
-                        <div className="relative">
+                        <div
+                          className={cn(
+                            "relative flex p-2",
+                            (block.align ?? "center") === "left" && "justify-start",
+                            (block.align ?? "center") === "center" && "justify-center",
+                            (block.align ?? "center") === "right" && "justify-end",
+                          )}
+                        >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={block.src}
                             alt={block.alt ?? ""}
-                            style={
-                              block.imageLayout === "custom"
-                                ? {
-                                    width: block.imageWidth ? `${block.imageWidth}px` : undefined,
-                                    height: block.imageHeight ? `${block.imageHeight}px` : undefined,
-                                    maxWidth: "100%",
-                                    objectFit: "cover",
-                                  }
-                                : undefined
-                            }
+                            style={{
+                              width:
+                                block.imageLayout === "custom" && block.imageWidth
+                                  ? `${block.imageWidth}px`
+                                  : block.imageLayout === "custom"
+                                    ? undefined
+                                    : "100%",
+                              height:
+                                block.imageLayout === "custom" && block.imageHeight
+                                  ? `${block.imageHeight}px`
+                                  : undefined,
+                              maxHeight: block.imageMaxHeight
+                                ? `${block.imageMaxHeight}px`
+                                : undefined,
+                              maxWidth: "100%",
+                              objectFit: "cover",
+                            }}
                             className={cn(
-                              "block object-cover",
-                              (block.imageLayout ?? "wide") === "wide" && "w-full max-h-[600px]",
-                              block.imageLayout === "full" && "w-full max-h-[600px]",
-                              block.imageLayout === "custom" && "rounded-lg",
+                              "block rounded-lg object-cover",
+                              (block.imageLayout ?? "full") === "full" && "w-full",
                             )}
                           />
-                          <div className="absolute right-3 bottom-3 flex items-center gap-1.5 rounded-lg border border-border/80 bg-background/90 p-1 shadow-md backdrop-blur-sm">
+                          <div className="absolute right-4 bottom-4 flex items-center gap-1.5 rounded-lg border border-border/80 bg-background/90 p-1 shadow-md backdrop-blur-sm">
                             <button
                               type="button"
                               onClick={() => setMediaPickerBlockId(block.id)}
@@ -1201,6 +1361,7 @@ export function BlockEditorCanvas({
                           <input
                             type="text"
                             value={block.caption ?? ""}
+                            style={{ textAlign: block.align ?? "center" }}
                             onChange={(e) =>
                               controller.updateBlock(block.id, { caption: e.target.value })
                             }
@@ -1595,6 +1756,13 @@ function BlockPickerModal({ controller }: { controller: BlockEditorController })
  * Block Settings Inspector Panel (Right Column – uses React Aria Select)
  * ────────────────────────────────────────────────────────────────────────── */
 
+function parseDimensionInput(raw: string): number | null {
+  const digits = raw.replace(/[^\d]/g, "").replace(/^0+/, "");
+  if (!digits) return null;
+  const num = Number(digits);
+  return Number.isFinite(num) && num > 0 ? Math.min(num, 4000) : null;
+}
+
 export function BlockSettingsInspector({ controller }: { controller: BlockEditorController }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const block = controller.activeBlock;
@@ -1649,7 +1817,7 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
 
       <hr className="border-border/70" />
 
-      {/* Heading Settings (React Aria Select) */}
+      {/* Heading Settings */}
       {block.type === "heading" && (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -1682,7 +1850,7 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
         </div>
       )}
 
-      {/* Paragraph Settings (React Aria Select) */}
+      {/* Paragraph Settings */}
       {block.type === "paragraph" && (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -1717,7 +1885,7 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
         </div>
       )}
 
-      {/* Callout Settings (React Aria Select) */}
+      {/* Callout Settings */}
       {block.type === "callout" && (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -1757,7 +1925,7 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
         </div>
       )}
 
-      {/* Hero / Image Banner Settings (React Aria Select + Custom Width/Height) */}
+      {/* Hero / Image Banner Settings */}
       {block.type === "image" && (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -1766,7 +1934,7 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
             </label>
             <Select
               aria-label="Banner Layout"
-              selectedKey={block.imageLayout ?? "wide"}
+              selectedKey={block.imageLayout === "custom" ? "custom" : "full"}
               onSelectionChange={(key) => {
                 if (key)
                   controller.updateBlock(block.id, {
@@ -1778,8 +1946,7 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem id="wide">Wide Banner (Full width, max 600px)</SelectItem>
-                <SelectItem id="full">Full Width Hero Banner (max 600px)</SelectItem>
+                <SelectItem id="full">Full Width Hero Banner</SelectItem>
                 <SelectItem id="custom">Custom Width &amp; Height</SelectItem>
               </SelectContent>
             </Select>
@@ -1792,13 +1959,12 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
                   Width (px)
                 </label>
                 <input
-                  type="number"
-                  min={50}
-                  max={3000}
-                  value={block.imageWidth ?? 800}
+                  type="text"
+                  inputMode="numeric"
+                  value={block.imageWidth ? String(block.imageWidth) : ""}
                   onChange={(e) =>
                     controller.updateBlock(block.id, {
-                      imageWidth: e.target.value ? Number(e.target.value) : null,
+                      imageWidth: parseDimensionInput(e.target.value),
                     })
                   }
                   placeholder="800"
@@ -1810,13 +1976,12 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
                   Height (px)
                 </label>
                 <input
-                  type="number"
-                  min={50}
-                  max={3000}
-                  value={block.imageHeight ?? 450}
+                  type="text"
+                  inputMode="numeric"
+                  value={block.imageHeight ? String(block.imageHeight) : ""}
                   onChange={(e) =>
                     controller.updateBlock(block.id, {
-                      imageHeight: e.target.value ? Number(e.target.value) : null,
+                      imageHeight: parseDimensionInput(e.target.value),
                     })
                   }
                   placeholder="450"
@@ -1825,6 +1990,31 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
               </div>
             </div>
           )}
+
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-muted-foreground">
+              Max Height (px)
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={block.imageMaxHeight ? String(block.imageMaxHeight) : ""}
+              onChange={(e) =>
+                controller.updateBlock(block.id, {
+                  imageMaxHeight: parseDimensionInput(e.target.value),
+                })
+              }
+              placeholder="No limit (e.g. 600)"
+              data-testid="image-max-height-input"
+              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground outline-none focus:border-primary"
+            />
+          </div>
+
+          <AlignmentControl
+            label="Image Alignment"
+            value={block.align ?? "center"}
+            onChange={(align) => controller.updateBlock(block.id, { align })}
+          />
 
           <div className="space-y-2">
             <label className="block text-xs font-medium text-muted-foreground">
@@ -1896,7 +2086,7 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
         </div>
       )}
 
-      {/* Call to Action Button Settings (React Aria Select) */}
+      {/* Call to Action Button Settings */}
       {block.type === "cta" && (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -2026,7 +2216,7 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
         </div>
       )}
 
-      {/* Divider Settings (React Aria Select) */}
+      {/* Divider Settings */}
       {block.type === "divider" && (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -2058,7 +2248,7 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
 
       <hr className="border-border/70" />
 
-      {/* Convert Block Type (React Aria Select) */}
+      {/* Convert Block Type */}
       <div className="space-y-2">
         <label className="block text-xs font-medium text-muted-foreground">
           Convert Block Type
@@ -2087,16 +2277,18 @@ export function BlockSettingsInspector({ controller }: { controller: BlockEditor
 }
 
 function AlignmentControl({
+  label = "Text Alignment",
   value,
   onChange,
 }: {
+  label?: string;
   value: TextAlign;
   onChange: (next: TextAlign) => void;
 }) {
   return (
     <div className="space-y-2">
       <label className="block text-xs font-medium text-muted-foreground">
-        Text Alignment
+        {label}
       </label>
       <div className="grid grid-cols-3 gap-1.5">
         {(

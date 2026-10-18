@@ -623,19 +623,28 @@
     border-top-style: dotted;
     border-top-width: 2px;
   }
-  .rich-text figure.page-image-wide,
   .rich-text figure.page-image-full {
     width: 100%;
   }
-  .rich-text figure.page-image-wide > img,
   .rich-text figure.page-image-full > img {
     width: 100%;
-    max-height: 600px;
+    height: auto;
     object-fit: cover;
   }
   .rich-text figure.page-image-custom > img {
     max-width: 100%;
     object-fit: cover;
+  }
+  .rich-text figure.page-image-align-left > img {
+    margin-inline-start: 0;
+    margin-inline-end: auto;
+  }
+  .rich-text figure.page-image-align-center > img {
+    margin-inline: auto;
+  }
+  .rich-text figure.page-image-align-right > img {
+    margin-inline-start: auto;
+    margin-inline-end: 0;
   }
 }
 .rich-text p.is-editor-empty:first-child::before {

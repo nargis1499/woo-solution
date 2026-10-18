@@ -315,8 +315,11 @@ function PageFields({
           </CardContent>
         </Card>
 
-        {/* Block Settings | Page Meta Tabbed Inspector matching image-1.png & image-3.png */}
-        <div className="overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xs">
+        {/* Block Settings | Page Meta Tabbed Inspector (sticky while Page content is in viewport) */}
+        <div
+          data-testid="inspector-card"
+          className="sticky top-16 z-20 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xs"
+        >
           <div className="grid grid-cols-2 border-b border-border" role="tablist" aria-label="Editor inspector">
             <button
               type="button"
