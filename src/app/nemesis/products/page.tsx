@@ -6,11 +6,11 @@ import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatMoney, moneyFromSettings } from "@/lib/money";
-import { deleteProduct, deleteProducts } from "@/app/nemesis/actions";
+import { deleteProduct, deleteProducts, toggleProductFeatured } from "@/app/nemesis/actions";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { FilterSelect } from "@/components/admin/filter-select";
-import { DeleteButton } from "@/components/admin/form-bits";
+import { DeleteButton, FeaturedToggleButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
 import { ListToolbar, Pagination } from "@/components/admin/pagination";
 import { DataTable, EmptyState, PageHeader, Thumb, ToneBadge } from "@/components/admin/ui";
@@ -85,6 +85,7 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
             // Settings → WooCommerce → stock management off hides the stock column everywhere
             ...(manageStock ? [{ id: "stock", label: "Stock", align: "right" as const, cellClassName: "tabular-nums" }] : []),
             { id: "status", label: "Status" },
+            { id: "featured", label: "Featured" },
             { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
           ]}
           bulkDelete={{
@@ -130,8 +131,8 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
                 : []),
               <div key="status" className="flex flex-wrap gap-1">
                 <ToneBadge tone={p.is_active ? "emerald" : "neutral"}>{p.is_active ? "Active" : "Draft"}</ToneBadge>
-                {p.is_featured && <ToneBadge tone="brand">Featured</ToneBadge>}
               </div>,
+              <FeaturedToggleButton key="featured" id={p.id} name={p.name} initialFeatured={p.is_featured} action={toggleProductFeatured} />,
               <div key="actions" className="flex items-center justify-end gap-2">
                 <Link href={editHref(p.id)} className={buttonVariants({ variant: "outline", size: "sm" })}>
                   Edit

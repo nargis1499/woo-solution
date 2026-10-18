@@ -463,6 +463,35 @@ async function saveVariableProductSets(
   }
 }
 
+export async function toggleProductFeatured(
+  id: string,
+  featured: boolean,
+): Promise<{ ok: boolean; is_featured?: boolean; message?: string; error?: string }> {
+  if (!UUID_RE.test(id)) return { ok: false, error: "Invalid product id." };
+  try {
+    const { supabase } = await adminClient();
+    const { data: product, error } = await supabase
+      .from("products")
+      .update({ is_featured: Boolean(featured) })
+      .eq("id", id)
+      .select("id, name, is_featured")
+      .maybeSingle();
+    if (error) throw error;
+    if (!product) return { ok: false, error: "Product not found." };
+
+    revalidateStore();
+    return {
+      ok: true,
+      is_featured: Boolean(product.is_featured),
+      message: product.is_featured
+        ? `"${product.name}" marked as featured.`
+        : `"${product.name}" removed from featured.`,
+    };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
 export async function deleteProduct(formData: FormData): Promise<void> {
   const id = str(formData, "id", 40);
   const back = productsReturn(formData);

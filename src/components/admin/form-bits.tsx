@@ -2,8 +2,9 @@
 
 import { useId, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
+import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { Trash2Icon } from "lucide-react";
+import { StarIcon, Trash2Icon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -75,6 +76,67 @@ export function OpenTabButton({
   return (
     <Button variant={variant} size="sm" className={className} aria-label={ariaLabel} data-testid={testId} onPress={() => window.open(href, "_blank", "noopener,noreferrer")}>
       {children}
+    </Button>
+  );
+}
+
+/**
+ * One-click star toggle for marking/unmarking a product as Featured directly from the
+ * Products table. Uses a React Aria `Button` so pressing it inside a linked DataGrid row
+ * toggles the star without navigating to the row's edit page.
+ */
+export function FeaturedToggleButton({
+  id,
+  name,
+  initialFeatured,
+  action,
+}: {
+  id: string;
+  name: string;
+  initialFeatured: boolean;
+  action: (id: string, featured: boolean) => Promise<{ ok: boolean; is_featured?: boolean; message?: string; error?: string }>;
+}) {
+  const router = useRouter();
+  const [featured, setFeatured] = useSwitchValue(initialFeatured);
+  const [pending, startTransition] = useTransition();
+  const label = featured ? `Remove "${name}" from featured` : `Mark "${name}" as featured`;
+
+  function toggle() {
+    if (pending) return;
+    const next = !featured;
+    setFeatured(next);
+    startTransition(async () => {
+      const result = await action(id, next);
+      if (!result.ok) {
+        setFeatured(!next);
+        toast.error(result.error ?? "Could not update featured status.");
+        return;
+      }
+      setFeatured(Boolean(result.is_featured));
+      if (result.message) toast.success(result.message);
+      router.refresh();
+    });
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      isDisabled={pending}
+      aria-label={label}
+      aria-pressed={featured}
+      data-testid="product-featured-toggle"
+      data-product-id={id}
+      data-featured={featured ? "true" : "false"}
+      onPress={toggle}
+      className={cn(
+        "rounded-full transition-colors",
+        featured
+          ? "text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+          : "text-muted-foreground/45 hover:bg-muted hover:text-amber-400",
+      )}
+    >
+      <StarIcon className={cn("size-4 transition-transform", featured && "fill-current scale-105")} />
     </Button>
   );
 }
