@@ -1,16 +1,48 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
-import { CircleCheckIcon } from "lucide-react";
+import { useActionState, useState, type ComponentProps } from "react";
+import { CircleCheckIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 import { signIn, signUp, type AuthFormState } from "@/app/auth/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { GoogleSignInButton, OrDivider } from "./google-button";
 
 const initial: AuthFormState = {};
+
+function PasswordInput({
+  className,
+  ...props
+}: Omit<ComponentProps<typeof Input>, "type">) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="relative">
+      <Input
+        {...props}
+        type={visible ? "text" : "password"}
+        className={cn("pr-10", className)}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? "Hide password" : "Show password"}
+        aria-pressed={visible}
+        data-testid="password-visibility-toggle"
+        className="absolute inset-y-0 right-0 flex items-center justify-center px-3 text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+      >
+        {visible ? (
+          <EyeOffIcon className="size-4" aria-hidden />
+        ) : (
+          <EyeIcon className="size-4" aria-hidden />
+        )}
+      </button>
+    </div>
+  );
+}
 
 export function LoginForm({ next, error }: { next: string; error?: string }) {
   const [state, action, pending] = useActionState(signIn, initial);
@@ -34,7 +66,7 @@ export function LoginForm({ next, error }: { next: string; error?: string }) {
           </Field>
           <Field>
             <FieldLabel htmlFor="password">Password</FieldLabel>
-            <Input id="password" name="password" type="password" autoComplete="current-password" required />
+            <PasswordInput id="password" name="password" autoComplete="current-password" required />
           </Field>
           <Button type="submit" size="lg" className="w-full" isPending={pending}>
             {pending ? "Signing in…" : "Sign in"}
@@ -91,7 +123,7 @@ export function SignupForm({ next }: { next: string }) {
           </Field>
           <Field>
             <FieldLabel htmlFor="password">Password</FieldLabel>
-            <Input id="password" name="password" type="password" autoComplete="new-password" minLength={6} required />
+            <PasswordInput id="password" name="password" autoComplete="new-password" minLength={6} required />
             <FieldDescription>At least 6 characters.</FieldDescription>
           </Field>
           <Button type="submit" size="lg" className="w-full" isPending={pending}>
