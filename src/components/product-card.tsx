@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ShoppingBagIcon } from "lucide-react";
+import { ShoppingBagIcon, ZapIcon } from "lucide-react";
 import type { Product } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
@@ -13,11 +13,14 @@ export function ProductCard({
   product,
   priority,
   manageStock = true,
+  quickCheckout,
 }: {
   product: Product;
   priority?: boolean;
   manageStock?: boolean;
+  quickCheckout?: boolean;
 }) {
+  const isQuickCheckout = quickCheckout ?? Boolean(product.quick_checkout);
   const onSale =
     product.compare_at_price_micros != null &&
     product.compare_at_price_micros > product.price_micros;
@@ -74,14 +77,27 @@ export function ProductCard({
       </Link>
 
       <CardContent className="flex flex-1 flex-col p-5">
-        {product.category && (
-          <div className="mb-2 flex items-center">
-            <Link
-              href={`/shop?category=${product.category.slug}`}
-              className="inline-flex items-center rounded-md bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wider text-primary uppercase transition-colors hover:bg-primary/15"
-            >
-              {product.category.name}
-            </Link>
+        {(product.category || isQuickCheckout) && (
+          <div className="mb-2 flex items-center justify-between gap-2">
+            {product.category ? (
+              <Link
+                href={`/shop?category=${product.category.slug}`}
+                className="inline-flex items-center rounded-md bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wider text-primary uppercase transition-colors hover:bg-primary/15"
+              >
+                {product.category.name}
+              </Link>
+            ) : (
+              <span />
+            )}
+            {isQuickCheckout && (
+              <span
+                data-testid="product-card-quick-checkout-icon"
+                title="Quick Checkout enabled"
+                className="inline-flex items-center gap-1 rounded-md bg-primary/12 px-2 py-0.5 text-[11px] font-bold text-primary"
+              >
+                <ZapIcon className="size-3 fill-current" aria-hidden />
+              </span>
+            )}
           </div>
         )}
 
@@ -100,35 +116,48 @@ export function ProductCard({
           </p>
         )}
 
-        <div className="mt-auto flex items-center justify-between gap-2 pt-4">
-          <Price
-            micros={product.price_micros}
-            regularMicros={product.compare_at_price_micros}
-            from={product.type === "variable"}
-            className="text-lg font-extrabold tracking-tight"
-          />
+        <div className="mt-auto pt-4">
+          <div className="flex items-center justify-between gap-2">
+            <Price
+              micros={product.price_micros}
+              regularMicros={product.compare_at_price_micros}
+              from={product.type === "variable"}
+              className="text-lg font-extrabold tracking-tight"
+            />
 
-          <div className="flex shrink-0 items-center gap-2">
-            <WishlistButton product={product} />
-            {product.type === "variable" ? (
-              <LinkButton
-                href={`/products/${product.slug}`}
-                size="sm"
-                className="h-9 rounded-xl !bg-primary px-4 text-xs font-semibold !text-primary-foreground shadow-xs hover:!bg-primary/90 ![background-image:none]"
-              >
-                <ShoppingBagIcon className="size-3.5" /> Add
-              </LinkButton>
-            ) : (
-              <AddToCartButton
-                product={product}
-                size="sm"
-                label="Add"
-                icon="bag"
-                manageStock={manageStock}
-                className="h-9 rounded-xl !bg-primary px-4 text-xs font-semibold !text-primary-foreground shadow-xs hover:!bg-primary/90 ![background-image:none]"
-              />
-            )}
+            <div className="flex shrink-0 items-center gap-2">
+              <WishlistButton product={product} />
+              {product.type === "variable" ? (
+                <LinkButton
+                  href={`/products/${product.slug}`}
+                  size="sm"
+                  className="h-9 rounded-xl !bg-primary px-4 text-xs font-semibold !text-primary-foreground shadow-xs hover:!bg-primary/90 ![background-image:none]"
+                >
+                  <ShoppingBagIcon className="size-3.5" /> Add
+                </LinkButton>
+              ) : (
+                <AddToCartButton
+                  product={product}
+                  size="sm"
+                  label="Add"
+                  icon="bag"
+                  manageStock={manageStock}
+                  className="h-9 rounded-xl !bg-primary px-4 text-xs font-semibold !text-primary-foreground shadow-xs hover:!bg-primary/90 ![background-image:none]"
+                />
+              )}
+            </div>
           </div>
+
+          {isQuickCheckout && !soldOut && (
+            <button
+              type="button"
+              data-testid="quick-checkout-button"
+              className="mt-2.5 inline-flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-primary/35 bg-primary/10 px-4 text-xs font-bold text-primary shadow-2xs transition-colors hover:bg-primary hover:text-primary-foreground"
+            >
+              <ZapIcon className="size-3.5 fill-current" aria-hidden />
+              Quick Checkout
+            </button>
+          )}
         </div>
       </CardContent>
     </Card>

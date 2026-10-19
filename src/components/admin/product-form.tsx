@@ -349,9 +349,10 @@ export function ProductForm({
                 </Select>
                 <FieldError>{err.category_id}</FieldError>
               </Field>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <CheckboxField id="is_active" name="is_active" label="Active" description="Visible in the shop and purchasable." defaultChecked={v.is_active ? true : product ? product.is_active : true} />
                 <CheckboxField id="is_featured" name="is_featured" label="Featured" description="Shown on the home page." defaultChecked={v.is_featured ? true : (product?.is_featured ?? false)} />
+                <CheckboxField id="quick_checkout" name="quick_checkout" label="Quick Checkout" description="Show Quick Checkout button on product cards." defaultChecked={v.quick_checkout ? true : Boolean(product?.quick_checkout)} />
               </div>
             </FieldGroup>
           </CardContent>

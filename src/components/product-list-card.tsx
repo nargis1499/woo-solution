@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckIcon, ShoppingBagIcon } from "lucide-react";
+import { CheckIcon, ShoppingBagIcon, ZapIcon } from "lucide-react";
 import { parseProductFeatures } from "@/lib/home-sections";
 import type { Product } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -14,11 +14,14 @@ export function ProductListCard({
   product,
   priority,
   manageStock = true,
+  quickCheckout,
 }: {
   product: Product;
   priority?: boolean;
   manageStock?: boolean;
+  quickCheckout?: boolean;
 }) {
+  const isQuickCheckout = quickCheckout ?? Boolean(product.quick_checkout);
   const onSale =
     product.compare_at_price_micros != null &&
     product.compare_at_price_micros > product.price_micros;
@@ -79,14 +82,25 @@ export function ProductListCard({
 
       {/* Middle Product Details & Max 3 Feature Pills */}
       <div className="min-w-0 flex-1 space-y-1.5">
-        {product.category && (
-          <div className="flex items-center">
-            <Link
-              href={`/shop?category=${product.category.slug}`}
-              className="inline-flex items-center rounded-md bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wider text-primary uppercase transition-colors hover:bg-primary/15"
-            >
-              {product.category.name}
-            </Link>
+        {(product.category || isQuickCheckout) && (
+          <div className="flex items-center gap-2">
+            {product.category && (
+              <Link
+                href={`/shop?category=${product.category.slug}`}
+                className="inline-flex items-center rounded-md bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wider text-primary uppercase transition-colors hover:bg-primary/15"
+              >
+                {product.category.name}
+              </Link>
+            )}
+            {isQuickCheckout && (
+              <span
+                data-testid="product-card-quick-checkout-icon"
+                title="Quick Checkout enabled"
+                className="inline-flex items-center gap-1 rounded-md bg-primary/12 px-2 py-0.5 text-[11px] font-bold text-primary"
+              >
+                <ZapIcon className="size-3 fill-current" aria-hidden />
+              </span>
+            )}
           </div>
         )}
 
@@ -127,40 +141,53 @@ export function ProductListCard({
       </div>
 
       {/* Right Price, Free Delivery & Actions */}
-      <div className="flex shrink-0 items-center justify-between gap-4 border-t border-border/60 pt-3 sm:flex-col sm:items-end sm:justify-center sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
-        <div className="text-left sm:text-right">
-          <Price
-            micros={product.price_micros}
-            regularMicros={product.compare_at_price_micros}
-            from={product.type === "variable"}
-            className="text-xl font-extrabold tracking-tight sm:text-2xl"
-          />
-          <span className="mt-0.5 block text-xs font-semibold text-primary">
-            Free Delivery
-          </span>
+      <div className="flex shrink-0 flex-col gap-2.5 border-t border-border/60 pt-3 sm:items-end sm:justify-center sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+        <div className="flex w-full items-center justify-between gap-4 sm:flex-col sm:items-end">
+          <div className="text-left sm:text-right">
+            <Price
+              micros={product.price_micros}
+              regularMicros={product.compare_at_price_micros}
+              from={product.type === "variable"}
+              className="text-xl font-extrabold tracking-tight sm:text-2xl"
+            />
+            <span className="mt-0.5 block text-xs font-semibold text-primary">
+              Free Delivery
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <WishlistButton product={product} className="size-10 rounded-xl" />
+            {product.type === "variable" ? (
+              <LinkButton
+                href={`/products/${product.slug}`}
+                size="default"
+                className="h-10 rounded-xl !bg-primary px-5 text-xs font-semibold !text-primary-foreground shadow-xs hover:!bg-primary/90 ![background-image:none]"
+              >
+                <ShoppingBagIcon className="size-4" /> Add to Cart
+              </LinkButton>
+            ) : (
+              <AddToCartButton
+                product={product}
+                size="default"
+                label="Add to Cart"
+                icon="bag"
+                manageStock={manageStock}
+                className="h-10 rounded-xl !bg-primary px-5 text-xs font-semibold !text-primary-foreground shadow-xs hover:!bg-primary/90 ![background-image:none]"
+              />
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <WishlistButton product={product} className="size-10 rounded-xl" />
-          {product.type === "variable" ? (
-            <LinkButton
-              href={`/products/${product.slug}`}
-              size="default"
-              className="h-10 rounded-xl !bg-primary px-5 text-xs font-semibold !text-primary-foreground shadow-xs hover:!bg-primary/90 ![background-image:none]"
-            >
-              <ShoppingBagIcon className="size-4" /> Add to Cart
-            </LinkButton>
-          ) : (
-            <AddToCartButton
-              product={product}
-              size="default"
-              label="Add to Cart"
-              icon="bag"
-              manageStock={manageStock}
-              className="h-10 rounded-xl !bg-primary px-5 text-xs font-semibold !text-primary-foreground shadow-xs hover:!bg-primary/90 ![background-image:none]"
-            />
-          )}
-        </div>
+        {isQuickCheckout && !soldOut && (
+          <button
+            type="button"
+            data-testid="quick-checkout-button"
+            className="inline-flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-primary/35 bg-primary/10 px-4 text-xs font-bold text-primary shadow-2xs transition-colors hover:bg-primary hover:text-primary-foreground"
+          >
+            <ZapIcon className="size-3.5 fill-current" aria-hidden />
+            Quick Checkout
+          </button>
+        )}
       </div>
     </Card>
   );

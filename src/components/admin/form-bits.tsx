@@ -4,7 +4,7 @@ import { useId, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { ChevronDownIcon, StarIcon, Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, StarIcon, Trash2Icon, ZapIcon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -137,6 +137,71 @@ export function FeaturedToggleButton({
       )}
     >
       <StarIcon className={cn("size-4 transition-transform", featured && "fill-current scale-105")} />
+    </Button>
+  );
+}
+
+/**
+ * One-click lightning toggle for enabling/disabling Quick Checkout on a product directly
+ * from the Products table. Disabled by default for new products.
+ */
+export function QuickCheckoutToggleButton({
+  id,
+  name,
+  initialEnabled,
+  action,
+}: {
+  id: string;
+  name: string;
+  initialEnabled: boolean;
+  action: (
+    id: string,
+    enabled: boolean,
+  ) => Promise<{ ok: boolean; quick_checkout?: boolean; message?: string; error?: string }>;
+}) {
+  const router = useRouter();
+  const [enabled, setEnabled] = useSwitchValue(initialEnabled);
+  const [pending, startTransition] = useTransition();
+  const label = enabled
+    ? `Disable Quick Checkout for "${name}"`
+    : `Enable Quick Checkout for "${name}"`;
+
+  function toggle() {
+    if (pending) return;
+    const next = !enabled;
+    setEnabled(next);
+    startTransition(async () => {
+      const result = await action(id, next);
+      if (!result.ok) {
+        setEnabled(!next);
+        toast.error(result.error ?? "Could not update Quick Checkout.");
+        return;
+      }
+      setEnabled(Boolean(result.quick_checkout));
+      if (result.message) toast.success(result.message);
+      router.refresh();
+    });
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      isDisabled={pending}
+      aria-label={label}
+      aria-pressed={enabled}
+      data-testid="product-quick-checkout-toggle"
+      data-product-id={id}
+      data-quick-checkout={enabled ? "true" : "false"}
+      onPress={toggle}
+      className={cn(
+        "rounded-full transition-colors",
+        enabled
+          ? "bg-primary/15 text-primary hover:bg-primary/25 hover:text-primary"
+          : "text-muted-foreground/45 hover:bg-muted hover:text-primary",
+      )}
+    >
+      <ZapIcon className={cn("size-4 transition-transform", enabled && "fill-current scale-105")} />
     </Button>
   );
 }

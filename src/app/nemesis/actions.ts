@@ -166,6 +166,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   const stock = Number(str(formData, "stock", 10) || "0");
   const isActive = bool(formData, "is_active");
   const isFeatured = bool(formData, "is_featured");
+  const quickCheckout = bool(formData, "quick_checkout");
   const imageMode = str(formData, "image_mode", 10) || "keep";
   const imageUrlInput = str(formData, "image_url", 2000);
   const imageMediaId = str(formData, "image_media_id", 40);
@@ -315,14 +316,14 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
         : { price_micros: priceMicros, compare_at_price_micros: compareAtMicros, stock }),
       ...image,
     };
-    const row = { ...baseRow, brand, features };
+    const row = { ...baseRow, brand, features, quick_checkout: quickCheckout };
 
     let result = isEdit
       ? await supabase.from("products").update(row).eq("id", id).select("id").single()
       : await supabase.from("products").insert(row).select("id").single();
     if (
       result.error &&
-      (result.error.code === "42703" || /column .*(brand|features)|schema cache/i.test(result.error.message ?? ""))
+      (result.error.code === "42703" || /column .*(brand|features|quick_checkout)|schema cache/i.test(result.error.message ?? ""))
     ) {
       result = isEdit
         ? await supabase.from("products").update(baseRow).eq("id", id).select("id").single()
@@ -509,6 +510,44 @@ export async function toggleProductFeatured(
       message: product.is_featured
         ? `"${product.name}" marked as featured.`
         : `"${product.name}" removed from featured.`,
+    };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
+export async function toggleProductQuickCheckout(
+  id: string,
+  quickCheckout: boolean,
+): Promise<{ ok: boolean; quick_checkout?: boolean; message?: string; error?: string }> {
+  if (!UUID_RE.test(id)) return { ok: false, error: "Invalid product id." };
+  try {
+    const { supabase } = await adminClient();
+    const { data: product, error } = await supabase
+      .from("products")
+      .update({ quick_checkout: Boolean(quickCheckout) })
+      .eq("id", id)
+      .select("id, name, quick_checkout")
+      .maybeSingle();
+    if (error) {
+      if (error.code === "42703" || /quick_checkout/i.test(error.message ?? "")) {
+        return {
+          ok: false,
+          error:
+            "Run supabase/migrations/20261041000000_product_quick_checkout.sql in the Supabase SQL Editor to enable Quick Checkout.",
+        };
+      }
+      throw error;
+    }
+    if (!product) return { ok: false, error: "Product not found." };
+
+    revalidateStore();
+    return {
+      ok: true,
+      quick_checkout: Boolean(product.quick_checkout),
+      message: product.quick_checkout
+        ? `Quick Checkout enabled for "${product.name}".`
+        : `Quick Checkout disabled for "${product.name}".`,
     };
   } catch (e) {
     return { ok: false, error: friendlyError(e) };

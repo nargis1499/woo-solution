@@ -107,6 +107,7 @@ export type Product = {
   stock: number;
   is_active: boolean;
   is_featured: boolean;
+  quick_checkout?: boolean;
   created_at: string;
   updated_at?: string;
   category?: Pick<Category, "id" | "name" | "slug"> | null;

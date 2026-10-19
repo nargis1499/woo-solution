@@ -6,11 +6,11 @@ import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatMoney, moneyFromSettings } from "@/lib/money";
-import { deleteProduct, deleteProducts, toggleProductFeatured } from "@/app/nemesis/actions";
+import { deleteProduct, deleteProducts, toggleProductFeatured, toggleProductQuickCheckout } from "@/app/nemesis/actions";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { FilterSelect } from "@/components/admin/filter-select";
-import { DeleteButton, FeaturedToggleButton } from "@/components/admin/form-bits";
+import { DeleteButton, FeaturedToggleButton, QuickCheckoutToggleButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
 import { ListToolbar, Pagination } from "@/components/admin/pagination";
 import { DataTable, EmptyState, PageHeader, Thumb, ToneBadge } from "@/components/admin/ui";
@@ -86,6 +86,7 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
             ...(manageStock ? [{ id: "stock", label: "Stock", align: "right" as const, cellClassName: "tabular-nums" }] : []),
             { id: "status", label: "Status" },
             { id: "featured", label: "Featured" },
+            { id: "quick_checkout", label: "Quick Checkout" },
             { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-4" },
           ]}
           bulkDelete={{
@@ -133,6 +134,7 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
                 <ToneBadge tone={p.is_active ? "emerald" : "neutral"}>{p.is_active ? "Active" : "Draft"}</ToneBadge>
               </div>,
               <FeaturedToggleButton key="featured" id={p.id} name={p.name} initialFeatured={p.is_featured} action={toggleProductFeatured} />,
+              <QuickCheckoutToggleButton key="quick_checkout" id={p.id} name={p.name} initialEnabled={Boolean(p.quick_checkout)} action={toggleProductQuickCheckout} />,
               <div key="actions" className="flex items-center justify-end gap-2">
                 <Link href={editHref(p.id)} className={buttonVariants({ variant: "outline", size: "sm" })}>
                   Edit
