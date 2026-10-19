@@ -496,7 +496,8 @@ export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migra
 
 /* ── Menus (UI → Menu) ───────────────────────────────────────────────────── */
 
-export const MENU_ITEM_COLUMNS = "id, location, kind, title, page_id, category_id, url, open_in_new_tab, sort_order, page:pages(id, title, slug, status), category:categories(id, name, slug)";
+export const MENU_ITEM_COLUMNS = "id, location, kind, title, page_id, category_id, url, open_in_new_tab, sort_order, parent_id, page:pages(id, title, slug, status), category:categories(id, name, slug)";
+const MENU_ITEM_COLUMNS_LEGACY = "id, location, kind, title, page_id, category_id, url, open_in_new_tab, sort_order, page:pages(id, title, slug, status), category:categories(id, name, slug)";
 
 /** `menu_items` is missing until migration 20261023000000_menus.sql has run. */
 export function isMissingMenuSchema(e: unknown): boolean {
@@ -507,14 +508,56 @@ export function isMissingMenuSchema(e: unknown): boolean {
 export async function adminListMenuItems(location: MenuLocation): Promise<MenuItem[]> {
   await requireAdmin();
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const primaryRes = await supabase
     .from("menu_items")
     .select(MENU_ITEM_COLUMNS)
     .eq("location", location)
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
+
+  let data: unknown[] | null = primaryRes.data;
+  let error = primaryRes.error;
+  let usedLegacy = false;
+  if (error && /parent_id/i.test(`${error.message} ${error.code}`)) {
+    usedLegacy = true;
+    const legacyRes = await supabase
+      .from("menu_items")
+      .select(MENU_ITEM_COLUMNS_LEGACY)
+      .eq("location", location)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    data = legacyRes.data;
+    error = legacyRes.error;
+  }
+
   if (error) throw new Error(`Failed to load menu: ${error.message}`);
-  return (data ?? []) as unknown as MenuItem[];
+  const items = (data ?? []) as unknown as MenuItem[];
+
+  if (location !== "header") {
+    return items.map((item) => ({ ...item, parent_id: null }));
+  }
+
+  if (usedLegacy) {
+    const { data: settingsRow } = await supabase
+      .from("site_settings")
+      .select("theme_gradients")
+      .eq("id", 1)
+      .maybeSingle();
+    const meta =
+      settingsRow?.theme_gradients && typeof settingsRow.theme_gradients === "object"
+        ? (settingsRow.theme_gradients as Record<string, unknown>)
+        : {};
+    const parentMap =
+      meta.menu_parent_map && typeof meta.menu_parent_map === "object"
+        ? (meta.menu_parent_map as Record<string, string | null>)
+        : {};
+    return items.map((item) => ({
+      ...item,
+      parent_id: parentMap[item.id] ?? null,
+    }));
+  }
+
+  return items.map((item) => ({ ...item, parent_id: item.parent_id ?? null }));
 }
 
 export type PageOption = { id: string; title: string; slug: string; status: PageStatus };

@@ -44,6 +44,8 @@ export type MenuItem = {
   url: string | null;
   open_in_new_tab: boolean;
   sort_order: number;
+  /** Optional parent menu item id (used for dropdown items in the Header menu). */
+  parent_id?: string | null;
   /** Embedded targets (admin queries). A draft page comes back with `status: "draft"`. */
   page?: { id: string; title: string; slug: string; status: PageStatus } | null;
   category?: { id: string; name: string; slug: string } | null;

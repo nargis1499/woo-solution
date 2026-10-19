@@ -3,13 +3,12 @@ import { Suspense } from "react";
 import { ShoppingBag } from "lucide-react";
 import { getSiteSettings } from "@/lib/site-settings";
 import { getMenu } from "@/lib/menu";
-import { buttonVariants } from "@/components/ui/button-variants";
 import { NotificationBellGate, NotificationBellSkeleton } from "@/components/notifications/notification-bell-gate";
 import { CartBadge } from "./cart-badge";
 import { WishlistBadge } from "./wishlist-badge";
 import { PresenceGate } from "./presence-gate";
 import { MobileNav } from "./mobile-nav";
-import { NavLink } from "./nav-link";
+import { HeaderNav } from "./header-nav";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu, UserMenuSkeleton } from "./user-menu";
 
@@ -29,13 +28,7 @@ export async function Header() {
           <span className="truncate">{store_name}</span>
         </Link>
 
-        {nav.length > 0 && (
-          <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
-            {nav.map((item) => (
-              <NavLink key={item.id} item={item} className={buttonVariants({ variant: "ghost", size: "sm" })} />
-            ))}
-          </nav>
-        )}
+        <HeaderNav items={nav} />
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {/* Reads the auth cookie → streams in behind Suspense */}

@@ -11,13 +11,19 @@ import { CheckboxField, SubmitButton } from "@/components/admin/form-bits";
 import { Section } from "@/components/admin/ui";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 
 /**
- * "Add to menu" panel: a page, a category or a custom link. Each form posts to the same Server
- * Action, which appends the item to the end of the current menu and comes back with a toast.
- * Pages / categories that are already in this menu are left out of the pickers.
+ * "Add to menu" panel: a page, a category, a custom link, or (for the Header menu)
+ * a Dropdown parent menu. Each form posts to the same Server Action, which appends
+ * the item to the end of the current menu and comes back with a toast.
  */
 export function AddMenuItems({
   location,
@@ -33,17 +39,32 @@ export function AddMenuItems({
   totalCategories: number;
 }) {
   const [pageState, pageAction] = useActionState<AdminFormState, FormData>(addMenuItem, null);
-  const [categoryState, categoryAction] = useActionState<AdminFormState, FormData>(addMenuItem, null);
+  const [categoryState, categoryAction] = useActionState<AdminFormState, FormData>(
+    addMenuItem,
+    null,
+  );
   const [linkState, linkAction] = useActionState<AdminFormState, FormData>(addMenuItem, null);
+  const [dropdownState, dropdownAction] = useActionState<AdminFormState, FormData>(
+    addMenuItem,
+    null,
+  );
   useFormToast(pageState);
   useFormToast(categoryState);
   useFormToast(linkState);
+  useFormToast(dropdownState);
   const link = linkState?.values ?? {};
   const linkErr = linkState?.fieldErrors ?? {};
+  const drop = dropdownState?.values ?? {};
+  const dropErr = dropdownState?.fieldErrors ?? {};
   const label = menuLocationLabel(location).toLowerCase();
 
   return (
-    <Section title="Add to menu" description={`New items join the end of the ${label}.`} className="lg:sticky lg:top-20" data-testid="menu-add">
+    <Section
+      title="Add to menu"
+      description={`New items join the end of the ${label}.`}
+      className="lg:sticky lg:top-20"
+      data-testid="menu-add"
+    >
       <div className="space-y-5">
         {/* ── Pages ─────────────────────────────────────────────────────── */}
         <form action={pageAction} className="space-y-2" noValidate>
@@ -52,7 +73,19 @@ export function AddMenuItems({
           <Field data-invalid={Boolean(pageState?.fieldErrors?.page_id) || undefined}>
             <FieldLabel htmlFor="menu-page">Page</FieldLabel>
             <div className="flex gap-2">
-              <Select name="page_id" aria-label="Page" placeholder={pages.length ? "Choose a page" : totalPages ? "All pages are in this menu" : "No pages yet"} isDisabled={pages.length === 0} className="min-w-0 flex-1">
+              <Select
+                name="page_id"
+                aria-label="Page"
+                placeholder={
+                  pages.length
+                    ? "Choose a page"
+                    : totalPages
+                      ? "All pages are in this menu"
+                      : "No pages yet"
+                }
+                isDisabled={pages.length === 0}
+                className="min-w-0 flex-1"
+              >
                 <SelectTrigger id="menu-page" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -60,12 +93,19 @@ export function AddMenuItems({
                   {pages.map((p) => (
                     <SelectItem key={p.id} id={p.id} textValue={p.title}>
                       <span className="truncate">{p.title}</span>
-                      {p.status !== "published" && <span className="ml-1 text-xs text-muted-foreground">(draft)</span>}
+                      {p.status !== "published" && (
+                        <span className="ml-1 text-xs text-muted-foreground">(draft)</span>
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <SubmitButton variant="outline" pendingLabel="Adding…" className="shrink-0" disabled={pages.length === 0}>
+              <SubmitButton
+                variant="outline"
+                pendingLabel="Adding…"
+                className="shrink-0"
+                disabled={pages.length === 0}
+              >
                 Add
               </SubmitButton>
             </div>
@@ -85,7 +125,13 @@ export function AddMenuItems({
               <Select
                 name="category_id"
                 aria-label="Category"
-                placeholder={categories.length ? "Choose a category" : totalCategories ? "All categories are in this menu" : "No categories yet"}
+                placeholder={
+                  categories.length
+                    ? "Choose a category"
+                    : totalCategories
+                      ? "All categories are in this menu"
+                      : "No categories yet"
+                }
                 isDisabled={categories.length === 0}
                 className="min-w-0 flex-1"
               >
@@ -100,7 +146,12 @@ export function AddMenuItems({
                   ))}
                 </SelectContent>
               </Select>
-              <SubmitButton variant="outline" pendingLabel="Adding…" className="shrink-0" disabled={categories.length === 0}>
+              <SubmitButton
+                variant="outline"
+                pendingLabel="Adding…"
+                className="shrink-0"
+                disabled={categories.length === 0}
+              >
                 Add
               </SubmitButton>
             </div>
@@ -116,21 +167,85 @@ export function AddMenuItems({
           <input type="hidden" name="kind" value="custom" />
           <Field data-invalid={Boolean(linkErr.title) || undefined}>
             <FieldLabel htmlFor="menu-link-title">Custom link · text</FieldLabel>
-            <Input id="menu-link-title" name="title" maxLength={MENU_TITLE_MAX} placeholder="e.g. Help centre" defaultValue={link.title ?? ""} aria-invalid={Boolean(linkErr.title) || undefined} />
+            <Input
+              id="menu-link-title"
+              name="title"
+              maxLength={MENU_TITLE_MAX}
+              placeholder="e.g. Help centre"
+              defaultValue={link.title ?? ""}
+              aria-invalid={Boolean(linkErr.title) || undefined}
+            />
             <FieldError>{linkErr.title}</FieldError>
           </Field>
           <Field data-invalid={Boolean(linkErr.url) || undefined}>
             <FieldLabel htmlFor="menu-link-url">URL</FieldLabel>
-            <Input id="menu-link-url" name="url" inputMode="url" placeholder="https://example.com or /about" defaultValue={link.url ?? ""} aria-invalid={Boolean(linkErr.url) || undefined} />
+            <Input
+              id="menu-link-url"
+              name="url"
+              inputMode="url"
+              placeholder="https://example.com or /about"
+              defaultValue={link.url ?? ""}
+              aria-invalid={Boolean(linkErr.url) || undefined}
+            />
             <FieldError>{linkErr.url}</FieldError>
           </Field>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <CheckboxField id="menu-link-new-tab" name="open_in_new_tab" label="Open in a new tab" defaultChecked={link.open_in_new_tab === "on"} />
+            <CheckboxField
+              id="menu-link-new-tab"
+              name="open_in_new_tab"
+              label="Open in a new tab"
+              defaultChecked={link.open_in_new_tab === "on"}
+            />
             <SubmitButton variant="outline" pendingLabel="Adding…">
               Add link
             </SubmitButton>
           </div>
         </form>
+
+        {/* ── Dropdown menu (Header menu only) ──────────────────────────── */}
+        {location === "header" && (
+          <>
+            <Separator />
+            <form
+              action={dropdownAction}
+              className="space-y-3"
+              noValidate
+              data-testid="menu-add-dropdown"
+            >
+              <input type="hidden" name="location" value="header" />
+              <input type="hidden" name="kind" value="dropdown" />
+              <Field data-invalid={Boolean(dropErr.title) || undefined}>
+                <FieldLabel htmlFor="menu-dropdown-title">Dropdown menu · title</FieldLabel>
+                <Input
+                  id="menu-dropdown-title"
+                  name="title"
+                  maxLength={MENU_TITLE_MAX}
+                  placeholder="e.g. Categories, Products, More"
+                  defaultValue={drop.title ?? ""}
+                  aria-invalid={Boolean(dropErr.title) || undefined}
+                />
+                <FieldError>{dropErr.title}</FieldError>
+              </Field>
+              <Field data-invalid={Boolean(dropErr.url) || undefined}>
+                <FieldLabel htmlFor="menu-dropdown-url">URL (optional)</FieldLabel>
+                <Input
+                  id="menu-dropdown-url"
+                  name="url"
+                  inputMode="url"
+                  placeholder="# (or /shop)"
+                  defaultValue={drop.url ?? "#"}
+                  aria-invalid={Boolean(dropErr.url) || undefined}
+                />
+                <FieldError>{dropErr.url}</FieldError>
+              </Field>
+              <div className="flex items-center justify-end">
+                <SubmitButton variant="outline" pendingLabel="Adding…">
+                  Add dropdown
+                </SubmitButton>
+              </div>
+            </form>
+          </>
+        )}
       </div>
     </Section>
   );
