@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   ArrowRightIcon,
@@ -20,6 +21,14 @@ import { resolveQuickCheckoutTiers, type QuickCheckoutTier } from "@/lib/quick-c
 import type { Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useMoney } from "./money-provider";
+
+const PENDING_QC_STORAGE_KEY = "woo_pending_quick_checkout";
+
+type QuickCheckoutPayload = {
+  authenticated?: boolean;
+  storeName?: string;
+  products?: Product[];
+};
 
 const STEPS = [
   { num: 1, label: "1. Package" },
@@ -73,29 +82,61 @@ function ProductBadgeIcon({ index }: { index: number }) {
   return <ZapIcon className="size-3.5 shrink-0 fill-amber-400 text-amber-500" aria-hidden />;
 }
 
+function buildLoginRedirectUrl(productId: string): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set("quickCheckout", productId);
+  const nextPath = `${url.pathname}${url.search}`;
+  return `/login?next=${encodeURIComponent(nextPath)}`;
+}
+
 export function QuickCheckoutModal({
   initialProduct,
+  initialData,
   onClose,
 }: {
   initialProduct: Product;
+  initialData?: QuickCheckoutPayload | null;
   onClose: () => void;
 }) {
+  const router = useRouter();
   const money = useMoney();
-  const [storeName, setStoreName] = useState<string>("Woo Solution");
-  const [products, setProducts] = useState<Product[]>([initialProduct]);
+  const [storeName, setStoreName] = useState<string>(
+    initialData?.storeName || "Woo Solution",
+  );
+  const [products, setProducts] = useState<Product[]>(
+    initialData?.products && initialData.products.length > 0
+      ? initialData.products
+      : [initialProduct],
+  );
   const [selectedProductId, setSelectedProductId] = useState<string>(initialProduct.id);
   const [selectedTierByProduct, setSelectedTierByProduct] = useState<Record<string, string>>({});
   const [step, setStep] = useState<number>(1);
 
   useEffect(() => {
+    if (initialData?.products && initialData.products.length > 0) return;
+
     let cancelled = false;
     const params = new URLSearchParams({ productId: initialProduct.id });
     const cid = initialProduct.category_id ?? initialProduct.category?.id;
     if (cid) params.set("categoryId", cid);
 
     fetch(`/api/quick-checkout?${params.toString()}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { storeName?: string; products?: Product[] } | null) => {
+      .then(async (res) => {
+        if (res.status === 401) {
+          if (!cancelled) {
+            try {
+              sessionStorage.setItem(PENDING_QC_STORAGE_KEY, initialProduct.id);
+            } catch {
+              // ignore storage errors
+            }
+            onClose();
+            router.push(buildLoginRedirectUrl(initialProduct.id));
+          }
+          return null;
+        }
+        return res.ok ? ((await res.json()) as QuickCheckoutPayload) : null;
+      })
+      .then((data) => {
         if (cancelled || !data) return;
         if (data.storeName) setStoreName(data.storeName);
         if (Array.isArray(data.products) && data.products.length > 0) {
@@ -109,7 +150,14 @@ export function QuickCheckoutModal({
     return () => {
       cancelled = true;
     };
-  }, [initialProduct.id, initialProduct.category_id, initialProduct.category?.id]);
+  }, [
+    initialData,
+    initialProduct.id,
+    initialProduct.category_id,
+    initialProduct.category?.id,
+    onClose,
+    router,
+  ]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -128,7 +176,7 @@ export function QuickCheckoutModal({
     products.find((p) => p.id === selectedProductId) ?? products[0] ?? initialProduct;
   const tiers: QuickCheckoutTier[] = resolveQuickCheckoutTiers(selectedProduct);
 
-  // Default to the 2nd tier (e.g. 2x or 5x) when multiple tiers exist, or the stored selection
+  // Default to the 5x tier or 2nd tier when multiple tiers exist, or the stored selection
   const preferredDefaultTier =
     tiers.find((t) => t.quantity === 5) ?? tiers[Math.min(1, tiers.length - 1)] ?? tiers[0];
   const activeTierId = selectedTierByProduct[selectedProduct.id] ?? preferredDefaultTier?.id;
@@ -415,26 +463,116 @@ export function QuickCheckoutButton({
   product: Product;
   className?: string;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(false);
+  const [preloadedData, setPreloadedData] = useState<QuickCheckoutPayload | null>(null);
+
+  // When returning from /login?next=...?quickCheckout=<product.id>, automatically open Quick Checkout
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const queryTarget = url.searchParams.get("quickCheckout");
+    let storageTarget: string | null = null;
+    try {
+      storageTarget = sessionStorage.getItem(PENDING_QC_STORAGE_KEY);
+    } catch {
+      // ignore storage errors
+    }
+
+    const shouldAutoOpen = queryTarget === product.id || storageTarget === product.id;
+    if (!shouldAutoOpen) return;
+
+    let cancelled = false;
+    const params = new URLSearchParams({ productId: product.id });
+    const cid = product.category_id ?? product.category?.id;
+    if (cid) params.set("categoryId", cid);
+
+    fetch(`/api/quick-checkout?${params.toString()}`)
+      .then(async (res) => {
+        if (cancelled) return null;
+        if (res.status === 401) {
+          // Still not authenticated; clean query param if user manually navigated back without signing in
+          return null;
+        }
+        return res.ok ? ((await res.json()) as QuickCheckoutPayload) : null;
+      })
+      .then((data) => {
+        if (cancelled || !data) return;
+        try {
+          sessionStorage.removeItem(PENDING_QC_STORAGE_KEY);
+        } catch {
+          // ignore storage errors
+        }
+        const currentUrl = new URL(window.location.href);
+        if (currentUrl.searchParams.get("quickCheckout") === product.id) {
+          currentUrl.searchParams.delete("quickCheckout");
+          window.history.replaceState(
+            null,
+            "",
+            `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`,
+          );
+        }
+        setPreloadedData(data);
+        setOpen(true);
+      })
+      .catch(() => {
+        // ignore network errors
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [product.id, product.category_id, product.category?.id]);
+
+  async function handleClick() {
+    if (checkingAuth) return;
+    setCheckingAuth(true);
+    try {
+      const params = new URLSearchParams({ productId: product.id });
+      const cid = product.category_id ?? product.category?.id;
+      if (cid) params.set("categoryId", cid);
+
+      const res = await fetch(`/api/quick-checkout?${params.toString()}`);
+      if (res.status === 401) {
+        try {
+          sessionStorage.setItem(PENDING_QC_STORAGE_KEY, product.id);
+        } catch {
+          // ignore storage errors
+        }
+        router.push(buildLoginRedirectUrl(product.id));
+        return;
+      }
+
+      if (res.ok) {
+        const data = (await res.json()) as QuickCheckoutPayload;
+        setPreloadedData(data);
+      }
+      setOpen(true);
+    } finally {
+      setCheckingAuth(false);
+    }
+  }
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        disabled={checkingAuth}
+        onClick={handleClick}
         data-testid="quick-checkout-button"
         className={cn(
-          "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-primary/35 bg-primary/10 px-4 text-xs font-bold text-primary shadow-2xs transition-colors hover:bg-primary hover:text-primary-foreground",
+          "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-primary/35 bg-primary/10 px-4 text-xs font-bold text-primary shadow-2xs transition-colors hover:bg-primary hover:text-primary-foreground disabled:opacity-60",
           className,
         )}
       >
         <ZapIcon className="size-3.5 fill-current" aria-hidden />
-        Quick Checkout
+        {checkingAuth ? "Checking…" : "Quick Checkout"}
       </button>
 
       {open && (
         <QuickCheckoutModal
           initialProduct={product}
+          initialData={preloadedData}
           onClose={() => setOpen(false)}
         />
       )}

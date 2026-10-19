@@ -24,7 +24,19 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [supabase, settings] = await Promise.all([createClient(), getSiteSettings()]);
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { authenticated: false, error: "Authentication required" },
+        { status: 401 },
+      );
+    }
+
+    const settings = await getSiteSettings();
 
     // Resolve category_id if not provided
     let categoryId = UUID_RE.test(categoryIdParam) ? categoryIdParam : null;
@@ -103,6 +115,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
+      authenticated: true,
       storeName: settings.store_name,
       products,
     });
