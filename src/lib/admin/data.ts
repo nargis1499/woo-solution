@@ -30,7 +30,7 @@ const PRODUCT_MEDIA_COLUMNS = `${PRODUCT_COLUMNS}, image_media_id, image_media:m
 const PRODUCT_MEDIA_COLUMNS_NO_BRAND = `${PRODUCT_COLUMNS_NO_BRAND}, image_media_id, image_media:media!products_image_media_id_fkey(${MEDIA_REF_COLUMNS}), gallery:product_media(media_id, position, media(${MEDIA_REF_COLUMNS}))`;
 
 /** Product form: the media embeds plus the variable-product tables. */
-const PRODUCT_VARIATION_COLUMNS = `${PRODUCT_MEDIA_COLUMNS}, attributes:product_attributes(id, product_id, name, options, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
+const PRODUCT_VARIATION_COLUMNS = `${PRODUCT_MEDIA_COLUMNS}, attributes:product_attributes(id, product_id, name, options, is_quantity, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
 const PRODUCT_VARIATION_COLUMNS_NO_BRAND = `${PRODUCT_MEDIA_COLUMNS_NO_BRAND}, attributes:product_attributes(id, product_id, name, options, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
 
 /** Without `type` / `sku`, for a database that has not run migration 14 yet. */

@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ImageIcon, PlusIcon, SparklesIcon, Trash2Icon, WandSparklesIcon, XIcon } from "lucide-react";
+import { CheckIcon, ImageIcon, PlusIcon, SparklesIcon, Trash2Icon, WandSparklesIcon, XIcon, ZapIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   MAX_ATTRIBUTES,
   MAX_ATTRIBUTE_OPTIONS,
   combinationLabel,
   generateCombinations,
+  isNumericalQuantityAttribute,
   sameCombination,
   suggestSku,
   usableAttributes,
@@ -38,7 +39,11 @@ import { MediaPickerDialog } from "./media/media-picker";
 /* ── initial state from a saved product ─────────────────────────────────────── */
 
 export function initialAttributes(product?: Product | null): DraftAttribute[] {
-  return (product?.attributes ?? []).map((a) => ({ name: a.name, options: [...a.options] }));
+  return (product?.attributes ?? []).map((a) => ({
+    name: a.name,
+    options: [...a.options],
+    is_quantity: Boolean(a.is_quantity),
+  }));
 }
 
 /** A saved variation is on sale when its regular price (compare_at) is above what it charges. */
@@ -153,7 +158,29 @@ function AttributesCard({
   error?: string;
 }) {
   const setRow = (index: number, patch: Partial<DraftAttribute>) =>
-    onChange(attributes.map((a, i) => (i === index ? { ...a, ...patch } : a)));
+    onChange(
+      attributes.map((a, i) => {
+        if (i !== index) return a;
+        const updated = { ...a, ...patch };
+        // If options were edited and are no longer numerical quantities, auto-clear is_quantity
+        if ("options" in patch && !isNumericalQuantityAttribute(updated.options)) {
+          updated.is_quantity = false;
+        }
+        return updated;
+      }),
+    );
+
+  const toggleQuantityField = (index: number) => {
+    const target = attributes[index];
+    if (!target || !isNumericalQuantityAttribute(target.options)) return;
+    const nextIsQty = !target.is_quantity;
+    onChange(
+      attributes.map((a, i) => ({
+        ...a,
+        is_quantity: i === index ? nextIsQty : false,
+      })),
+    );
+  };
 
   return (
     <Card data-testid="product-attributes">
@@ -161,42 +188,105 @@ function AttributesCard({
         <CardTitle>Attributes</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {attributes.map((attribute, index) => (
-          <div key={index} className="grid gap-3 rounded-lg border p-3 sm:grid-cols-[minmax(0,180px)_1fr_auto] sm:items-end" data-testid={`attribute-${index}`}>
-            <Field>
-              <FieldLabel htmlFor={`attribute-name-${index}`}>Attribute name</FieldLabel>
-              <Input
-                id={`attribute-name-${index}`}
-                value={attribute.name}
-                placeholder="Color"
-                maxLength={60}
-                onChange={(e) => setRow(index, { name: e.target.value })}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor={`attribute-values-${index}`}>Values</FieldLabel>
-              <ValueChips
-                id={String(index)}
-                label={`Values for attribute ${index + 1}`}
-                values={attribute.options}
-                onChange={(options) => setRow(index, { options })}
-              />
-            </Field>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={`Remove attribute ${attribute.name || index + 1}`}
-              className="text-muted-foreground hover:text-destructive"
-              onClick={() => onChange(attributes.filter((_, i) => i !== index))}
+        {attributes.map((attribute, index) => {
+          const canBeQuantity = isNumericalQuantityAttribute(attribute.options);
+          const isQty = canBeQuantity && Boolean(attribute.is_quantity);
+
+          return (
+            <div
+              key={index}
+              data-testid={`attribute-${index}`}
+              data-is-quantity={isQty ? "true" : "false"}
+              className={cn(
+                "space-y-2.5 rounded-lg border p-3 transition-colors",
+                isQty && "border-primary/50 bg-primary/[0.03]",
+              )}
             >
-              <Trash2Icon />
-            </Button>
-          </div>
-        ))}
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,180px)_1fr_auto] sm:items-end">
+                <Field>
+                  <FieldLabel htmlFor={`attribute-name-${index}`}>Attribute name</FieldLabel>
+                  <Input
+                    id={`attribute-name-${index}`}
+                    value={attribute.name}
+                    placeholder="Color"
+                    maxLength={60}
+                    onChange={(e) => setRow(index, { name: e.target.value })}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`attribute-values-${index}`}>Values</FieldLabel>
+                  <ValueChips
+                    id={String(index)}
+                    label={`Values for attribute ${index + 1}`}
+                    values={attribute.options}
+                    onChange={(options) => setRow(index, { options })}
+                  />
+                </Field>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remove attribute ${attribute.name || index + 1}`}
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => onChange(attributes.filter((_, i) => i !== index))}
+                >
+                  <Trash2Icon />
+                </Button>
+              </div>
+
+              {canBeQuantity && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5">
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isQty}
+                    onClick={() => toggleQuantityField(index)}
+                    data-testid={`attribute-is-quantity-${index}`}
+                    className={cn(
+                      "inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1 text-xs font-semibold transition-all",
+                      isQty
+                        ? "border-primary bg-primary/15 text-primary ring-1 ring-primary/30"
+                        : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                    )}
+                  >
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "grid size-3.5 place-items-center rounded-xs border transition-colors",
+                        isQty
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-muted-foreground/40 bg-background",
+                      )}
+                    >
+                      {isQty && <CheckIcon className="size-2.5 stroke-[3]" />}
+                    </span>
+                    <span>Use as QC quantity Field</span>
+                  </button>
+
+                  {isQty && (
+                    <Badge
+                      variant="default"
+                      className="gap-1 px-2 py-0.5 text-[11px]"
+                      data-testid={`attribute-quantity-badge-${index}`}
+                    >
+                      <ZapIcon className="size-3 fill-current" aria-hidden />
+                      Quantity field active
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" isDisabled={attributes.length >= MAX_ATTRIBUTES} onPress={() => onChange([...attributes, { name: "", options: [] }])}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            isDisabled={attributes.length >= MAX_ATTRIBUTES}
+            onPress={() => onChange([...attributes, { name: "", options: [], is_quantity: false }])}
+          >
             <PlusIcon /> Add attribute
           </Button>
           <span className="text-xs text-muted-foreground">

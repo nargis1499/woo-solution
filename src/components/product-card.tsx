@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { AddToCartButton } from "./add-to-cart-button";
 import { Price } from "./price";
 import { ProductImage } from "./product-image";
+import { QuickCheckoutButton } from "./quick-checkout-modal";
 import { WishlistButton } from "./wishlist-button";
 
 export function ProductCard({
@@ -149,14 +150,7 @@ export function ProductCard({
           </div>
 
           {isQuickCheckout && !soldOut && (
-            <button
-              type="button"
-              data-testid="quick-checkout-button"
-              className="mt-2.5 inline-flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-primary/35 bg-primary/10 px-4 text-xs font-bold text-primary shadow-2xs transition-colors hover:bg-primary hover:text-primary-foreground"
-            >
-              <ZapIcon className="size-3.5 fill-current" aria-hidden />
-              Quick Checkout
-            </button>
+            <QuickCheckoutButton product={product} className="mt-2.5" />
           )}
         </div>
       </CardContent>

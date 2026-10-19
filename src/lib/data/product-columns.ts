@@ -20,20 +20,21 @@ export const PRODUCT_COLUMNS_LEGACY = BASE;
 
 const MEDIA_COLUMNS = `image_media_id, image_media:media!products_image_media_id_fkey(${MEDIA_REF_COLUMNS}), gallery:product_media(media_id, position, media(${MEDIA_REF_COLUMNS}))`;
 
-const VARIATION_RELATIONS = `attributes:product_attributes(id, product_id, name, options, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
+const VARIATION_RELATIONS = `attributes:product_attributes(id, product_id, name, options, is_quantity, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
+const VARIATION_RELATIONS_NO_BRAND = `attributes:product_attributes(id, product_id, name, options, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
 
 /** Product page: media embeds + attributes + variations + brand. */
 export const PRODUCT_DETAIL_COLUMNS = `${PRODUCT_COLUMNS}, ${MEDIA_COLUMNS}, ${VARIATION_RELATIONS}`;
 
-/** Product page without `brand`. */
-export const PRODUCT_DETAIL_COLUMNS_NO_BRAND = `${PRODUCT_COLUMNS_NO_BRAND}, ${MEDIA_COLUMNS}, ${VARIATION_RELATIONS}`;
+/** Product page without `brand` / `is_quantity`. */
+export const PRODUCT_DETAIL_COLUMNS_NO_BRAND = `${PRODUCT_COLUMNS_NO_BRAND}, ${MEDIA_COLUMNS}, ${VARIATION_RELATIONS_NO_BRAND}`;
 
 /** Media embeds without the variation tables. */
 export const PRODUCT_DETAIL_COLUMNS_LEGACY = `${PRODUCT_COLUMNS_LEGACY}, ${MEDIA_COLUMNS}`;
 
 type QueryError = { code?: string; message?: string } | null;
 
-const MISSING_VARIATIONS = /product_variations|product_attributes|"type"|"sku"|"brand"|"features"|"quick_checkout"|column .*products|schema cache/i;
+const MISSING_VARIATIONS = /product_variations|product_attributes|"type"|"sku"|"brand"|"features"|"quick_checkout"|"is_quantity"|column .*products|schema cache/i;
 
 /** True for the errors a database without `brand`/`features`/`quick_checkout` or migration 14 raises for these column lists. */
 export const isMissingVariationSchema = (error: QueryError): boolean =>
@@ -44,4 +45,4 @@ export const isMissingVariationSchema = (error: QueryError): boolean =>
 export const isMissingBrandColumn = (error: QueryError): boolean =>
   Boolean(error) &&
   (error!.code === "42703" || /does not exist|schema cache/i.test(error!.message ?? "")) &&
-  /\b(brand|features|quick_checkout)\b/i.test(`${error!.message ?? ""}`);
+  /\b(brand|features|quick_checkout|is_quantity)\b/i.test(`${error!.message ?? ""}`);

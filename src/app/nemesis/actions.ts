@@ -29,6 +29,7 @@ import {
   MAX_VARIATIONS,
   cleanOptions,
   combinationLabel,
+  isNumericalQuantityAttribute,
   type SubmittedVariation,
 } from "@/lib/variations";
 import type { OrderStatus, PaymentStatus, ProductType } from "@/lib/types";
@@ -364,7 +365,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
  * Variable products – parsing, validation and persistence
  * ────────────────────────────────────────────────────────────────────────── */
 
-type ParsedAttribute = { name: string; options: string[] };
+type ParsedAttribute = { name: string; options: string[]; is_quantity: boolean };
 type ParsedVariation = SubmittedVariation & { regularDisplay: number | null; saleDisplay: number | null; stockValue: number };
 
 /** Attribute list from the hidden `attributes_json` field. */
@@ -372,17 +373,21 @@ function parseAttributes(raw: unknown[] | null): { attributes: ParsedAttribute[]
   if (!raw) return { attributes: [] };
   const attributes: ParsedAttribute[] = [];
   const seen = new Set<string>();
+  let hasQuantitySelected = false;
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") continue;
     const name = String((entry as { name?: unknown }).name ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
     const options = cleanOptions((((entry as { options?: unknown }).options as string[]) ?? []).map((v) => String(v)));
+    const rawIsQty = Boolean((entry as { is_quantity?: unknown }).is_quantity);
+    const is_quantity = rawIsQty && !hasQuantitySelected && isNumericalQuantityAttribute(options);
+    if (is_quantity) hasQuantitySelected = true;
     if (!name && options.length === 0) continue; // an empty row the admin left behind
     if (!name) return { attributes: [], attributeError: "Give every attribute a name." };
     if (seen.has(name.toLowerCase())) return { attributes: [], attributeError: `“${name}” is used twice – every attribute needs its own name.` };
     seen.add(name.toLowerCase());
     if (!options.length) return { attributes: [], attributeError: `Add at least one value to “${name}”.` };
     if (options.length > MAX_ATTRIBUTE_OPTIONS) return { attributes: [], attributeError: `“${name}” can hold at most ${MAX_ATTRIBUTE_OPTIONS} values.` };
-    attributes.push({ name, options });
+    attributes.push({ name, options, is_quantity });
   }
   if (attributes.length > MAX_ATTRIBUTES) return { attributes: [], attributeError: `A product can have at most ${MAX_ATTRIBUTES} attributes.` };
   return { attributes };
@@ -444,9 +449,32 @@ async function saveVariableProductSets(
   const { error: attrDeleteError } = await supabase.from("product_attributes").delete().eq("product_id", productId);
   if (attrDeleteError) throw attrDeleteError;
   if (attributes.length) {
-    const { error } = await supabase
+    let { error } = await supabase
       .from("product_attributes")
-      .insert(attributes.map((a, index) => ({ product_id: productId, name: a.name, options: a.options, sort_order: index })));
+      .insert(
+        attributes.map((a, index) => ({
+          product_id: productId,
+          name: a.name,
+          options: a.options,
+          is_quantity: Boolean(a.is_quantity),
+          sort_order: index,
+        })),
+      );
+    if (
+      error &&
+      (error.code === "42703" || /is_quantity|schema cache/i.test(error.message ?? ""))
+    ) {
+      ({ error } = await supabase
+        .from("product_attributes")
+        .insert(
+          attributes.map((a, index) => ({
+            product_id: productId,
+            name: a.name,
+            options: a.options,
+            sort_order: index,
+          })),
+        ));
+    }
     if (error) throw error;
   }
 

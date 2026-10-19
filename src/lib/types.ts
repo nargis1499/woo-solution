@@ -59,6 +59,7 @@ export type ProductAttribute = {
   product_id: string;
   name: string;
   options: string[];
+  is_quantity?: boolean;
   sort_order: number;
 };
 

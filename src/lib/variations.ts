@@ -9,7 +9,7 @@
 import type { ProductAttribute, ProductVariation } from "@/lib/types";
 
 /** The slice the admin form edits before anything is saved. */
-export type DraftAttribute = { name: string; options: string[] };
+export type DraftAttribute = { name: string; options: string[]; is_quantity?: boolean };
 /**
  * The slice of a variation the admin form edits. Prices are the strings the admin sees
  * (display currency) – the server action converts them to USD micros.
@@ -70,10 +70,41 @@ export function cleanOptions(options: string[]): string[] {
   return out;
 }
 
+/**
+ * True when an attribute option value represents a numerical quantity
+ * (e.g. "2", "5x", "x10", "2 item", "5 items", "10 pcs", "20 pack", "50 units", "100 accounts").
+ */
+export function isNumericalQuantityOption(raw: string): boolean {
+  const text = raw.trim();
+  if (!text) return false;
+  const match =
+    /^(?:x\s*)?(\d+)(?:\s*(?:x|pcs?|pieces?|items?|packs?|packages?|units?|accounts?|bundles?|sets?|tiers?|boxes?|orders?))?$/i.exec(
+      text,
+    );
+  if (!match) return false;
+  const n = Number(match[1]);
+  return Number.isInteger(n) && n > 0 && n <= 100_000;
+}
+
+/**
+ * True when an attribute has at least one option and all its options are numerical quantity values.
+ */
+export function isNumericalQuantityAttribute(options: string[]): boolean {
+  const cleaned = cleanOptions(options);
+  return cleaned.length > 0 && cleaned.every(isNumericalQuantityOption);
+}
+
 /** Attributes that can actually be used: a name and at least one value. */
 export function usableAttributes(attributes: DraftAttribute[]): DraftAttribute[] {
   return attributes
-    .map((a) => ({ name: a.name.trim().slice(0, 60), options: cleanOptions(a.options) }))
+    .map((a) => {
+      const options = cleanOptions(a.options);
+      return {
+        name: a.name.trim().slice(0, 60),
+        options,
+        is_quantity: Boolean(a.is_quantity) && isNumericalQuantityAttribute(options),
+      };
+    })
     .filter((a) => a.name.length > 0 && a.options.length > 0);
 }
 
