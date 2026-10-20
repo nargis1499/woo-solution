@@ -1,5 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
-import { ImageIcon } from "lucide-react";
+import { PackageIcon } from "lucide-react";
 import { canOptimizeImage } from "@/lib/image-hosts";
 import { cn } from "@/lib/utils";
 
@@ -16,23 +19,35 @@ export function ProductImage({
   priority?: boolean;
   className?: string;
 }) {
+  const trimmedSrc = src?.trim() || null;
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const hasValidImage = Boolean(trimmedSrc && failedSrc !== trimmedSrc);
+
   return (
     <div className={cn("relative aspect-square w-full overflow-hidden bg-muted", className)}>
-      {src ? (
+      {hasValidImage && trimmedSrc ? (
         <Image
-          src={src}
+          src={trimmedSrc}
           alt={alt}
           fill
           sizes={sizes}
           priority={priority}
           className="object-cover"
+          onError={() => setFailedSrc(trimmedSrc)}
           // Custom image URLs from the admin dashboard can point anywhere – serve
           // those as-is instead of failing the optimizer's host allow-list.
-          unoptimized={!canOptimizeImage(src)}
+          unoptimized={!canOptimizeImage(trimmedSrc)}
         />
       ) : (
-        <div className="grid h-full w-full place-items-center text-muted-foreground/40">
-          <ImageIcon className="size-10" strokeWidth={1.5} />
+        <div
+          data-testid="product-fallback-image"
+          className="grid h-full w-full place-items-center bg-gradient-to-br from-primary/15 via-primary/5 to-muted text-primary/75"
+        >
+          <PackageIcon
+            className="h-[48%] w-[48%] max-h-14 max-w-14 min-h-5 min-w-5"
+            strokeWidth={1.75}
+            aria-hidden
+          />
         </div>
       )}
     </div>
