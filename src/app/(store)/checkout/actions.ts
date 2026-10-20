@@ -203,9 +203,10 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
       cid: plisioCurrency.cid,
       siteOrigin: origin,
     });
-    if (invoiceRes.ok) {
-      return { ok: true, orderId, plisioInvoice: invoiceRes.invoice };
+    if (!invoiceRes.ok) {
+      return { ok: false, error: invoiceRes.error };
     }
+    return { ok: true, orderId, plisioInvoice: invoiceRes.invoice };
   }
 
   return { ok: true, orderId };

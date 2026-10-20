@@ -252,9 +252,16 @@ export function PlisioLiveInvoiceConsole({
           return;
         }
         if (manual) {
-          toast.info(
-            "Listening on blockchain — as soon as your transfer confirms, this screen updates automatically.",
-          );
+          const remoteStatus = (data as { plisioStatus?: string } | null)?.plisioStatus;
+          if (remoteStatus === "pending") {
+            toast.info(
+              "Transaction detected in blockchain mempool! Waiting for network confirmations…",
+            );
+          } else {
+            toast.warning(
+              "No payment detected on the blockchain yet (Plisio status: Unpaid). Please send the exact amount to the deposit address above.",
+            );
+          }
         }
       } catch {
         if (manual) toast.error("Could not reach verification server.");
@@ -273,7 +280,12 @@ export function PlisioLiveInvoiceConsole({
     return () => clearInterval(poll);
   }, [checkStatus]);
 
-  async function handleSimulateConfirm() {
+  async function handleVerifyPaymentClick() {
+    // In live mode, NEVER simulate confirmation — always verify against Plisio's live blockchain status!
+    if (invoice.mode === "live") {
+      await checkStatus(true);
+      return;
+    }
     setSimulating(true);
     try {
       const res = await fetch("/api/plisio/verify", {
@@ -294,7 +306,7 @@ export function PlisioLiveInvoiceConsole({
 
       if (data?.paid) {
         toast.success(
-          "Plisio blockchain payment verified! Order status set to Paid & Processing.",
+          "Plisio sandbox payment verified! Order status set to Paid & Processing.",
         );
         onConfirmed({
           txId: data.txId || invoice.txnId,
@@ -331,16 +343,46 @@ export function PlisioLiveInvoiceConsole({
       data-testid={testIdPrefix}
     >
       {/* 1. Top Live Blockchain Listener Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.08] px-4 py-3">
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3",
+          invoice.mode === "sandbox"
+            ? "border-amber-500/40 bg-amber-500/[0.08]"
+            : "border-emerald-500/30 bg-emerald-500/[0.08]",
+        )}
+      >
         <div className="flex items-center gap-2.5">
           <span className="relative flex size-3">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex size-3 rounded-full bg-emerald-500" />
+            <span
+              className={cn(
+                "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
+                invoice.mode === "sandbox" ? "bg-amber-400" : "bg-emerald-400",
+              )}
+            />
+            <span
+              className={cn(
+                "relative inline-flex size-3 rounded-full",
+                invoice.mode === "sandbox" ? "bg-amber-500" : "bg-emerald-500",
+              )}
+            />
           </span>
           <div>
-            <p className="text-xs font-extrabold text-foreground sm:text-sm">
-              Plisio Live Blockchain Listener Active
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-extrabold text-foreground sm:text-sm">
+                Plisio Live Blockchain Listener Active
+              </p>
+              <span
+                data-testid={`${testIdPrefix}-mode-badge`}
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase",
+                  invoice.mode === "sandbox"
+                    ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                    : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300",
+                )}
+              >
+                {invoice.mode === "sandbox" ? "Test Mode" : "Live Blockchain"}
+              </span>
+            </div>
             <p className="text-[11px] text-muted-foreground">
               Invoice <span className="font-mono font-semibold">{invoice.txnId}</span> ·
               Auto-updates to <strong className="text-foreground">Paid</strong> &amp;{" "}
@@ -360,7 +402,7 @@ export function PlisioLiveInvoiceConsole({
       {/* 2. QR Code + Hassle-Free 1-Click Copy Amount & Address */}
       <div className="grid gap-4 md:grid-cols-[auto_1fr] md:items-center">
         <div className="flex flex-col items-center justify-center rounded-2xl border border-border/80 bg-white p-3.5 shadow-xs">
-          <PlisioQrCodeSvg value={invoice.walletAddress} />
+          <PlisioQrCodeSvg value={invoice.walletAddress || invoice.invoiceUrl || invoice.txnId} />
           <span className="mt-2 text-[9px] font-black tracking-wider text-zinc-900 uppercase">
             SCAN WITH WALLET
           </span>
@@ -409,42 +451,66 @@ export function PlisioLiveInvoiceConsole({
             </div>
           </div>
 
-          {/* Unique Plisio Deposit Address */}
-          <div className="space-y-1">
-            <p className="text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase">
-              2. UNIQUE PLISIO {invoice.code} ({invoice.networkTag}) DEPOSIT ADDRESS
-            </p>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div
-                data-testid={`${testIdPrefix}-address`}
-                className="flex h-11 flex-1 items-center overflow-x-auto rounded-xl border border-border/80 bg-muted/35 px-3.5 font-mono text-xs font-bold text-foreground"
-              >
-                {invoice.walletAddress}
+          {/* Unique Plisio Deposit Address (or Hosted Invoice link if White-Label is off on Plisio Shop) */}
+          {invoice.walletAddress ? (
+            <div className="space-y-1">
+              <p className="text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase">
+                2. UNIQUE PLISIO {invoice.code} ({invoice.networkTag}) DEPOSIT ADDRESS
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div
+                  data-testid={`${testIdPrefix}-address`}
+                  className="flex h-11 flex-1 items-center overflow-x-auto rounded-xl border border-border/80 bg-muted/35 px-3.5 font-mono text-xs font-bold text-foreground"
+                >
+                  {invoice.walletAddress}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void copyValue(invoice.walletAddress, "address")}
+                  data-testid={`${testIdPrefix}-copy-address`}
+                  className="inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-(--button) bg-[image:var(--button-image)] px-4 text-xs font-extrabold text-(--button-foreground) shadow-xs transition-opacity hover:opacity-95"
+                >
+                  {copiedField === "address" ? (
+                    <>
+                      <CheckIcon className="size-3.5 stroke-[2.5]" aria-hidden />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <CopyIcon className="size-3.5" aria-hidden />
+                      <span>Copy Address</span>
+                    </>
+                  )}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => void copyValue(invoice.walletAddress, "address")}
-                data-testid={`${testIdPrefix}-copy-address`}
-                className="inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-(--button) bg-[image:var(--button-image)] px-4 text-xs font-extrabold text-(--button-foreground) shadow-xs transition-opacity hover:opacity-95"
-              >
-                {copiedField === "address" ? (
-                  <>
-                    <CheckIcon className="size-3.5 stroke-[2.5]" aria-hidden />
-                    <span>Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <CopyIcon className="size-3.5" aria-hidden />
-                    <span>Copy Address</span>
-                  </>
-                )}
-              </button>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase">
+                2. COMPLETE PAYMENT ON PLISIO HOSTED INVOICE
+              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/35 px-3.5 py-2.5 text-xs text-muted-foreground">
+                <span>
+                  Open your Plisio invoice to view the deposit address (or enable White-Label in your Plisio Shop settings to display the wallet address inline here).
+                </span>
+                {invoice.invoiceUrl && (
+                  <a
+                    href={invoice.invoiceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-(--button) bg-[image:var(--button-image)] px-3 py-1.5 text-xs font-extrabold text-(--button-foreground)"
+                  >
+                    <span>Open Plisio Invoice</span>
+                    <ExternalLinkIcon className="size-3.5" aria-hidden />
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 3. Action Buttons: Check Status + Confirm Payment (Auto-Verify) */}
+      {/* 3. Action Buttons: Check Status + Verify / Simulate (Test Mode only) */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-border/80 pt-3.5">
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -477,19 +543,32 @@ export function PlisioLiveInvoiceConsole({
         <button
           type="button"
           disabled={simulating || checking}
-          onClick={() => void handleSimulateConfirm()}
+          onClick={() => void handleVerifyPaymentClick()}
           data-testid={`${testIdPrefix}-confirm-payment`}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-extrabold text-white shadow-md transition-all hover:bg-emerald-500 active:scale-[0.99] disabled:opacity-60 sm:text-sm"
+          className={cn(
+            "inline-flex cursor-pointer items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-extrabold text-white shadow-md transition-all active:scale-[0.99] disabled:opacity-60 sm:text-sm",
+            invoice.mode === "sandbox"
+              ? "bg-amber-600 hover:bg-amber-500"
+              : "bg-emerald-600 hover:bg-emerald-500",
+          )}
         >
-          {simulating ? (
+          {simulating || checking ? (
             <>
               <Loader2Icon className="size-4 animate-spin" aria-hidden />
-              <span>Verifying Payment…</span>
+              <span>
+                {invoice.mode === "sandbox"
+                  ? "Simulating Confirmation…"
+                  : "Checking Blockchain…"}
+              </span>
             </>
           ) : (
             <>
               <CheckCircle2Icon className="size-4" aria-hidden />
-              <span>I Have Sent Payment · Auto-Verify Now</span>
+              <span>
+                {invoice.mode === "sandbox"
+                  ? "Simulate Test Payment (Test Mode)"
+                  : "I Have Sent Payment · Verify on Blockchain"}
+              </span>
             </>
           )}
         </button>

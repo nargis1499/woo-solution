@@ -8,6 +8,7 @@
 
 alter table public.site_settings
   add column if not exists payment_plisio_enabled boolean not null default false,
+  add column if not exists payment_plisio_test_mode boolean not null default false,
   add column if not exists payment_plisio_secret_key text;
 
 create or replace function public.get_plisio_order_state(p_order_id uuid)

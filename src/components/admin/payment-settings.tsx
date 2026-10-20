@@ -35,6 +35,9 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
   const [plisioEnabled, setPlisioEnabled] = useState<boolean>(
     settings.payment_plisio_enabled,
   );
+  const [plisioTestMode, setPlisioTestMode] = useState<boolean>(
+    settings.payment_plisio_test_mode,
+  );
   const [plisioSecretKey, setPlisioSecretKey] = useState<string>(
     settings.payment_plisio_secret_key ?? "",
   );
@@ -68,6 +71,7 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
   async function persistPayment(next: {
     payment_cod_enabled?: boolean;
     payment_plisio_enabled?: boolean;
+    payment_plisio_test_mode?: boolean;
     payment_plisio_secret_key?: string | null;
     payment_crypto_enabled?: boolean;
     payment_crypto_protocols?: CryptoProtocol[];
@@ -97,7 +101,15 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
     }
     await persistPayment({
       payment_plisio_enabled: enabled,
+      payment_plisio_test_mode: plisioTestMode,
       payment_plisio_secret_key: plisioSecretKey.trim() || null,
+    });
+  }
+
+  async function handleTogglePlisioTestMode(enabled: boolean) {
+    setPlisioTestMode(enabled);
+    await persistPayment({
+      payment_plisio_test_mode: enabled,
     });
   }
 
@@ -340,6 +352,17 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
                 >
                   {hasPlisioKey ? "Secret Key Configured" : "No Secret Key"}
                 </span>
+                <span
+                  data-testid="payment-plisio-mode-badge"
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase",
+                    plisioTestMode
+                      ? "border border-amber-500/35 bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                      : "border border-emerald-500/30 bg-emerald-500/12 text-emerald-600 dark:text-emerald-400",
+                  )}
+                >
+                  {plisioTestMode ? "Test Mode" : "Live Mode"}
+                </span>
               </div>
             </div>
           </div>
@@ -380,6 +403,50 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
             className="space-y-5 border-t bg-muted/10 p-6"
             data-testid="payment-plisio-body"
           >
+            {/* Test Mode Toggle Card */}
+            <div
+              data-testid="payment-plisio-test-mode-row"
+              className={cn(
+                "flex flex-wrap items-center justify-between gap-4 rounded-xl border p-4 transition-colors",
+                plisioTestMode
+                  ? "border-amber-500/40 bg-amber-500/[0.08]"
+                  : "border-border bg-background/70",
+              )}
+            >
+              <div className="space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold text-foreground">
+                    Test Mode (Admin-Only Sandbox Simulation)
+                  </p>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase",
+                      plisioTestMode
+                        ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                        : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+                    )}
+                  >
+                    {plisioTestMode
+                      ? "Admin Simulation Enabled"
+                      : "Disabled · Real Payments Only"}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {plisioTestMode
+                    ? "Test Mode is ON for Admin accounts only — logged-in Admins can simulate payments at checkout, while regular customers always receive real live Plisio invoices."
+                    : "Test Mode is OFF — strictly enforces real Plisio API & blockchain verification for all users."}
+                </p>
+              </div>
+
+              <Switch
+                aria-label="Enable Plisio Test Mode"
+                isSelected={plisioTestMode}
+                isDisabled={isPending}
+                onChange={(enabled) => void handleTogglePlisioTestMode(enabled)}
+                data-testid="payment-plisio-test-mode-switch"
+              />
+            </div>
+
             {/* Secret Key Configuration Form */}
             <form
               onSubmit={(e) => void handleSavePlisioKey(e)}

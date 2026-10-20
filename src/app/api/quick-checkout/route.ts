@@ -40,14 +40,20 @@ export async function GET(request: NextRequest) {
       getSiteSettings(),
       supabase
         .from("profiles")
-        .select("full_name, email, phone")
+        .select("full_name, email, phone, is_admin")
         .eq("id", user.id)
         .maybeSingle(),
     ]);
 
     const profile = profileRes.data as
-      | { full_name?: string | null; email?: string | null; phone?: string | null }
+      | {
+          full_name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          is_admin?: boolean | null;
+        }
       | null;
+    const isAdmin = profile?.is_admin === true;
     const metaName =
       typeof user.user_metadata?.full_name === "string"
         ? user.user_metadata.full_name
@@ -145,7 +151,8 @@ export async function GET(request: NextRequest) {
         codEnabled: settings.payment_cod_enabled,
         plisioEnabled:
           settings.payment_plisio_enabled &&
-          Boolean(settings.payment_plisio_secret_key),
+          (Boolean(settings.payment_plisio_secret_key) ||
+            (settings.payment_plisio_test_mode && isAdmin)),
         cryptoEnabled: settings.payment_crypto_enabled,
         cryptoProtocols: settings.payment_crypto_protocols.filter((p) => p.enabled),
       },

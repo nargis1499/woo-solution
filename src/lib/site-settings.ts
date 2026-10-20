@@ -44,6 +44,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   shipping_rate_micros: FLAT_SHIPPING_MICROS,
   payment_cod_enabled: true,
   payment_plisio_enabled: false,
+  payment_plisio_test_mode: false,
   payment_plisio_secret_key: null,
   payment_crypto_enabled: true,
   payment_crypto_protocols: DEFAULT_CRYPTO_PROTOCOLS,
@@ -127,6 +128,7 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     shipping_rate_micros: nonNegative(row.shipping_rate_micros ?? meta.shipping_rate_micros, FLAT_SHIPPING_MICROS),
     payment_cod_enabled: flag(row.payment_cod_enabled ?? meta.payment_cod_enabled, true),
     payment_plisio_enabled: flag(row.payment_plisio_enabled ?? meta.payment_plisio_enabled, false),
+    payment_plisio_test_mode: flag(row.payment_plisio_test_mode ?? meta.payment_plisio_test_mode, false),
     payment_plisio_secret_key: text(row.payment_plisio_secret_key ?? meta.payment_plisio_secret_key),
     payment_crypto_enabled: flag(row.payment_crypto_enabled ?? meta.payment_crypto_enabled, true),
     payment_crypto_protocols: normaliseCryptoProtocols(

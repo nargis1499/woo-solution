@@ -356,6 +356,7 @@ export type SiteSettings = {
   // WooCommerce → Payment
   payment_cod_enabled: boolean;
   payment_plisio_enabled: boolean;
+  payment_plisio_test_mode: boolean;
   payment_plisio_secret_key: string | null;
   payment_crypto_enabled: boolean;
   payment_crypto_protocols: CryptoProtocol[];

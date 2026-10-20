@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { NOINDEX } from "@/lib/seo";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { getCurrentUser } from "@/lib/auth";
+import { getAdminStatus } from "@/lib/admin/auth";
 import { getSiteSettings } from "@/lib/site-settings";
 import { CheckoutForm } from "@/components/checkout-form";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,8 +21,8 @@ export default function CheckoutPage() {
 }
 
 async function CheckoutGate() {
-  const [user, settings] = await Promise.all([
-    getCurrentUser(),
+  const [{ user, isAdmin }, settings] = await Promise.all([
+    getAdminStatus(),
     getSiteSettings(),
   ]);
   if (!user) redirect("/login?next=%2Fcheckout");
@@ -35,7 +35,8 @@ async function CheckoutGate() {
         codEnabled: settings.payment_cod_enabled,
         plisioEnabled:
           settings.payment_plisio_enabled &&
-          Boolean(settings.payment_plisio_secret_key),
+          (Boolean(settings.payment_plisio_secret_key) ||
+            (settings.payment_plisio_test_mode && isAdmin)),
         cryptoEnabled: settings.payment_crypto_enabled,
         cryptoProtocols: settings.payment_crypto_protocols.filter((p) => p.enabled),
       }}

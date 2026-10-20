@@ -1158,6 +1158,7 @@ const META_FALLBACK_KEYS = [
   "shipping_rate_micros",
   "payment_cod_enabled",
   "payment_plisio_enabled",
+  "payment_plisio_test_mode",
   "payment_plisio_secret_key",
   "payment_crypto_enabled",
   "payment_crypto_protocols",
@@ -1392,6 +1393,7 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
 export async function savePaymentSettings(input: {
   payment_cod_enabled?: boolean;
   payment_plisio_enabled?: boolean;
+  payment_plisio_test_mode?: boolean;
   payment_plisio_secret_key?: string | null;
   payment_crypto_enabled?: boolean;
   payment_crypto_protocols?: CryptoProtocol[];
@@ -1403,6 +1405,9 @@ export async function savePaymentSettings(input: {
     }
     if (typeof input.payment_plisio_enabled === "boolean") {
       patch.payment_plisio_enabled = input.payment_plisio_enabled;
+    }
+    if (typeof input.payment_plisio_test_mode === "boolean") {
+      patch.payment_plisio_test_mode = input.payment_plisio_test_mode;
     }
     if (input.payment_plisio_secret_key !== undefined) {
       const trimmed =

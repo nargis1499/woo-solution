@@ -1,5 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
+import { isCurrentUserAdmin } from "@/lib/admin/auth";
 import { publishNotificationsChanged } from "@/lib/notification-bus";
 import { formatOrderNotesWithPayment, parseOrderPaymentInfo } from "@/lib/order-payment";
 import {
@@ -15,14 +16,13 @@ import { createServiceClient } from "@/lib/supabase/service";
 const PLISIO_API_BASE = "https://api.plisio.net/api/v1";
 
 /**
- * Generates a deterministic, realistic-looking deposit address per order + currency
- * when running with a sandbox/test key (`plisio_test_*` / `*demo*` / `*sandbox*`) or when
- * Plisio White-Label mode is simulated locally.
+ * Generates a deterministic test deposit address per order + currency
+ * ONLY when Admin has explicitly enabled Test Mode (`payment_plisio_test_mode = true`).
  */
-function buildSandboxAddress(orderId: string, currency: PlisioCurrency): string {
+function buildTestModeAddress(orderId: string, currency: PlisioCurrency): string {
   const hash = crypto
     .createHash("sha256")
-    .update(`plisio:${orderId}:${currency.cid}`)
+    .update(`plisio-test:${orderId}:${currency.cid}`)
     .digest("hex");
 
   switch (currency.cid) {
@@ -50,10 +50,10 @@ function buildSandboxAddress(orderId: string, currency: PlisioCurrency): string 
   }
 }
 
-function buildSandboxBlockchainTxId(orderId: string, cid: string): string {
+function buildTestModeBlockchainTxId(orderId: string, cid: string): string {
   const hash = crypto
     .createHash("sha256")
-    .update(`plisio-tx:${orderId}:${cid}:${Date.now()}`)
+    .update(`plisio-test-tx:${orderId}:${cid}:${Date.now()}`)
     .digest("hex");
   if (cid === "ETH" || cid === "USDT" || cid === "USDT_BSC") {
     return `0x${hash}`;
@@ -63,25 +63,25 @@ function buildSandboxBlockchainTxId(orderId: string, cid: string): string {
 
 export async function getPlisioSecretKey(): Promise<{
   enabled: boolean;
+  testMode: boolean;
+  isAdmin: boolean;
   secretKey: string | null;
 }> {
-  const settings = await getSiteSettingsFresh();
+  const [settings, isAdmin] = await Promise.all([
+    getSiteSettingsFresh(),
+    isCurrentUserAdmin().catch(() => false),
+  ]);
   const secretKey = settings.payment_plisio_secret_key;
+  // Test Mode simulation is strictly locked to Admin accounts only;
+  // regular customers ALWAYS run in real live Plisio mode.
+  const testMode = Boolean(settings.payment_plisio_test_mode && isAdmin);
 
   return {
-    enabled: Boolean(settings.payment_plisio_enabled && secretKey),
+    enabled: Boolean(settings.payment_plisio_enabled && (secretKey || testMode)),
+    testMode,
+    isAdmin,
     secretKey: secretKey ?? null,
   };
-}
-
-export function isSandboxSecretKey(secretKey: string): boolean {
-  const trimmed = secretKey.trim().toLowerCase();
-  return (
-    trimmed.includes("test") ||
-    trimmed.includes("sandbox") ||
-    trimmed.includes("demo") ||
-    trimmed.length < 32
-  );
 }
 
 /**
@@ -150,18 +150,28 @@ async function fetchOrderState(orderId: string): Promise<Record<string, unknown>
 
 /**
  * Creates (or updates) a Plisio cryptocurrency invoice for an order.
- * Supports both live Plisio White-Label/Hosted API and Sandbox mode.
+ * - When `testMode === false` (Live Mode): Strictly calls `api.plisio.net/api/v1/invoices/new`.
+ *   Never generates a fake deposit address or fake invoice.
+ * - When `testMode === true` (Test Mode): Generates a sandbox test invoice so Admin can
+ *   test the checkout flow and simulate confirmations without real crypto.
  */
 export async function createPlisioOrderInvoice(params: {
   orderId: string;
   cid: string;
   siteOrigin: string;
 }): Promise<{ ok: true; invoice: PlisioInvoiceSession } | { ok: false; error: string }> {
-  const { enabled, secretKey } = await getPlisioSecretKey();
-  if (!enabled || !secretKey) {
+  const { enabled, testMode, secretKey } = await getPlisioSecretKey();
+  if (!enabled) {
     return {
       ok: false,
-      error: "Plisio cryptocurrency gateway is not enabled or missing its Secret Key.",
+      error: "Plisio cryptocurrency gateway is not enabled.",
+    };
+  }
+
+  if (!testMode && !secretKey) {
+    return {
+      ok: false,
+      error: "Plisio Secret Key is required when Test Mode is disabled.",
     };
   }
 
@@ -182,9 +192,9 @@ export async function createPlisioOrderInvoice(params: {
   let cryptoAmount = estimatePlisioCryptoAmount(totalMicros, currency);
   let invoiceUrl: string | null = null;
   let expiresAtMs = Date.now() + 30 * 60 * 1000;
-  let mode: "live" | "sandbox" = isSandboxSecretKey(secretKey) ? "sandbox" : "live";
+  const mode: "live" | "sandbox" = testMode ? "sandbox" : "live";
 
-  if (mode === "live") {
+  if (mode === "live" && secretKey) {
     try {
       const callbackUrl = `${params.siteOrigin.replace(/\/+$/, "")}/api/plisio/callback?json=true`;
       const query = new URLSearchParams({
@@ -199,7 +209,7 @@ export async function createPlisioOrderInvoice(params: {
       if (customerEmail) query.set("email", customerEmail);
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
+      const timeout = setTimeout(() => controller.abort(), 10000);
       const res = await fetch(`${PLISIO_API_BASE}/invoices/new?${query.toString()}`, {
         method: "GET",
         headers: { accept: "application/json" },
@@ -216,40 +226,50 @@ export async function createPlisioOrderInvoice(params: {
           invoice_total_sum?: string;
           invoice_url?: string;
           expire_utc?: number | string;
+          message?: string;
         };
       } | null;
 
-      if (json?.status === "success" && json.data?.txn_id) {
-        txnId = json.data.txn_id;
-        walletAddress =
-          json.data.wallet_hash || buildSandboxAddress(String(order.id), currency);
-        cryptoAmount =
-          json.data.invoice_total_sum ||
-          json.data.amount ||
-          estimatePlisioCryptoAmount(totalMicros, currency);
-        invoiceUrl = json.data.invoice_url || `https://plisio.net/invoice/${txnId}`;
-        if (json.data.expire_utc) {
-          const expNum = Number(json.data.expire_utc);
-          if (Number.isFinite(expNum) && expNum > 0) {
-            expiresAtMs = expNum > 1e12 ? expNum : expNum * 1000;
-          }
-        }
-      } else {
-        mode = "sandbox";
+      if (json?.status !== "success" || !json.data?.txn_id) {
+        return {
+          ok: false,
+          error:
+            json?.data?.message ||
+            "Plisio rejected invoice creation. Please check your Plisio Secret Key and ensure the selected coin is enabled in your Plisio Shop.",
+        };
       }
-    } catch {
-      mode = "sandbox";
-    }
-  }
 
-  if (!txnId) {
+      txnId = json.data.txn_id;
+      walletAddress = json.data.wallet_hash || "";
+      cryptoAmount =
+        json.data.invoice_total_sum ||
+        json.data.amount ||
+        estimatePlisioCryptoAmount(totalMicros, currency);
+      invoiceUrl = json.data.invoice_url || `https://plisio.net/invoice/${txnId}`;
+      if (json.data.expire_utc) {
+        const expNum = Number(json.data.expire_utc);
+        if (Number.isFinite(expNum) && expNum > 0) {
+          expiresAtMs = expNum > 1e12 ? expNum : expNum * 1000;
+        }
+      }
+    } catch (e) {
+      return {
+        ok: false,
+        error:
+          e instanceof Error
+            ? `Could not reach Plisio API: ${e.message}`
+            : "Could not reach Plisio API to create live invoice.",
+      };
+    }
+  } else {
+    // Test Mode is explicitly enabled by Admin
     const hash = crypto
       .createHash("sha1")
       .update(`${order.id}:${currency.cid}`)
       .digest("hex")
       .slice(0, 16);
-    txnId = `plisio_${hash}`;
-    walletAddress = buildSandboxAddress(String(order.id), currency);
+    txnId = `plisio_test_${hash}`;
+    walletAddress = buildTestModeAddress(String(order.id), currency);
     cryptoAmount = estimatePlisioCryptoAmount(totalMicros, currency);
     invoiceUrl = null;
   }
@@ -342,15 +362,16 @@ export async function markOrderPaidViaPlisio(params: {
 
   const cid = params.cid || parsed.plisioCid || "USDT_TRX";
   const currency = getPlisioCurrency(cid);
-  const resolvedTxnId = params.txnId || parsed.plisioTxnId || `plisio_${params.orderId.slice(0, 8)}`;
+  const resolvedTxnId =
+    params.txnId || parsed.plisioTxnId || `plisio_${params.orderId.slice(0, 8)}`;
   const resolvedTxHash =
     params.blockchainTxId ||
     parsed.transactionId ||
-    buildSandboxBlockchainTxId(params.orderId, currency.cid);
+    resolvedTxnId;
   const resolvedAddress =
     params.walletAddress ||
     parsed.depositAddress ||
-    buildSandboxAddress(params.orderId, currency);
+    "";
   const resolvedCryptoAmount =
     params.cryptoAmount ||
     parsed.cryptoAmount ||
@@ -399,8 +420,9 @@ export async function markOrderPaidViaPlisio(params: {
 }
 
 /**
- * Checks the live Plisio payment status for an order (polling Plisio API when live)
- * and automatically marks the order `paid` + `processing` once confirmed.
+ * Checks the live Plisio payment status for an order (polling Plisio API when Test Mode is disabled)
+ * and automatically marks the order `paid` + `processing` ONLY when confirmed on-chain
+ * (or when `simulateConfirm` is triggered while `testMode === true`).
  */
 export async function checkAndSyncPlisioOrder(params: {
   orderId: string;
@@ -412,6 +434,7 @@ export async function checkAndSyncPlisioOrder(params: {
   orderStatus: string;
   txId: string | null;
   plisioStatus: string;
+  error?: string;
 }> {
   const order = await fetchOrderState(params.orderId);
   if (!order) {
@@ -422,6 +445,7 @@ export async function checkAndSyncPlisioOrder(params: {
       orderStatus: "pending",
       txId: null,
       plisioStatus: "not_found",
+      error: "Order not found.",
     };
   }
 
@@ -441,14 +465,31 @@ export async function checkAndSyncPlisioOrder(params: {
     };
   }
 
-  const { secretKey } = await getPlisioSecretKey();
+  const { testMode, secretKey } = await getPlisioSecretKey();
 
-  // If user clicked "I Have Sent Payment · Auto-Verify Now" in Sandbox/Demo mode
+  // If caller requested a simulated payment confirmation:
   if (params.simulateConfirm) {
+    if (!testMode) {
+      // Strictly reject fake/simulated confirmation when Test Mode is disabled!
+      return {
+        ok: false,
+        paid: false,
+        paymentStatus: String(order.payment_status ?? "unpaid"),
+        orderStatus: String(order.status ?? "pending"),
+        txId: null,
+        plisioStatus: "test_mode_disabled",
+        error:
+          "Test Mode is disabled. Payments are only marked Paid when confirmed on the blockchain via Plisio.",
+      };
+    }
+
+    const cid = parsed.plisioCid || "USDT_TRX";
+    const simulatedTxHash = buildTestModeBlockchainTxId(params.orderId, cid);
     const updated = await markOrderPaidViaPlisio({
       orderId: params.orderId,
       txnId: parsed.plisioTxnId,
-      cid: parsed.plisioCid,
+      blockchainTxId: simulatedTxHash,
+      cid,
       walletAddress: parsed.depositAddress,
       cryptoAmount: parsed.cryptoAmount,
     });
@@ -462,16 +503,15 @@ export async function checkAndSyncPlisioOrder(params: {
     };
   }
 
-  // Live Plisio API check if we have a real Plisio txnId and live secretKey
+  // Live Plisio API verification when Test Mode is disabled (or when a real Plisio invoice exists)
   if (
     secretKey &&
-    !isSandboxSecretKey(secretKey) &&
     parsed.plisioTxnId &&
-    !parsed.plisioTxnId.startsWith("plisio_")
+    !parsed.plisioTxnId.startsWith("plisio_test_")
   ) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
+      const timeout = setTimeout(() => controller.abort(), 8000);
       const res = await fetch(
         `${PLISIO_API_BASE}/operations/${encodeURIComponent(parsed.plisioTxnId)}?api_key=${encodeURIComponent(secretKey)}`,
         {
@@ -493,13 +533,13 @@ export async function checkAndSyncPlisioOrder(params: {
         };
       } | null;
 
-      const remoteStatus = String(json?.data?.status ?? "pending").toLowerCase();
+      const remoteStatus = String(json?.data?.status ?? "new").toLowerCase();
       if (remoteStatus === "completed" || remoteStatus === "mismatch") {
         const rawTx = json?.data?.tx_id;
         const blockchainTxId = Array.isArray(rawTx)
           ? String(rawTx[0] ?? "")
-          : typeof rawTx === "string"
-            ? rawTx
+          : typeof rawTx === "string" && rawTx.trim()
+            ? rawTx.trim()
             : parsed.plisioTxnId;
         const updated = await markOrderPaidViaPlisio({
           orderId: params.orderId,
@@ -538,6 +578,6 @@ export async function checkAndSyncPlisioOrder(params: {
     paymentStatus: String(order.payment_status ?? "unpaid"),
     orderStatus: String(order.status ?? "pending"),
     txId: parsed.transactionId ?? null,
-    plisioStatus: "pending",
+    plisioStatus: "new",
   };
 }
