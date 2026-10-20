@@ -1,14 +1,16 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { XIcon } from "lucide-react";
-import { saveProduct, type AdminFormState } from "@/app/nemesis/actions";
+import { PlusIcon, XIcon } from "lucide-react";
+import { toast } from "sonner";
+import { quickCreateCategory, saveProduct, type AdminFormState } from "@/app/nemesis/actions";
 import { CURRENCIES, DEFAULT_PRICE_MICROS, inputFromMicros } from "@/lib/money";
 import type { Category, Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useMoney } from "@/components/money-provider";
-import { LinkButton } from "@/components/ui/button";
+import { Button, LinkButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
@@ -58,6 +60,11 @@ export function ProductForm({
   const [type, setType] = useState<"simple" | "variable">((v.type as "simple" | "variable") ?? product?.type ?? "simple");
   const [sku, setSku] = useState(v.sku ?? product?.sku ?? "");
   const [brand, setBrand] = useState(v.brand ?? product?.brand ?? "");
+  const [categoryList, setCategoryList] = useState<Category[]>(categories);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
+    v.category_id ?? product?.category_id ?? "",
+  );
+  const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
   const [features, setFeatures] = useState<string[]>(() =>
     (v.features ?? product?.features ?? "")
       .split(",")
@@ -334,19 +341,49 @@ export function ProductForm({
               </Field>
               <Field data-invalid={Boolean(err.category_id) || undefined}>
                 <FieldLabel htmlFor="category_id">Category</FieldLabel>
-                <Select name="category_id" defaultSelectedKey={v.category_id ?? product?.category_id ?? ""} aria-label="Category" isInvalid={Boolean(err.category_id)}>
-                  <SelectTrigger id="category_id" className="w-full sm:max-w-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem id="">— Uncategorised —</SelectItem>
-                    {categories.map((c) => (
-                      <SelectItem key={c.id} id={c.id}>
-                        {c.name}
+                <input type="hidden" name="category_id" value={selectedCategoryId} />
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <Select
+                    selectedKey={selectedCategoryId}
+                    onSelectionChange={(key) => {
+                      const val = String(key ?? "");
+                      if (val === "__create_new__") {
+                        setCreateCategoryOpen(true);
+                        return;
+                      }
+                      setSelectedCategoryId(val);
+                    }}
+                    aria-label="Category"
+                    isInvalid={Boolean(err.category_id)}
+                  >
+                    <SelectTrigger id="category_id" className="w-full sm:w-72">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem id="">— Uncategorised —</SelectItem>
+                      {categoryList.map((c) => (
+                        <SelectItem key={c.id} id={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem
+                        id="__create_new__"
+                        className="font-semibold text-primary"
+                      >
+                        + Create new category…
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onPress={() => setCreateCategoryOpen(true)}
+                    data-testid="quick-create-category-trigger"
+                  >
+                    <PlusIcon className="size-4" />
+                    New category
+                  </Button>
+                </div>
                 <FieldError>{err.category_id}</FieldError>
               </Field>
               <div className="grid gap-3 sm:grid-cols-3">
@@ -395,6 +432,136 @@ export function ProductForm({
           </p>
         )}
       </aside>
+
+      {createCategoryOpen && (
+        <QuickCreateCategoryDialog
+          onClose={() => setCreateCategoryOpen(false)}
+          onCreated={(created) => {
+            setCategoryList((prev) =>
+              prev.some((c) => c.id === created.id) ? prev : [...prev, created],
+            );
+            setSelectedCategoryId(created.id);
+            setCreateCategoryOpen(false);
+          }}
+        />
+      )}
     </form>
+  );
+}
+
+function QuickCreateCategoryDialog({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (category: Category) => void;
+}) {
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  async function handleSubmit() {
+    if (pending) return;
+    setPending(true);
+    setFieldErrors({});
+    try {
+      const res = await quickCreateCategory({ name, slug });
+      if (!res.ok || !res.category) {
+        if (res.fieldErrors) setFieldErrors(res.fieldErrors);
+        if (res.error) toast.error(res.error);
+        return;
+      }
+      if (res.message) toast.success(res.message);
+      onCreated(res.category);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog
+      isOpen
+      onOpenChange={(open) => {
+        if (!open && !pending) onClose();
+      }}
+      isDismissable={!pending}
+      className="sm:max-w-sm"
+    >
+      <div className="space-y-4" data-testid="quick-create-category-dialog">
+        <DialogHeader>
+          <DialogTitle>New category</DialogTitle>
+        </DialogHeader>
+
+        <Field data-invalid={Boolean(fieldErrors.name) || undefined}>
+          <FieldLabel htmlFor="quick-category-name">Name</FieldLabel>
+          <Input
+            id="quick-category-name"
+            value={name}
+            maxLength={100}
+            placeholder="e.g. Accounts"
+            autoFocus
+            aria-invalid={Boolean(fieldErrors.name) || undefined}
+            data-testid="quick-category-name"
+            onChange={(e) => {
+              setName(e.target.value);
+              if (!slugTouched) setSlug(slugify(e.target.value));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                void handleSubmit();
+              }
+            }}
+          />
+          <FieldError>{fieldErrors.name}</FieldError>
+        </Field>
+
+        <Field data-invalid={Boolean(fieldErrors.slug) || undefined}>
+          <FieldLabel htmlFor="quick-category-slug">Slug</FieldLabel>
+          <Input
+            id="quick-category-slug"
+            value={slug}
+            maxLength={100}
+            placeholder="accounts"
+            aria-invalid={Boolean(fieldErrors.slug) || undefined}
+            data-testid="quick-category-slug"
+            onChange={(e) => {
+              setSlugTouched(true);
+              setSlug(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                void handleSubmit();
+              }
+            }}
+          />
+          <FieldError>{fieldErrors.slug}</FieldError>
+        </Field>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            isDisabled={pending}
+            onPress={onClose}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            isPending={pending}
+            onPress={() => void handleSubmit()}
+            data-testid="quick-category-submit"
+          >
+            {pending ? "Creating…" : "Create category"}
+          </Button>
+        </DialogFooter>
+      </div>
+    </Dialog>
   );
 }

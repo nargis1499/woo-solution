@@ -32,7 +32,7 @@ import {
   isNumericalQuantityAttribute,
   type SubmittedVariation,
 } from "@/lib/variations";
-import type { OrderStatus, PaymentStatus, ProductType } from "@/lib/types";
+import type { Category, OrderStatus, PaymentStatus, ProductType } from "@/lib/types";
 import {
   UUID_RE,
   SLUG_RE,
@@ -719,6 +719,59 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
   } catch (e) {
     if (isRedirectError(e)) throw e;
     return { error: friendlyError(e), values };
+  }
+}
+
+export async function quickCreateCategory(input: {
+  name: string;
+  slug?: string;
+}): Promise<{
+  ok: boolean;
+  category?: Category;
+  message?: string;
+  error?: string;
+  fieldErrors?: Record<string, string>;
+}> {
+  const name = String(input.name ?? "").trim().slice(0, 100);
+  const slug = slugify(String(input.slug ?? "").trim().slice(0, 100) || name);
+
+  const fieldErrors: Record<string, string> = {};
+  if (!name) fieldErrors.name = "Name is required.";
+  if (!SLUG_RE.test(slug)) fieldErrors.slug = "Use lowercase letters, numbers and dashes only.";
+  if (Object.keys(fieldErrors).length) {
+    return { ok: false, error: "Please fix the highlighted fields.", fieldErrors };
+  }
+
+  try {
+    const { supabase } = await adminClient();
+    const { data: last, error: lastError } = await supabase
+      .from("categories")
+      .select("sort_order")
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastError) throw lastError;
+
+    const { data, error } = await supabase
+      .from("categories")
+      .insert({
+        name,
+        slug,
+        sort_order: (last?.sort_order ?? -1) + 1,
+      })
+      .select("id, name, slug, sort_order, created_at")
+      .single();
+    if (error) throw error;
+
+    updateTag(MENU_TAG);
+    revalidateStore();
+    return {
+      ok: true,
+      category: data as Category,
+      message: `"${name}" created.`,
+    };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
   }
 }
 
