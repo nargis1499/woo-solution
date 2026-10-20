@@ -36,7 +36,30 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const settings = await getSiteSettings();
+    const [settings, profileRes] = await Promise.all([
+      getSiteSettings(),
+      supabase
+        .from("profiles")
+        .select("full_name, email, phone")
+        .eq("id", user.id)
+        .maybeSingle(),
+    ]);
+
+    const profile = profileRes.data as
+      | { full_name?: string | null; email?: string | null; phone?: string | null }
+      | null;
+    const metaName =
+      typeof user.user_metadata?.full_name === "string"
+        ? user.user_metadata.full_name
+        : typeof user.user_metadata?.name === "string"
+          ? user.user_metadata.name
+          : "";
+
+    const customer = {
+      fullName: (profile?.full_name || metaName || "").trim(),
+      email: (user.email || profile?.email || "").trim(),
+      phone: (profile?.phone || "").trim(),
+    };
 
     // Resolve category_id if not provided
     let categoryId = UUID_RE.test(categoryIdParam) ? categoryIdParam : null;
@@ -117,6 +140,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       authenticated: true,
       storeName: settings.store_name,
+      customer,
       products,
     });
   } catch (e) {

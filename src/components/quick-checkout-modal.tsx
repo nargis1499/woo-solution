@@ -4,8 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
+  ArrowLeftIcon,
   ArrowRightIcon,
   AwardIcon,
+  CheckIcon,
+  ChevronDownIcon,
   FlameIcon,
   GlobeIcon,
   LockIcon,
@@ -24,9 +27,16 @@ import { useMoney } from "./money-provider";
 
 const PENDING_QC_STORAGE_KEY = "woo_pending_quick_checkout";
 
+type QuickCheckoutCustomer = {
+  fullName: string;
+  email: string;
+  phone?: string;
+};
+
 type QuickCheckoutPayload = {
   authenticated?: boolean;
   storeName?: string;
+  customer?: QuickCheckoutCustomer;
   products?: Product[];
 };
 
@@ -35,6 +45,21 @@ const STEPS = [
   { num: 2, label: "2. Contact" },
   { num: 3, label: "3. Payment" },
   { num: 4, label: "4. Verify" },
+] as const;
+
+const COUNTRIES = [
+  "United States",
+  "United Kingdom",
+  "Canada",
+  "Australia",
+  "Germany",
+  "France",
+  "Netherlands",
+  "Singapore",
+  "United Arab Emirates",
+  "Bangladesh",
+  "India",
+  "Other",
 ] as const;
 
 function storeInitials(name: string): string {
@@ -110,10 +135,28 @@ export function QuickCheckoutModal({
   );
   const [selectedProductId, setSelectedProductId] = useState<string>(initialProduct.id);
   const [selectedTierByProduct, setSelectedTierByProduct] = useState<Record<string, string>>({});
+
+  // Step navigation & step gating: customer cannot advance to Step 2 until Step 1 is passed
   const [step, setStep] = useState<number>(1);
+  const [maxUnlockedStep, setMaxUnlockedStep] = useState<number>(1);
+
+  // Step 2: Contact Details state (auto-populated from authenticated user)
+  const [fullName, setFullName] = useState<string>(initialData?.customer?.fullName ?? "");
+  const [email, setEmail] = useState<string>(initialData?.customer?.email ?? "");
+  const [telegram, setTelegram] = useState<string>("");
+  const [whatsapp, setWhatsapp] = useState<string>(initialData?.customer?.phone ?? "");
+  const [country, setCountry] = useState<string>("United States");
+  const [notes, setNotes] = useState<string>("");
+  const [contactErrors, setContactErrors] = useState<{ fullName?: string; email?: string }>({});
 
   useEffect(() => {
-    if (initialData?.products && initialData.products.length > 0) return;
+    if (
+      initialData?.products &&
+      initialData.products.length > 0 &&
+      initialData.customer
+    ) {
+      return;
+    }
 
     let cancelled = false;
     const params = new URLSearchParams({ productId: initialProduct.id });
@@ -141,6 +184,11 @@ export function QuickCheckoutModal({
         if (data.storeName) setStoreName(data.storeName);
         if (Array.isArray(data.products) && data.products.length > 0) {
           setProducts(data.products);
+        }
+        if (data.customer) {
+          setFullName((prev) => prev || data.customer?.fullName || "");
+          setEmail((prev) => prev || data.customer?.email || "");
+          setWhatsapp((prev) => prev || data.customer?.phone || "");
         }
       })
       .catch(() => {
@@ -186,6 +234,27 @@ export function QuickCheckoutModal({
     ? `SELECT ${selectedProduct.category.name.toUpperCase()} PRODUCT`
     : "SELECT VERIFIED PRODUCT";
 
+  function handlePassStep1() {
+    if (!selectedProduct || !selectedTier) return;
+    setMaxUnlockedStep((prev) => Math.max(prev, 2));
+    setStep(2);
+  }
+
+  function handleContinueToPayment() {
+    const errs: { fullName?: string; email?: string } = {};
+    if (!fullName.trim()) {
+      errs.fullName = "Full name is required.";
+    }
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      errs.email = "Enter a valid delivery email address.";
+    }
+    setContactErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    setMaxUnlockedStep((prev) => Math.max(prev, 3));
+    setStep(3);
+  }
+
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-3 backdrop-blur-xs animate-in fade-in-0 duration-150 sm:p-5"
@@ -218,7 +287,7 @@ export function QuickCheckoutModal({
                 </span>
               </div>
               <p className="truncate text-xs text-slate-300/85">
-                Automated verification &amp; instant order processing
+                Automated verification &amp; instant recovery file delivery
               </p>
             </div>
           </div>
@@ -240,29 +309,45 @@ export function QuickCheckoutModal({
             {STEPS.map((s) => {
               const active = step === s.num;
               const completed = step > s.num;
+              const canNavigate = s.num <= maxUnlockedStep;
               return (
                 <button
                   key={s.num}
                   type="button"
+                  disabled={!canNavigate}
                   onClick={() => {
-                    if (s.num <= step) setStep(s.num);
+                    if (canNavigate) setStep(s.num);
                   }}
                   data-testid={`quick-checkout-step-${s.num}`}
-                  className="flex items-center gap-2 text-xs font-bold transition-colors sm:text-sm"
+                  data-state={completed ? "completed" : active ? "active" : "locked"}
+                  className={cn(
+                    "flex items-center gap-2 text-xs font-bold transition-colors sm:text-sm",
+                    canNavigate ? "cursor-pointer" : "cursor-not-allowed opacity-70",
+                  )}
                 >
                   <span
                     className={cn(
                       "grid size-6 shrink-0 place-items-center rounded-full text-xs font-extrabold transition-all",
-                      active || completed
-                        ? "bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground) shadow-xs"
-                        : "bg-muted-foreground/20 text-muted-foreground",
+                      completed
+                        ? "bg-emerald-500 text-white shadow-xs"
+                        : active
+                          ? "bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground) shadow-xs"
+                          : "bg-muted-foreground/20 text-muted-foreground",
                     )}
                   >
-                    {s.num}
+                    {completed ? (
+                      <CheckIcon className="size-3.5 stroke-[3]" aria-hidden />
+                    ) : (
+                      s.num
+                    )}
                   </span>
                   <span
                     className={cn(
-                      active ? "text-primary" : "text-muted-foreground",
+                      completed
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : active
+                          ? "text-primary"
+                          : "text-muted-foreground",
                     )}
                   >
                     {s.label}
@@ -275,180 +360,404 @@ export function QuickCheckoutModal({
 
         {/* ── Scrollable Modal Content ───────────────────────────────────── */}
         <div className="flex-1 space-y-6 overflow-y-auto p-6">
-          {/* 1. Product Selector (Clicked Product + Same-Category Products) */}
-          <div className="space-y-3">
-            <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
-              {categoryTitle}
-            </p>
-
-            <div
-              className="grid gap-3 sm:grid-cols-2"
-              data-testid="quick-checkout-product-list"
-            >
-              {products.map((item, idx) => {
-                const isSelected = item.id === selectedProduct.id;
-                const itemTiers = resolveQuickCheckoutTiers(item);
-                const lowestMicros =
-                  itemTiers.length > 0
-                    ? Math.min(...itemTiers.map((t) => t.priceMicros))
-                    : item.price_micros;
-
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setSelectedProductId(item.id)}
-                    data-testid={`quick-checkout-product-option-${item.slug}`}
-                    data-selected={isSelected ? "true" : "false"}
-                    className={cn(
-                      "flex cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all",
-                      isSelected
-                        ? "border-2 border-primary bg-primary/[0.05] shadow-xs ring-2 ring-primary/15"
-                        : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
-                    )}
-                  >
-                    <div className="min-w-0 space-y-1">
-                      <p className="truncate text-sm font-extrabold text-foreground sm:text-base">
-                        {item.name}
-                      </p>
-                      <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                        <ProductBadgeIcon index={idx} />
-                        <span className="truncate">{productSubtitleText(item, idx)}</span>
-                      </p>
-                    </div>
-
-                    <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
-                      From {formatMoney(lowestMicros, money)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 2. Dynamic Quantity Tier Selector */}
-          <div className="space-y-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
-                SELECT QUANTITY TIER ({selectedProduct.name.toUpperCase()})
-              </p>
-              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/12 px-2.5 py-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                <SparklesIcon className="size-3" aria-hidden />
-                Instant Tier Pricing
-              </span>
-            </div>
-
-            <div
-              className={cn(
-                "grid gap-2.5 pt-1",
-                tiers.length <= 5
-                  ? "grid-cols-2 sm:grid-cols-5"
-                  : "grid-cols-2 sm:grid-cols-4 md:grid-cols-7",
-              )}
-              data-testid="quick-checkout-tier-list"
-            >
-              {tiers.map((tier) => {
-                const isSelected = selectedTier?.id === tier.id;
-                return (
-                  <button
-                    key={tier.id}
-                    type="button"
-                    onClick={() =>
-                      setSelectedTierByProduct((prev) => ({
-                        ...prev,
-                        [selectedProduct.id]: tier.id,
-                      }))
-                    }
-                    data-testid={`quick-checkout-tier-${tier.quantity}`}
-                    data-selected={isSelected ? "true" : "false"}
-                    className={cn(
-                      "relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border px-2.5 py-4 text-center transition-all",
-                      isSelected
-                        ? "border-transparent bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground) shadow-lg ring-2 ring-primary/35 -translate-y-0.5"
-                        : "border-border/80 bg-card text-foreground hover:border-primary/45 hover:bg-muted/25",
-                    )}
-                  >
-                    {tier.popular && (
-                      <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black tracking-wider text-zinc-950 uppercase shadow-xs">
-                        POPULAR
-                      </span>
-                    )}
-
-                    <span className="text-lg font-black tracking-tight tabular-nums sm:text-xl">
-                      {tier.title}
-                    </span>
-
-                    <span
-                      className={cn(
-                        "mt-0.5 text-xs font-extrabold tabular-nums sm:text-sm",
-                        isSelected ? "text-(--button-foreground)" : "text-primary",
-                      )}
-                    >
-                      {formatMoney(tier.priceMicros, money)}
-                    </span>
-
-                    <span
-                      className={cn(
-                        "mt-1 line-clamp-1 text-[10px] font-medium",
-                        isSelected
-                          ? "text-(--button-foreground)/85"
-                          : "text-muted-foreground",
-                      )}
-                    >
-                      {tier.subtitle}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 3. Selected Package & Final Price Summary Card */}
-          {selectedTier && (
-            <div
-              className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/80 bg-muted/25 px-5 py-4"
-              data-testid="quick-checkout-summary"
-            >
-              <div className="min-w-0 space-y-0.5">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Selected Package:
+          {step === 1 && (
+            <>
+              {/* 1. Product Selector (Clicked Product + Same-Category Products) */}
+              <div className="space-y-3">
+                <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
+                  {categoryTitle}
                 </p>
-                <p
-                  className="truncate text-base font-extrabold text-foreground sm:text-lg"
-                  data-testid="quick-checkout-summary-package"
+
+                <div
+                  className="grid gap-3 sm:grid-cols-2"
+                  data-testid="quick-checkout-product-list"
                 >
-                  {selectedProduct.name} ({selectedTier.quantity}{" "}
-                  {selectedTier.quantity === 1 ? "Unit" : "Units"})
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Estimated Unit Cost: {formatMoney(selectedTier.unitPriceMicros, money)}/unit
-                </p>
+                  {products.map((item, idx) => {
+                    const isSelected = item.id === selectedProduct.id;
+                    const itemTiers = resolveQuickCheckoutTiers(item);
+                    const lowestMicros =
+                      itemTiers.length > 0
+                        ? Math.min(...itemTiers.map((t) => t.priceMicros))
+                        : item.price_micros;
+
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedProductId(item.id)}
+                        data-testid={`quick-checkout-product-option-${item.slug}`}
+                        data-selected={isSelected ? "true" : "false"}
+                        className={cn(
+                          "flex cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all",
+                          isSelected
+                            ? "border-2 border-primary bg-primary/[0.05] shadow-xs ring-2 ring-primary/15"
+                            : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
+                        )}
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <p className="truncate text-sm font-extrabold text-foreground sm:text-base">
+                            {item.name}
+                          </p>
+                          <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                            <ProductBadgeIcon index={idx} />
+                            <span className="truncate">{productSubtitleText(item, idx)}</span>
+                          </p>
+                        </div>
+
+                        <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
+                          From {formatMoney(lowestMicros, money)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="text-right">
-                <p className="text-xs font-medium text-muted-foreground">Total Due:</p>
-                <p
-                  className="text-2xl font-black tracking-tight text-primary tabular-nums sm:text-3xl"
-                  data-testid="quick-checkout-total-due"
+              {/* 2. Dynamic Quantity Tier Selector */}
+              <div className="space-y-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
+                    SELECT QUANTITY TIER ({selectedProduct.name.toUpperCase()})
+                  </p>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/12 px-2.5 py-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                    <SparklesIcon className="size-3" aria-hidden />
+                    Instant Tier Pricing
+                  </span>
+                </div>
+
+                <div
+                  className={cn(
+                    "grid gap-2.5 pt-1",
+                    tiers.length <= 5
+                      ? "grid-cols-2 sm:grid-cols-5"
+                      : "grid-cols-2 sm:grid-cols-4 md:grid-cols-7",
+                  )}
+                  data-testid="quick-checkout-tier-list"
                 >
-                  {formatMoney(selectedTier.priceMicros, money)} {money.currency}
-                </p>
+                  {tiers.map((tier) => {
+                    const isSelected = selectedTier?.id === tier.id;
+                    return (
+                      <button
+                        key={tier.id}
+                        type="button"
+                        onClick={() =>
+                          setSelectedTierByProduct((prev) => ({
+                            ...prev,
+                            [selectedProduct.id]: tier.id,
+                          }))
+                        }
+                        data-testid={`quick-checkout-tier-${tier.quantity}`}
+                        data-selected={isSelected ? "true" : "false"}
+                        className={cn(
+                          "relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border px-2.5 py-4 text-center transition-all",
+                          isSelected
+                            ? "border-transparent bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground) shadow-lg ring-2 ring-primary/35 -translate-y-0.5"
+                            : "border-border/80 bg-card text-foreground hover:border-primary/45 hover:bg-muted/25",
+                        )}
+                      >
+                        {tier.popular && (
+                          <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black tracking-wider text-zinc-950 uppercase shadow-xs">
+                            POPULAR
+                          </span>
+                        )}
+
+                        <span className="text-lg font-black tracking-tight tabular-nums sm:text-xl">
+                          {tier.title}
+                        </span>
+
+                        <span
+                          className={cn(
+                            "mt-0.5 text-xs font-extrabold tabular-nums sm:text-sm",
+                            isSelected ? "text-(--button-foreground)" : "text-primary",
+                          )}
+                        >
+                          {formatMoney(tier.priceMicros, money)}
+                        </span>
+
+                        <span
+                          className={cn(
+                            "mt-1 line-clamp-1 text-[10px] font-medium",
+                            isSelected
+                              ? "text-(--button-foreground)/85"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {tier.subtitle}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Selected Package & Final Price Summary Card */}
+              {selectedTier && (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/80 bg-muted/25 px-5 py-4"
+                  data-testid="quick-checkout-summary"
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Selected Package:
+                    </p>
+                    <p
+                      className="truncate text-base font-extrabold text-foreground sm:text-lg"
+                      data-testid="quick-checkout-summary-package"
+                    >
+                      {selectedProduct.name} ({selectedTier.quantity}{" "}
+                      {selectedTier.quantity === 1 ? "Unit" : "Units"})
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Estimated Unit Cost: {formatMoney(selectedTier.unitPriceMicros, money)}/unit
+                    </p>
+                  </div>
+
+                  <div className="text-right">
+                    <p className="text-xs font-medium text-muted-foreground">Total Due:</p>
+                    <p
+                      className="text-2xl font-black tracking-tight text-primary tabular-nums sm:text-3xl"
+                      data-testid="quick-checkout-total-due"
+                    >
+                      {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Bottom Action Bar */}
+              <div className="flex items-center justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={handlePassStep1}
+                  data-testid="quick-checkout-continue"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
+                >
+                  <span>Continue to Contact Details</span>
+                  <ArrowRightIcon className="size-4" aria-hidden />
+                </button>
+              </div>
+            </>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-5" data-testid="quick-checkout-step-2-panel">
+              {/* Top Privacy / Delivery Notice Banner */}
+              <div
+                className="flex items-center gap-2.5 rounded-xl border border-sky-500/25 bg-sky-500/[0.08] px-4 py-3 text-xs font-medium text-sky-700 dark:text-sky-300 sm:text-sm"
+                data-testid="quick-checkout-contact-notice"
+              >
+                <ShieldCheckIcon
+                  className="size-4.5 shrink-0 text-sky-600 dark:text-sky-400"
+                  aria-hidden
+                />
+                <span>
+                  Your contact details are strictly used for instant recovery spreadsheet
+                  delivery and order notifications.
+                </span>
+              </div>
+
+              {/* 2-Column Contact Form Grid */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {/* 1. Full Name */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="qc-full-name"
+                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                  >
+                    FULL NAME *
+                  </label>
+                  <input
+                    id="qc-full-name"
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => {
+                      setFullName(e.target.value);
+                      if (contactErrors.fullName) {
+                        setContactErrors((prev) => ({ ...prev, fullName: undefined }));
+                      }
+                    }}
+                    placeholder="e.g. Alexander Vance"
+                    data-testid="qc-contact-full-name"
+                    className={cn(
+                      "h-11 w-full rounded-xl border bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20",
+                      contactErrors.fullName ? "border-destructive" : "border-border/80",
+                    )}
+                  />
+                  {contactErrors.fullName && (
+                    <p className="text-xs font-medium text-destructive">
+                      {contactErrors.fullName}
+                    </p>
+                  )}
+                </div>
+
+                {/* 2. Email Address (For Delivery) */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="qc-email"
+                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                  >
+                    EMAIL ADDRESS * (FOR DELIVERY)
+                  </label>
+                  <input
+                    id="qc-email"
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (contactErrors.email) {
+                        setContactErrors((prev) => ({ ...prev, email: undefined }));
+                      }
+                    }}
+                    placeholder="e.g. alex@scaleagency.io"
+                    data-testid="qc-contact-email"
+                    className={cn(
+                      "h-11 w-full rounded-xl border bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20",
+                      contactErrors.email ? "border-destructive" : "border-border/80",
+                    )}
+                  />
+                  {contactErrors.email && (
+                    <p className="text-xs font-medium text-destructive">
+                      {contactErrors.email}
+                    </p>
+                  )}
+                </div>
+
+                {/* 3. Telegram Username (Optional) */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="qc-telegram"
+                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                  >
+                    TELEGRAM USERNAME (OPTIONAL)
+                  </label>
+                  <input
+                    id="qc-telegram"
+                    type="text"
+                    value={telegram}
+                    onChange={(e) => setTelegram(e.target.value)}
+                    placeholder="e.g. @vance_scale (Optional)"
+                    data-testid="qc-contact-telegram"
+                    className="h-11 w-full rounded-xl border border-border/80 bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+
+                {/* 4. WhatsApp Number (Optional) */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="qc-whatsapp"
+                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                  >
+                    WHATSAPP NUMBER (OPTIONAL)
+                  </label>
+                  <input
+                    id="qc-whatsapp"
+                    type="tel"
+                    value={whatsapp}
+                    onChange={(e) => setWhatsapp(e.target.value)}
+                    placeholder="e.g. +1 (415) 892-3341 (Optional)"
+                    data-testid="qc-contact-whatsapp"
+                    className="h-11 w-full rounded-xl border border-border/80 bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+
+                {/* 5. Country / Jurisdiction */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="qc-country"
+                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                  >
+                    COUNTRY / JURISDICTION
+                  </label>
+                  <div className="relative">
+                    <select
+                      id="qc-country"
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      data-testid="qc-contact-country"
+                      className="h-11 w-full appearance-none rounded-xl border border-border/80 bg-muted/20 pr-9 pl-3.5 text-sm font-medium text-foreground transition-colors outline-none focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
+                    >
+                      {COUNTRIES.map((c) => (
+                        <option key={c} value={c} className="bg-card text-foreground">
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDownIcon
+                      className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden
+                    />
+                  </div>
+                </div>
+
+                {/* 6. Order Notes / Custom Requests (Optional) */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="qc-notes"
+                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                  >
+                    ORDER NOTES / CUSTOM REQUESTS (OPTIONAL)
+                  </label>
+                  <input
+                    id="qc-notes"
+                    type="text"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="e.g. Need NY or TX state IP profiles only"
+                    data-testid="qc-contact-notes"
+                    className="h-11 w-full rounded-xl border border-border/80 bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+
+              {/* Bottom Action Bar: ← Back | Select Payment Method → */}
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  data-testid="quick-checkout-back-to-step-1"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
+                >
+                  <ArrowLeftIcon className="size-4" aria-hidden />
+                  <span>Back</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleContinueToPayment}
+                  data-testid="quick-checkout-select-payment"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
+                >
+                  <span>Select Payment Method</span>
+                  <ArrowRightIcon className="size-4" aria-hidden />
+                </button>
               </div>
             </div>
           )}
 
-          {/* 4. Bottom Action Bar */}
-          <div className="flex items-center justify-end pt-1">
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              data-testid="quick-checkout-continue"
-              className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
-            >
-              <span>Continue to Contact Details</span>
-              <ArrowRightIcon className="size-4" aria-hidden />
-            </button>
-          </div>
+          {step >= 3 && (
+            <div className="space-y-5" data-testid="quick-checkout-step-3-panel">
+              <div className="rounded-2xl border border-border/80 bg-muted/25 p-5 text-sm">
+                <p className="font-bold text-foreground">
+                  Step 3: Payment Method Selection
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Delivering to <span className="font-semibold text-foreground">{fullName}</span> ({email})
+                </p>
+              </div>
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
+                >
+                  <ArrowLeftIcon className="size-4" aria-hidden />
+                  <span>Back</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>,
@@ -491,7 +800,6 @@ export function QuickCheckoutButton({
       .then(async (res) => {
         if (cancelled) return null;
         if (res.status === 401) {
-          // Still not authenticated; clean query param if user manually navigated back without signing in
           return null;
         }
         return res.ok ? ((await res.json()) as QuickCheckoutPayload) : null;
