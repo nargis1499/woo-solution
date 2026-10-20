@@ -99,12 +99,13 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
   }
 
   const orderId = String(data);
+  const totalQty = items.reduce((sum, i) => sum + Math.max(1, i.quantity), 0);
 
-  // Stamp structured payment fields on the order row when using Crypto
-  if (paymentMethod === "crypto" && normalizedPayment) {
-    try {
-      const service = createServiceClient();
-      if (service) {
+  try {
+    const service = createServiceClient();
+    if (service) {
+      // 1. Stamp structured payment fields on the order row when using Crypto
+      if (paymentMethod === "crypto" && normalizedPayment) {
         const methodDisplay = normalizedPayment.protocolCode
           ? `crypto (${normalizedPayment.protocolCode})`
           : "crypto";
@@ -127,9 +128,42 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
             .eq("id", orderId);
         }
       }
-    } catch {
-      // Notes metadata fallback already guarantees full payment details
+
+      // 2. Ensure `new_order` notifications in the DB have the real item count
+      // (since `after insert on public.orders` fires before `order_items` are inserted)
+      if (totalQty > 0) {
+        const { data: notifRows } = await service
+          .from("notifications")
+          .select("id, recipient_id, kind, title, body, href, order_id, actor_name, read_at, created_at")
+          .eq("order_id", orderId)
+          .eq("kind", "new_order");
+
+        const staleRows = (notifRows ?? []).filter((r) =>
+          /\b0 items\b/i.test(String(r.body ?? "")),
+        );
+        if (staleRows.length > 0) {
+          const itemWord = totalQty === 1 ? "item" : "items";
+          const ids = staleRows.map((r) => String(r.id));
+          await service.from("notifications").delete().in("id", ids);
+          await service.from("notifications").insert(
+            staleRows.map((r) => ({
+              id: r.id,
+              recipient_id: r.recipient_id,
+              kind: r.kind,
+              title: r.title,
+              body: String(r.body).replace(/\b0 items\b/i, `${totalQty} ${itemWord}`),
+              href: r.href,
+              order_id: r.order_id,
+              actor_name: r.actor_name,
+              read_at: r.read_at,
+              created_at: r.created_at,
+            })),
+          );
+        }
+      }
     }
+  } catch {
+    // Non-fatal: `enrichNewOrderNotifications` also resolves item counts at read time
   }
 
   return { ok: true, orderId };

@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { NOTIFICATIONS_PER_PAGE, type AppNotification, type NotificationFilter } from "@/lib/notifications";
 import { pageCount } from "@/lib/pagination";
 
@@ -21,6 +22,50 @@ export type NotificationPage = {
   pageCount: number;
   unread: number;
 };
+
+/**
+ * Replaces stale "· 0 items" in `new_order` notifications (caused by the
+ * `after insert on public.orders` trigger running before `order_items` rows are
+ * inserted inside `place_order`) with the real total item quantity from `order_items`.
+ */
+async function enrichNewOrderNotifications(
+  items: AppNotification[],
+  fallbackClient: SupabaseClient,
+): Promise<AppNotification[]> {
+  const zeroItemOrders = items.filter(
+    (n) => n.kind === "new_order" && Boolean(n.order_id) && /\b0 items\b/i.test(n.body),
+  );
+  if (zeroItemOrders.length === 0) return items;
+
+  const orderIds = [...new Set(zeroItemOrders.map((n) => n.order_id as string))];
+  const db = createServiceClient() ?? fallbackClient;
+
+  const { data, error } = await db
+    .from("order_items")
+    .select("order_id, quantity")
+    .in("order_id", orderIds);
+
+  if (error || !data || data.length === 0) return items;
+
+  const qtyByOrder = new Map<string, number>();
+  for (const row of data as { order_id: string; quantity: number }[]) {
+    const qty = Math.max(1, Number(row.quantity) || 1);
+    qtyByOrder.set(row.order_id, (qtyByOrder.get(row.order_id) ?? 0) + qty);
+  }
+
+  return items.map((n) => {
+    if (n.kind !== "new_order" || !n.order_id || !/\b0 items\b/i.test(n.body)) {
+      return n;
+    }
+    const totalQty = qtyByOrder.get(n.order_id);
+    if (!totalQty || totalQty <= 0) return n;
+    const itemWord = totalQty === 1 ? "item" : "items";
+    return {
+      ...n,
+      body: n.body.replace(/\b0 items\b/i, `${totalQty} ${itemWord}`),
+    };
+  });
+}
 
 /** True when the error is only "migration 21 has not been run yet". */
 export function isMissingNotificationsError(error: unknown): boolean {
@@ -48,7 +93,8 @@ export async function getNotificationPreview(limit = 8, client?: SupabaseClient)
     getUnreadNotificationCount(supabase),
   ]);
   if (error) return { items: [], unread: 0 };
-  return { items: (data ?? []) as AppNotification[], unread };
+  const enriched = await enrichNewOrderNotifications((data ?? []) as AppNotification[], supabase);
+  return { items: enriched, unread };
 }
 
 /** Everything the header and the notifications page need on first paint. */
@@ -86,8 +132,9 @@ export async function listNotifications({
   if (error) return { items: [], total: 0, page: 1, pageCount: 1, unread };
 
   const total = count ?? 0;
+  const enriched = await enrichNewOrderNotifications((data ?? []) as AppNotification[], supabase);
   return {
-    items: (data ?? []) as AppNotification[],
+    items: enriched,
     total,
     page: safePage,
     pageCount: Math.max(1, pageCount(total, perPage)),
@@ -102,7 +149,7 @@ export async function listNotificationsSince(since: string | null, client?: Supa
   if (since) query = query.gt("created_at", since);
   const { data, error } = await query;
   if (error) return [];
-  return (data ?? []) as AppNotification[];
+  return enrichNewOrderNotifications((data ?? []) as AppNotification[], supabase);
 }
 
 /** Mark these rows (or every unread one) as read. RLS keeps it to the caller's own rows. */
