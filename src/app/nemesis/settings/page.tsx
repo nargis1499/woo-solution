@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { adminGetSiteSettings } from "@/lib/admin/data";
 import { getAdminStatus } from "@/lib/admin/auth";
 import { getPresenceVisibility } from "@/lib/presence.server";
@@ -9,7 +10,18 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export const metadata: Metadata = { title: "Settings" };
 
-export default async function AdminSettingsPage() {
+type SearchParams = Promise<{ tab?: string }>;
+
+export default async function AdminSettingsPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = await searchParams;
+  if (params.tab === "woocommerce") {
+    redirect("/nemesis/woocommerce");
+  }
+
   const [settings, { user }] = await Promise.all([adminGetSiteSettings(), getAdminStatus()]);
   const presenceVisibility = user ? await getPresenceVisibility(user.id) : "online";
 
@@ -17,7 +29,7 @@ export default async function AdminSettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        description={settings?.updated_at ? `Last saved ${formatDate(settings.updated_at)}.` : "Branding, SEO and shop behaviour – changes go live immediately."}
+        description={settings?.updated_at ? `Last saved ${formatDate(settings.updated_at)}.` : "Branding and SEO options – changes go live immediately."}
       />
       {settings ? (
         <div className="space-y-5">
@@ -25,11 +37,11 @@ export default async function AdminSettingsPage() {
             <Alert variant="destructive">
               <AlertTitle>Database update required</AlertTitle>
               <AlertDescription>
-                Run supabase/migrations/20261018000000_settings_tabs.sql in the Supabase SQL Editor to enable the new General, SEO and WooCommerce options.
+                Run supabase/migrations/20261018000000_settings_tabs.sql in the Supabase SQL Editor to enable the General and SEO options.
               </AlertDescription>
             </Alert>
           )}
-          <SettingsTabs settings={settings} media={settings.media} currencyMigrated={settings.currencyMigrated} presenceVisibility={presenceVisibility} />
+          <SettingsTabs settings={settings} media={settings.media} presenceVisibility={presenceVisibility} />
         </div>
       ) : (
         <Alert variant="destructive">

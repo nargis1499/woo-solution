@@ -14,6 +14,7 @@ import {
   SettingsIcon,
   ShoppingBagIcon,
   ShoppingCartIcon,
+  StoreIcon,
   TagsIcon,
   UsersIcon,
   ImagesIcon,
@@ -50,6 +51,7 @@ export const ADMIN_NAV = [
   // the page on its first tab and stays highlighted on the others – deep links (?tab=extra) are
   // for the tab strip itself, not the sidebar.
   { href: "/nemesis/ui", label: "UI", icon: LayoutTemplateIcon },
+  { href: "/nemesis/woocommerce", label: "WooCommerce", icon: StoreIcon },
   { href: "/nemesis/settings", label: "Settings", icon: SettingsIcon },
 ];
 

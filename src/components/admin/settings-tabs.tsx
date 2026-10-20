@@ -5,21 +5,18 @@ import { useSearchParams } from "next/navigation";
 import type { Key } from "react-aria-components";
 import { isSettingsTab, SETTINGS_TABS, type SettingsTabId } from "@/lib/admin/settings-tabs";
 import type { SettingsMedia, SiteSettings } from "@/lib/types";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { GeneralSettingsForm, SeoSettingsForm, ShopSettingsForm } from "./settings-forms";
+import { GeneralSettingsForm, SeoSettingsForm } from "./settings-forms";
 import { PresenceVisibilityCard } from "./presence-visibility";
 import type { PresenceVisibility } from "@/lib/presence";
 
 export function SettingsTabs({
   settings,
   media,
-  currencyMigrated = true,
   presenceVisibility,
 }: {
   settings: SiteSettings;
   media: SettingsMedia;
-  currencyMigrated?: boolean;
   /** The global fallback of the admin's online visibility (Presence card). */
   presenceVisibility: PresenceVisibility;
 }) {
@@ -61,15 +58,6 @@ export function SettingsTabs({
       </TabsContent>
       <TabsContent id="seo" shouldForceMount className="data-inert:hidden">
         <SeoSettingsForm settings={settings} shareImage={media.share_image} />
-      </TabsContent>
-      <TabsContent id="woocommerce" shouldForceMount className="space-y-5 data-inert:hidden">
-        {!currencyMigrated && (
-          <Alert variant="destructive">
-            <AlertTitle>Database update required</AlertTitle>
-            <AlertDescription>Run supabase/migrations/20261025000000_currency.sql in the Supabase SQL Editor to enable the currency options.</AlertDescription>
-          </Alert>
-        )}
-        <ShopSettingsForm settings={settings} />
       </TabsContent>
     </Tabs>
   );

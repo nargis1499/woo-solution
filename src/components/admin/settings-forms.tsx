@@ -237,7 +237,7 @@ export function SeoSettingsForm({ settings, shareImage }: { settings: SiteSettin
 
 export function ShopSettingsForm({ settings }: { settings: SiteSettings }) {
   return (
-    <SettingsCard title="WooCommerce" action={updateShopSettings}>
+    <SettingsCard title="General" action={updateShopSettings}>
       {({ v, err }) => <ShopSettingsBody settings={settings} v={v} err={err} />}
     </SettingsCard>
   );
