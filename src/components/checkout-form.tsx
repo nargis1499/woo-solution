@@ -21,6 +21,11 @@ import { calculateShippingMicros } from "@/lib/config";
 import { lineKey, selectCartSubtotal, useCartStore, useHydrated } from "@/lib/cart-store";
 import { shortNetworkTag, type CryptoProtocol } from "@/lib/crypto-protocols";
 import { formatMoney } from "@/lib/money";
+import {
+  getPlisioCurrency,
+  PLISIO_CURRENCIES,
+  type PlisioInvoiceSession,
+} from "@/lib/plisio";
 import { generateQrMatrix } from "@/lib/qr-code";
 import type { CurrentUser } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -35,10 +40,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useMoney, useShipping } from "./money-provider";
 import { CartTotals } from "./cart-totals";
+import { PlisioCoinSelector, PlisioLiveInvoiceConsole } from "./plisio-payment-console";
 import { ProductImage } from "./product-image";
 
 type CheckoutPaymentConfig = {
   codEnabled: boolean;
+  plisioEnabled?: boolean;
   cryptoEnabled: boolean;
   cryptoProtocols: CryptoProtocol[];
 };
@@ -47,7 +54,7 @@ type SubmittedCheckoutOrder = {
   orderId: string;
   itemSummary: string;
   totalMicros: number;
-  paymentMode: "cod" | "crypto";
+  paymentMode: "cod" | "plisio" | "crypto";
   protocolLabel: string;
   txHash: string;
 };
@@ -105,10 +112,22 @@ export function CheckoutForm({
   const [pending, startTransition] = useTransition();
 
   const activeProtocols = payment.cryptoProtocols;
-  const [paymentMode, setPaymentMode] = useState<"cod" | "crypto">(() => {
+  const [paymentMode, setPaymentMode] = useState<"cod" | "plisio" | "crypto">(() => {
+    if (!payment.codEnabled && payment.plisioEnabled) return "plisio";
     if (!payment.codEnabled && payment.cryptoEnabled) return "crypto";
     return "cod";
   });
+  const [selectedPlisioCid, setSelectedPlisioCid] = useState<string>(
+    PLISIO_CURRENCIES[0].cid,
+  );
+  const [pendingPlisioOrder, setPendingPlisioOrder] = useState<{
+    invoice: PlisioInvoiceSession;
+    itemSummary: string;
+    totalMicros: number;
+    protocolLabel: string;
+  } | null>(null);
+  const selectedPlisioCurrency = getPlisioCurrency(selectedPlisioCid);
+
   const defaultProtocol =
     activeProtocols.find((p) => Boolean(p.badge)) ?? activeProtocols[0];
   const [selectedProtocolId, setSelectedProtocolId] = useState<string>(
@@ -129,7 +148,7 @@ export function CheckoutForm({
     return <Skeleton className="h-64 w-full rounded-xl" aria-busy />;
   }
 
-  if (items.length === 0 && !submittedOrder) {
+  if (items.length === 0 && !submittedOrder && !pendingPlisioOrder) {
     return (
       <Empty className="border border-dashed py-20">
         <EmptyHeader>
@@ -182,9 +201,11 @@ export function CheckoutForm({
         ? `${items[0].quantity}x ${items[0].name}`
         : `${items.reduce((n, i) => n + i.quantity, 0)} items (${items[0]?.name ?? "Order"})`;
     const protoLabel =
-      paymentMode === "crypto" && selectedProtocol
-        ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
-        : "Cash on Delivery (COD)";
+      paymentMode === "plisio"
+        ? `${selectedPlisioCurrency.name} · Plisio (${selectedPlisioCurrency.network})`
+        : paymentMode === "crypto" && selectedProtocol
+          ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
+          : "Cash on Delivery (COD)";
     const snapTotal = totalMicros;
     const snapMode = paymentMode;
     const snapTx = txHash.trim();
@@ -207,22 +228,40 @@ export function CheckoutForm({
           notes: rawNotes,
         },
         payment:
-          paymentMode === "crypto" && selectedProtocol
+          paymentMode === "plisio"
             ? {
-                method: "crypto",
-                protocolCode: selectedProtocol.code,
-                protocolName: selectedProtocol.name,
-                network: selectedProtocol.network,
-                depositAddress: selectedProtocol.address,
-                transactionId: snapTx,
+                method: "plisio",
+                gateway: "plisio",
+                plisioCid: selectedPlisioCurrency.cid,
+                protocolCode: selectedPlisioCurrency.code,
+                protocolName: `${selectedPlisioCurrency.name} · Plisio`,
+                network: selectedPlisioCurrency.network,
               }
-            : { method: "cod" },
+            : paymentMode === "crypto" && selectedProtocol
+              ? {
+                  method: "crypto",
+                  protocolCode: selectedProtocol.code,
+                  protocolName: selectedProtocol.name,
+                  network: selectedProtocol.network,
+                  depositAddress: selectedProtocol.address,
+                  transactionId: snapTx,
+                }
+              : { method: "cod" },
       });
       if (!result.ok) {
         setError(result.error);
         return;
       }
       clear();
+      if (snapMode === "plisio" && result.plisioInvoice) {
+        setPendingPlisioOrder({
+          invoice: result.plisioInvoice,
+          itemSummary: summaryText,
+          totalMicros: snapTotal,
+          protocolLabel: protoLabel,
+        });
+        return;
+      }
       setSubmittedOrder({
         orderId: result.orderId,
         itemSummary: summaryText,
@@ -363,7 +402,22 @@ export function CheckoutForm({
                 </div>
               )}
 
-              {/* 2. Cryptocurrency Payment Options Below */}
+              {/* 2. Plisio Automated Crypto Gateway Option */}
+              {payment.plisioEnabled && (
+                <PlisioCoinSelector
+                  selectedCid={selectedPlisioCid}
+                  active={paymentMode === "plisio"}
+                  totalMicros={totalMicros}
+                  formattedStoreTotal={`${formatPrice(totalMicros)} ${money.currency}`}
+                  onSelectCoin={(coin) => {
+                    setPaymentMode("plisio");
+                    setSelectedPlisioCid(coin.cid);
+                  }}
+                  testIdPrefix="checkout-plisio"
+                />
+              )}
+
+              {/* 3. Manual Cryptocurrency Payment Options Below */}
               {payment.cryptoEnabled && (
                 <div className="space-y-4" data-testid="checkout-crypto-section">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -623,8 +677,18 @@ export function CheckoutForm({
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <Button type="submit" size="lg" className="w-full" isDisabled={pending}>
-              {pending ? "Submitting order…" : "Place order"}
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
+              isDisabled={pending}
+              data-testid="checkout-submit-button"
+            >
+              {pending
+                ? "Submitting order…"
+                : paymentMode === "plisio"
+                  ? "Place order & Pay via Plisio"
+                  : "Place order"}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
               Final prices and stock are verified securely on the server.
@@ -632,6 +696,67 @@ export function CheckoutForm({
           </CardFooter>
         </Card>
       </form>
+
+      {/* ── Plisio Live Auto-Verify Modal after Order Creation ─────────── */}
+      {pendingPlisioOrder &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-xs animate-in fade-in-0 duration-150"
+            data-testid="checkout-plisio-live-modal"
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Complete Plisio Crypto Payment"
+              className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-border/80 bg-card p-6 text-card-foreground shadow-2xl animate-in zoom-in-95 duration-150"
+            >
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-extrabold tracking-tight text-foreground sm:text-xl">
+                    Plisio Instant Crypto Payment
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Send the exact amount below — your order automatically moves to{" "}
+                    <strong className="text-foreground">Paid</strong> &amp;{" "}
+                    <strong className="text-foreground">Processing</strong>.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = pendingPlisioOrder.invoice.orderId;
+                    setPendingPlisioOrder(null);
+                    router.push(`/orders/${id}?placed=1`);
+                  }}
+                  aria-label="Close"
+                  className="grid size-9 cursor-pointer place-items-center rounded-full bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <XIcon className="size-4" />
+                </button>
+              </div>
+
+              <PlisioLiveInvoiceConsole
+                invoice={pendingPlisioOrder.invoice}
+                formattedStoreTotal={`${formatPrice(pendingPlisioOrder.totalMicros)} ${money.currency}`}
+                onConfirmed={({ txId }) => {
+                  const snap = pendingPlisioOrder;
+                  setPendingPlisioOrder(null);
+                  setSubmittedOrder({
+                    orderId: snap.invoice.orderId,
+                    itemSummary: snap.itemSummary,
+                    totalMicros: snap.totalMicros,
+                    paymentMode: "plisio",
+                    protocolLabel: snap.protocolLabel,
+                    txHash: txId,
+                  });
+                }}
+                testIdPrefix="checkout-plisio-invoice"
+              />
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {/* ── Thank You Popup after Order Submission ────────────────────── */}
       {submittedOrder &&
@@ -663,12 +788,16 @@ export function CheckoutForm({
               </div>
 
               <h3 className="mt-4 text-xl font-extrabold tracking-tight text-foreground sm:text-2xl">
-                Thank You! Your Order Has Been Submitted.
+                {submittedOrder.paymentMode === "plisio"
+                  ? "Thank You! Payment Verified & Order Processing."
+                  : "Thank You! Your Order Has Been Submitted."}
               </h3>
               <p className="mt-1.5 text-xs text-muted-foreground sm:text-sm">
-                {submittedOrder.paymentMode === "crypto"
-                  ? "Your Transaction ID (TXID) has been sent to the Admin for payment verification."
-                  : "Your Cash on Delivery order has been received and will be processed shortly."}
+                {submittedOrder.paymentMode === "plisio"
+                  ? "Plisio verified your blockchain payment automatically. Your order status is now Paid & Processing."
+                  : submittedOrder.paymentMode === "crypto"
+                    ? "Your Transaction ID (TXID) has been sent to the Admin for payment verification."
+                    : "Your Cash on Delivery order has been received and will be processed shortly."}
               </p>
 
               <div className="mt-5 space-y-2.5 rounded-2xl border border-border/80 bg-muted/25 p-5 text-left text-xs sm:text-sm">
@@ -684,20 +813,44 @@ export function CheckoutForm({
                     {submittedOrder.protocolLabel}
                   </span>
                 </div>
-                {submittedOrder.paymentMode === "crypto" && submittedOrder.txHash && (
+                {submittedOrder.paymentMode === "plisio" && (
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground">Transaction ID (TXID):</span>
-                    <span
-                      className="max-w-[230px] truncate font-mono text-xs font-bold text-foreground"
-                      title={submittedOrder.txHash}
-                    >
-                      {submittedOrder.txHash}
-                    </span>
+                    <span className="text-muted-foreground">Payment &amp; Order Status:</span>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        data-testid="checkout-thank-you-payment-status"
+                        className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-600 uppercase dark:text-emerald-400"
+                      >
+                        Paid
+                      </span>
+                      <span
+                        data-testid="checkout-thank-you-order-status"
+                        className="rounded-full bg-sky-500/15 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-600 uppercase dark:text-sky-400"
+                      >
+                        Processing
+                      </span>
+                    </div>
                   </div>
                 )}
+                {(submittedOrder.paymentMode === "crypto" ||
+                  submittedOrder.paymentMode === "plisio") &&
+                  submittedOrder.txHash && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Transaction ID (TXID):</span>
+                      <span
+                        className="max-w-[230px] truncate font-mono text-xs font-bold text-foreground"
+                        title={submittedOrder.txHash}
+                      >
+                        {submittedOrder.txHash}
+                      </span>
+                    </div>
+                  )}
                 <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-2.5 text-sm font-extrabold sm:text-base">
                   <span className="text-primary">
-                    {submittedOrder.paymentMode === "crypto" ? "Total Paid:" : "Total Due:"}
+                    {submittedOrder.paymentMode === "crypto" ||
+                    submittedOrder.paymentMode === "plisio"
+                      ? "Total Paid:"
+                      : "Total Due:"}
                   </span>
                   <span className="text-primary tabular-nums">
                     {formatPrice(submittedOrder.totalMicros)} {money.currency}

@@ -33,6 +33,9 @@ async function CheckoutGate() {
       storeName={settings.store_name}
       payment={{
         codEnabled: settings.payment_cod_enabled,
+        plisioEnabled:
+          settings.payment_plisio_enabled &&
+          Boolean(settings.payment_plisio_secret_key),
         cryptoEnabled: settings.payment_crypto_enabled,
         cryptoProtocols: settings.payment_crypto_protocols.filter((p) => p.enabled),
       }}

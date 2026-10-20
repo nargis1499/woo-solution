@@ -32,11 +32,17 @@ import {
 } from "@/lib/crypto-protocols";
 import { parseProductFeatures } from "@/lib/home-sections";
 import { formatMoney } from "@/lib/money";
+import {
+  getPlisioCurrency,
+  PLISIO_CURRENCIES,
+  type PlisioInvoiceSession,
+} from "@/lib/plisio";
 import { generateQrMatrix } from "@/lib/qr-code";
 import { resolveQuickCheckoutTiers, type QuickCheckoutTier } from "@/lib/quick-checkout";
 import type { Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useMoney } from "./money-provider";
+import { PlisioCoinSelector, PlisioLiveInvoiceConsole } from "./plisio-payment-console";
 
 const PENDING_QC_STORAGE_KEY = "woo_pending_quick_checkout";
 
@@ -48,6 +54,7 @@ type QuickCheckoutCustomer = {
 
 type QuickCheckoutPayment = {
   codEnabled: boolean;
+  plisioEnabled?: boolean;
   cryptoEnabled: boolean;
   cryptoProtocols: CryptoProtocol[];
 };
@@ -206,17 +213,28 @@ export function QuickCheckoutModal({
   const [paymentConfig, setPaymentConfig] = useState<QuickCheckoutPayment>(
     initialData?.payment ?? {
       codEnabled: true,
+      plisioEnabled: false,
       cryptoEnabled: true,
       cryptoProtocols: DEFAULT_CRYPTO_PROTOCOLS,
     },
   );
-  const [paymentMode, setPaymentMode] = useState<"crypto" | "cod">(() => {
+  const [paymentMode, setPaymentMode] = useState<"crypto" | "plisio" | "cod">(() => {
     const p = initialData?.payment;
+    if (p?.plisioEnabled) return "plisio";
     if (p && (!p.cryptoEnabled || p.cryptoProtocols.length === 0) && p.codEnabled) {
       return "cod";
     }
     return "crypto";
   });
+  const [selectedPlisioCid, setSelectedPlisioCid] = useState<string>(
+    PLISIO_CURRENCIES[0].cid,
+  );
+  const [plisioInvoice, setPlisioInvoice] = useState<PlisioInvoiceSession | null>(
+    null,
+  );
+  const [plisioConfirmedTxId, setPlisioConfirmedTxId] = useState<string | null>(
+    null,
+  );
   const [selectedProtocolId, setSelectedProtocolId] = useState<string>("");
   const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
 
@@ -270,7 +288,9 @@ export function QuickCheckoutModal({
         }
         if (data.payment) {
           setPaymentConfig(data.payment);
-          if (
+          if (data.payment.plisioEnabled) {
+            setPaymentMode("plisio");
+          } else if (
             (!data.payment.cryptoEnabled ||
               data.payment.cryptoProtocols.length === 0) &&
             data.payment.codEnabled
@@ -364,6 +384,96 @@ export function QuickCheckoutModal({
     } catch {
       toast.error("Could not copy automatically — please select and copy the address.");
     }
+  }
+
+  const selectedPlisioCurrency = getPlisioCurrency(selectedPlisioCid);
+
+  async function handleProceedFromStep3() {
+    setVerifyError(null);
+    if (paymentMode === "plisio") {
+      if (!selectedProduct || !selectedTier || submitting) return;
+      setSubmitting(true);
+      try {
+        if (plisioInvoice && plisioInvoice.orderId) {
+          // If customer changed coin on an already created Plisio order, refresh invoice
+          const res = await fetch("/api/plisio/invoice", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              orderId: plisioInvoice.orderId,
+              cid: selectedPlisioCurrency.cid,
+            }),
+          });
+          const data = (await res.json().catch(() => null)) as {
+            ok?: boolean;
+            invoice?: PlisioInvoiceSession;
+            error?: string;
+          } | null;
+          if (data?.ok && data.invoice) {
+            setPlisioInvoice(data.invoice);
+          }
+          setMaxUnlockedStep((prev) => Math.max(prev, 4));
+          setStep(4);
+          return;
+        }
+
+        const fallbackVariationId =
+          selectedTier.variationId ??
+          (selectedProduct.type === "variable"
+            ? (selectedProduct.variations?.find((v) => v.is_active !== false)?.id ?? null)
+            : null);
+        const itemQty = selectedTier.variationId
+          ? 1
+          : Math.max(1, selectedTier.quantity);
+
+        const res = await placeOrder({
+          items: [
+            {
+              product_id: selectedProduct.id,
+              variation_id: fallbackVariationId,
+              quantity: itemQty,
+            },
+          ],
+          shipping: {
+            name: fullName.trim() || "Customer",
+            phone: whatsapp.trim(),
+            address_line1: email.trim()
+              ? `Delivery Email: ${email.trim()}`
+              : "Quick Checkout Delivery",
+            address_line2: telegram.trim() ? `Telegram: ${telegram.trim()}` : "",
+            city: country.trim() || "Online",
+            postal_code: "",
+            country: country.trim() || "United States",
+            notes: notes.trim(),
+          },
+          payment: {
+            method: "plisio",
+            gateway: "plisio",
+            plisioCid: selectedPlisioCurrency.cid,
+            protocolCode: selectedPlisioCurrency.code,
+            protocolName: `${selectedPlisioCurrency.name} · Plisio`,
+            network: selectedPlisioCurrency.network,
+          },
+        });
+
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+
+        if (res.plisioInvoice) {
+          setPlisioInvoice(res.plisioInvoice);
+        }
+        setMaxUnlockedStep((prev) => Math.max(prev, 4));
+        setStep(4);
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    setMaxUnlockedStep((prev) => Math.max(prev, 4));
+    setStep(4);
   }
 
   async function handleSubmitOrder() {
@@ -557,12 +667,16 @@ export function QuickCheckoutModal({
 
               <div className="space-y-1.5">
                 <h3 className="text-xl font-extrabold tracking-tight text-foreground sm:text-2xl">
-                  Thank You! Your Order Has Been Submitted.
+                  {paymentMode === "plisio"
+                    ? "Thank You! Payment Verified & Order Processing."
+                    : "Thank You! Your Order Has Been Submitted."}
                 </h3>
                 <p className="mx-auto max-w-lg text-xs text-muted-foreground sm:text-sm">
-                  {paymentMode === "crypto"
-                    ? "Your Transaction ID (TXID) has been sent to the Admin for payment verification."
-                    : "Your Cash on Delivery order has been received and will be processed shortly."}
+                  {paymentMode === "plisio"
+                    ? "Plisio verified your blockchain payment automatically. Your order status is now Paid & Processing."
+                    : paymentMode === "crypto"
+                      ? "Your Transaction ID (TXID) has been sent to the Admin for payment verification."
+                      : "Your Cash on Delivery order has been received and will be processed shortly."}
                 </p>
               </div>
 
@@ -577,25 +691,53 @@ export function QuickCheckoutModal({
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-muted-foreground">Payment Protocol:</span>
                   <span className="font-semibold text-foreground">
-                    {paymentMode === "crypto" && selectedProtocol
-                      ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
-                      : "Cash on Delivery (COD)"}
+                    {paymentMode === "plisio"
+                      ? `${selectedPlisioCurrency.name} · Plisio (${selectedPlisioCurrency.network})`
+                      : paymentMode === "crypto" && selectedProtocol
+                        ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
+                        : "Cash on Delivery (COD)"}
                   </span>
                 </div>
-                {paymentMode === "crypto" && txId.trim() && (
+                {paymentMode === "plisio" && (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Payment &amp; Order Status:</span>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        data-testid="qc-thank-you-payment-status"
+                        className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-600 uppercase dark:text-emerald-400"
+                      >
+                        Paid
+                      </span>
+                      <span
+                        data-testid="qc-thank-you-order-status"
+                        className="rounded-full bg-sky-500/15 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-600 uppercase dark:text-sky-400"
+                      >
+                        Processing
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {((paymentMode === "crypto" && txId.trim()) ||
+                  (paymentMode === "plisio" && plisioConfirmedTxId)) && (
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted-foreground">Transaction ID (TXID):</span>
                     <span
                       className="max-w-[260px] truncate font-mono text-xs font-bold text-foreground"
-                      title={txId.trim()}
+                      title={
+                        paymentMode === "plisio"
+                          ? (plisioConfirmedTxId ?? "")
+                          : txId.trim()
+                      }
                     >
-                      {txId.trim()}
+                      {paymentMode === "plisio" ? plisioConfirmedTxId : txId.trim()}
                     </span>
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-2.5 text-sm font-extrabold sm:text-base">
                   <span className="text-primary">
-                    {paymentMode === "crypto" ? "Total Paid:" : "Total Due:"}
+                    {paymentMode === "crypto" || paymentMode === "plisio"
+                      ? "Total Paid:"
+                      : "Total Due:"}
                   </span>
                   <span className="text-primary tabular-nums">
                     {formatMoney(selectedTier.priceMicros, money)} {money.currency}
@@ -1069,7 +1211,22 @@ export function QuickCheckoutModal({
                     </div>
                   )}
 
-                  {/* 2. Crypto Options Below Cash on Delivery */}
+                  {/* 2. Plisio Automated Crypto Gateway Option (when enabled) */}
+                  {paymentConfig.plisioEnabled && (
+                    <PlisioCoinSelector
+                      selectedCid={selectedPlisioCid}
+                      active={paymentMode === "plisio"}
+                      totalMicros={selectedTier.priceMicros}
+                      formattedStoreTotal={`${formatMoney(selectedTier.priceMicros, money)} ${money.currency}`}
+                      onSelectCoin={(coin) => {
+                        setPaymentMode("plisio");
+                        setSelectedPlisioCid(coin.cid);
+                      }}
+                      testIdPrefix="qc-plisio"
+                    />
+                  )}
+
+                  {/* 3. Manual Crypto Options Below Plisio / COD */}
                   {paymentConfig.cryptoEnabled && selectedProtocol && (
                     <>
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1257,18 +1414,19 @@ export function QuickCheckoutModal({
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setVerifyError(null);
-                        setMaxUnlockedStep((prev) => Math.max(prev, 4));
-                        setStep(4);
-                      }}
+                      disabled={submitting}
+                      onClick={() => void handleProceedFromStep3()}
                       data-testid="quick-checkout-sent-payment"
-                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99] disabled:opacity-60"
                     >
                       <span>
-                        {paymentMode === "cod"
-                          ? "Confirm Cash on Delivery → Verify"
-                          : "I Have Sent Payment → Enter TXID"}
+                        {paymentMode === "plisio"
+                          ? submitting
+                            ? "Generating Plisio Invoice…"
+                            : "Continue to Plisio Auto-Pay →"
+                          : paymentMode === "cod"
+                            ? "Confirm Cash on Delivery → Verify"
+                            : "I Have Sent Payment → Enter TXID"}
                       </span>
                     </button>
                   </div>
@@ -1277,110 +1435,172 @@ export function QuickCheckoutModal({
 
               {step === 4 && selectedTier && (
                 <div className="space-y-5" data-testid="quick-checkout-step-4-panel">
-                  {/* Simple Top Notice Box (no "automated verification" or long text) */}
-                  <div
-                    className="flex items-center gap-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3.5 text-xs font-semibold text-amber-800 dark:text-amber-300 sm:text-sm"
-                    data-testid="qc-verify-notice"
-                  >
-                    <AlertTriangleIcon
-                      className="size-4.5 shrink-0 text-amber-600 dark:text-amber-400"
-                      aria-hidden
-                    />
-                    <span>
-                      {paymentMode === "crypto"
-                        ? "Please enter your Transaction ID (TXID) below so the Admin can verify your payment."
-                        : "Please review your order summary below and submit your Cash on Delivery order."}
-                    </span>
-                  </div>
-
-                  {/* Transaction ID Input (Crypto only — no image upload) */}
-                  {paymentMode === "crypto" && (
-                    <div className="space-y-2">
-                      <label
-                        htmlFor="qc-verify-txid"
-                        className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
-                      >
-                        CRYPTO TRANSACTION HASH / TXID * (REQUIRED)
-                      </label>
-                      <input
-                        id="qc-verify-txid"
-                        type="text"
-                        required
-                        value={txId}
-                        onChange={(e) => {
-                          setTxId(e.target.value);
-                          if (verifyError) setVerifyError(null);
+                  {paymentMode === "plisio" && plisioInvoice ? (
+                    <>
+                      <PlisioLiveInvoiceConsole
+                        invoice={plisioInvoice}
+                        formattedStoreTotal={`${formatMoney(selectedTier.priceMicros, money)} ${money.currency}`}
+                        onConfirmed={({ txId: verifiedTx }) => {
+                          setPlisioConfirmedTxId(verifiedTx);
+                          setSubmittedOrderId(plisioInvoice.orderId);
                         }}
-                        placeholder="e.g. 0x89f4b32a9c118e27a6d8924b1088c4b11f32a79c or TFshfiXsqxNxeTa..."
-                        data-testid="qc-verify-txid"
-                        className="h-12 w-full rounded-xl border border-border/80 bg-muted/20 px-4 font-mono text-xs text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20 sm:text-sm"
+                        testIdPrefix="qc-plisio-invoice"
                       />
-                    </div>
+
+                      {/* Order Summary Card */}
+                      <div
+                        className="space-y-2.5 rounded-2xl border border-border/80 bg-muted/25 p-5 text-xs sm:text-sm"
+                        data-testid="qc-verify-order-summary"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-semibold text-muted-foreground">
+                            Order Summary:
+                          </span>
+                          <span className="font-extrabold text-foreground">
+                            {selectedTier.title} {selectedProduct.name}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Payment Protocol:</span>
+                          <span className="font-semibold text-muted-foreground">
+                            {selectedPlisioCurrency.name} · Plisio (
+                            {selectedPlisioCurrency.network})
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-2.5 text-sm font-extrabold sm:text-base">
+                          <span className="text-primary">Total Due:</span>
+                          <span className="text-primary tabular-nums">
+                            {plisioInvoice.cryptoAmount} {plisioInvoice.code} (
+                            {formatMoney(selectedTier.priceMicros, money)}{" "}
+                            {money.currency})
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-start pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setStep(3)}
+                          data-testid="quick-checkout-back-to-step-3"
+                          className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
+                        >
+                          <ArrowLeftIcon className="size-4" aria-hidden />
+                          <span>Change Coin / Payment Method</span>
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Simple Top Notice Box (no "automated verification" or long text) */}
+                      <div
+                        className="flex items-center gap-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3.5 text-xs font-semibold text-amber-800 dark:text-amber-300 sm:text-sm"
+                        data-testid="qc-verify-notice"
+                      >
+                        <AlertTriangleIcon
+                          className="size-4.5 shrink-0 text-amber-600 dark:text-amber-400"
+                          aria-hidden
+                        />
+                        <span>
+                          {paymentMode === "crypto"
+                            ? "Please enter your Transaction ID (TXID) below so the Admin can verify your payment."
+                            : "Please review your order summary below and submit your Cash on Delivery order."}
+                        </span>
+                      </div>
+
+                      {/* Transaction ID Input (Crypto only — no image upload) */}
+                      {paymentMode === "crypto" && (
+                        <div className="space-y-2">
+                          <label
+                            htmlFor="qc-verify-txid"
+                            className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                          >
+                            CRYPTO TRANSACTION HASH / TXID * (REQUIRED)
+                          </label>
+                          <input
+                            id="qc-verify-txid"
+                            type="text"
+                            required
+                            value={txId}
+                            onChange={(e) => {
+                              setTxId(e.target.value);
+                              if (verifyError) setVerifyError(null);
+                            }}
+                            placeholder="e.g. 0x89f4b32a9c118e27a6d8924b1088c4b11f32a79c or TFshfiXsqxNxeTa..."
+                            data-testid="qc-verify-txid"
+                            className="h-12 w-full rounded-xl border border-border/80 bg-muted/20 px-4 font-mono text-xs text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20 sm:text-sm"
+                          />
+                        </div>
+                      )}
+
+                      {verifyError && (
+                        <p
+                          className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-xs font-semibold text-destructive"
+                          data-testid="qc-verify-error"
+                        >
+                          {verifyError}
+                        </p>
+                      )}
+
+                      {/* Order Summary Card */}
+                      <div
+                        className="space-y-2.5 rounded-2xl border border-border/80 bg-muted/25 p-5 text-xs sm:text-sm"
+                        data-testid="qc-verify-order-summary"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-semibold text-muted-foreground">
+                            Order Summary:
+                          </span>
+                          <span className="font-extrabold text-foreground">
+                            {selectedTier.title} {selectedProduct.name}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Payment Protocol:</span>
+                          <span className="font-semibold text-muted-foreground">
+                            {paymentMode === "crypto" && selectedProtocol
+                              ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
+                              : "Cash on Delivery (COD)"}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-2.5 text-sm font-extrabold sm:text-base">
+                          <span className="text-primary">
+                            {paymentMode === "crypto" ? "Total Paid:" : "Total Due:"}
+                          </span>
+                          <span className="text-primary tabular-nums">
+                            {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Bottom Action Bar: ← Back | Submit Order */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setStep(3)}
+                          data-testid="quick-checkout-back-to-step-3"
+                          className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
+                        >
+                          <ArrowLeftIcon className="size-4" aria-hidden />
+                          <span>Back</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={submitting}
+                          onClick={() => void handleSubmitOrder()}
+                          data-testid="qc-submit-order"
+                          className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-emerald-600 px-7 py-3.5 text-sm font-extrabold text-white shadow-lg transition-all hover:bg-emerald-500 active:scale-[0.99] disabled:opacity-60"
+                        >
+                          <CircleCheckIcon className="size-4.5" aria-hidden />
+                          <span>{submitting ? "Submitting Order…" : "Submit Order"}</span>
+                        </button>
+                      </div>
+                    </>
                   )}
-
-                  {verifyError && (
-                    <p
-                      className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-xs font-semibold text-destructive"
-                      data-testid="qc-verify-error"
-                    >
-                      {verifyError}
-                    </p>
-                  )}
-
-                  {/* Order Summary Card */}
-                  <div
-                    className="space-y-2.5 rounded-2xl border border-border/80 bg-muted/25 p-5 text-xs sm:text-sm"
-                    data-testid="qc-verify-order-summary"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-semibold text-muted-foreground">Order Summary:</span>
-                      <span className="font-extrabold text-foreground">
-                        {selectedTier.title} {selectedProduct.name}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-muted-foreground">Payment Protocol:</span>
-                      <span className="font-semibold text-muted-foreground">
-                        {paymentMode === "crypto" && selectedProtocol
-                          ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
-                          : "Cash on Delivery (COD)"}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-2.5 text-sm font-extrabold sm:text-base">
-                      <span className="text-primary">
-                        {paymentMode === "crypto" ? "Total Paid:" : "Total Due:"}
-                      </span>
-                      <span className="text-primary tabular-nums">
-                        {formatMoney(selectedTier.priceMicros, money)} {money.currency}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Bottom Action Bar: ← Back | Submit Order */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setStep(3)}
-                      data-testid="quick-checkout-back-to-step-3"
-                      className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
-                    >
-                      <ArrowLeftIcon className="size-4" aria-hidden />
-                      <span>Back</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={() => void handleSubmitOrder()}
-                      data-testid="qc-submit-order"
-                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-emerald-600 px-7 py-3.5 text-sm font-extrabold text-white shadow-lg transition-all hover:bg-emerald-500 active:scale-[0.99] disabled:opacity-60"
-                    >
-                      <CircleCheckIcon className="size-4.5" aria-hidden />
-                      <span>{submitting ? "Submitting Order…" : "Submit Order"}</span>
-                    </button>
-                  </div>
                 </div>
               )}
             </>

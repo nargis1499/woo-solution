@@ -355,6 +355,8 @@ export type SiteSettings = {
   shipping_rate_micros: number;
   // WooCommerce → Payment
   payment_cod_enabled: boolean;
+  payment_plisio_enabled: boolean;
+  payment_plisio_secret_key: string | null;
   payment_crypto_enabled: boolean;
   payment_crypto_protocols: CryptoProtocol[];
   // Home page (UI → Home page): which sections the storefront home renders + hero content

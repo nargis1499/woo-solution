@@ -150,7 +150,11 @@ export default async function AdminOrderPage({
                       className="mt-1 font-medium"
                       data-testid="admin-order-payment-method"
                     >
-                      {paymentInfo.isCrypto ? "Cryptocurrency" : "Cash on Delivery (COD)"}
+                      {paymentInfo.isPlisio
+                        ? "Plisio (Automated Crypto)"
+                        : paymentInfo.isCrypto
+                          ? "Cryptocurrency"
+                          : "Cash on Delivery (COD)"}
                     </dd>
                   </div>
 

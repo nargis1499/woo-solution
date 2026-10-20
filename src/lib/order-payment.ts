@@ -2,16 +2,21 @@ import { shortNetworkTag } from "./crypto-protocols";
 import type { Order } from "./types";
 
 export type OrderPaymentInput = {
-  method: "cod" | "crypto";
+  method: "cod" | "crypto" | "plisio";
+  gateway?: "plisio" | "manual";
   protocolCode?: string;
   protocolName?: string;
   network?: string;
   depositAddress?: string;
   transactionId?: string;
+  plisioTxnId?: string;
+  plisioCid?: string;
+  cryptoAmount?: string;
 };
 
 export type ParsedOrderPayment = {
   isCrypto: boolean;
+  isPlisio: boolean;
   methodLabel: string;
   shortMethodLabel: string;
   protocolCode: string | null;
@@ -19,6 +24,9 @@ export type ParsedOrderPayment = {
   network: string | null;
   depositAddress: string | null;
   transactionId: string | null;
+  plisioTxnId: string | null;
+  plisioCid: string | null;
+  cryptoAmount: string | null;
   customerNotes: string | null;
 };
 
@@ -26,36 +34,47 @@ const PAYMENT_META_PREFIX = "[PAYMENT_META:";
 const PAYMENT_META_SUFFIX = "]";
 
 type EncodedPaymentMeta = {
-  m?: "crypto" | "cod";
+  m?: "crypto" | "cod" | "plisio";
+  g?: "plisio" | "manual";
   c?: string;
   p?: string;
   n?: string;
   a?: string;
   tx?: string;
+  ptx?: string;
+  cid?: string;
+  amt?: string;
 };
 
 /**
  * Attaches structured payment metadata to `notes` so that even if a database
  * does not yet have the optional `payment_*` columns, the Admin Order page and
  * Customer Order page can always parse the full payment protocol, network,
- * deposit address, and Transaction ID (TXID), while keeping customer notes clean.
+ * deposit address, Plisio invoice ID, and Transaction ID (TXID), while keeping
+ * customer notes clean.
  */
 export function formatOrderNotesWithPayment(
   rawCustomerNotes: string | null | undefined,
   payment?: OrderPaymentInput | null,
 ): string {
   const cleanNotes = (rawCustomerNotes ?? "").trim();
-  if (!payment || payment.method !== "crypto") {
+  if (!payment || payment.method === "cod") {
     return cleanNotes;
   }
 
+  const isPlisio = payment.method === "plisio" || payment.gateway === "plisio";
+
   const meta: EncodedPaymentMeta = {
-    m: "crypto",
+    m: isPlisio ? "plisio" : "crypto",
+    g: isPlisio ? "plisio" : undefined,
     c: payment.protocolCode?.trim() || undefined,
     p: payment.protocolName?.trim() || undefined,
     n: payment.network?.trim() || undefined,
     a: payment.depositAddress?.trim() || undefined,
     tx: payment.transactionId?.trim() || undefined,
+    ptx: payment.plisioTxnId?.trim() || undefined,
+    cid: payment.plisioCid?.trim() || undefined,
+    amt: payment.cryptoAmount?.trim() || undefined,
   };
 
   const tag = `${PAYMENT_META_PREFIX}${JSON.stringify(meta)}${PAYMENT_META_SUFFIX}`;
@@ -113,7 +132,14 @@ export function parseOrderPaymentInfo(
   }
 
   const methodRaw = (order.payment_method ?? "cod").trim();
+  const isPlisio =
+    meta?.m === "plisio" ||
+    meta?.g === "plisio" ||
+    /^plisio/i.test(methodRaw) ||
+    /plisio/i.test(order.payment_protocol ?? "");
+
   const isCrypto =
+    isPlisio ||
     meta?.m === "crypto" ||
     /^crypto/i.test(methodRaw) ||
     Boolean(order.payment_tx_id) ||
@@ -124,10 +150,14 @@ export function parseOrderPaymentInfo(
   const network = order.payment_network || meta?.n || null;
   const depositAddress = order.payment_address || meta?.a || null;
   const transactionId = order.payment_tx_id || meta?.tx || null;
+  const plisioTxnId = meta?.ptx || null;
+  const plisioCid = meta?.cid || null;
+  const cryptoAmount = meta?.amt || null;
 
   if (!isCrypto) {
     return {
       isCrypto: false,
+      isPlisio: false,
       methodLabel: "Cash on Delivery (COD)",
       shortMethodLabel: "COD",
       protocolCode: null,
@@ -135,15 +165,19 @@ export function parseOrderPaymentInfo(
       network: null,
       depositAddress: null,
       transactionId: null,
+      plisioTxnId: null,
+      plisioCid: null,
+      cryptoAmount: null,
       customerNotes: rawNotes || null,
     };
   }
 
   const netShort = network ? shortNetworkTag(network) : null;
   const codeOrName = protocolCode || protocolName || "CRYPTO";
+  const prefix = isPlisio ? "PLISIO" : "CRYPTO";
   const shortMethodLabel = netShort
-    ? `CRYPTO · ${codeOrName} (${netShort})`
-    : `CRYPTO · ${codeOrName}`;
+    ? `${prefix} · ${codeOrName} (${netShort})`
+    : `${prefix} · ${codeOrName}`;
 
   const fullProto =
     protocolName && network
@@ -152,13 +186,19 @@ export function parseOrderPaymentInfo(
 
   return {
     isCrypto: true,
-    methodLabel: `Cryptocurrency — ${fullProto}`,
+    isPlisio,
+    methodLabel: isPlisio
+      ? `Plisio Crypto — ${fullProto}`
+      : `Cryptocurrency — ${fullProto}`,
     shortMethodLabel,
     protocolCode,
     protocolName,
     network,
     depositAddress,
     transactionId,
+    plisioTxnId,
+    plisioCid,
+    cryptoAmount,
     customerNotes: rawNotes || null,
   };
 }

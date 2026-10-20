@@ -1,9 +1,12 @@
 "use server";
 
+import { headers } from "next/headers";
 import {
   formatOrderNotesWithPayment,
   type OrderPaymentInput,
 } from "@/lib/order-payment";
+import { getPlisioCurrency, type PlisioInvoiceSession } from "@/lib/plisio";
+import { createPlisioOrderInvoice } from "@/lib/plisio.server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { ShippingInput } from "@/lib/types";
@@ -15,7 +18,7 @@ export type PlaceOrderInput = {
 };
 
 export type PlaceOrderResult =
-  | { ok: true; orderId: string }
+  | { ok: true; orderId: string; plisioInvoice?: PlisioInvoiceSession }
   | { ok: false; error: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -42,7 +45,14 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
 
   if (items.length === 0) return { ok: false, error: "Your cart is empty." };
 
-  const paymentMethod = input.payment?.method === "crypto" ? "crypto" : "cod";
+  const rawMethod = input.payment?.method;
+  const paymentMethod: "cod" | "crypto" | "plisio" =
+    rawMethod === "plisio"
+      ? "plisio"
+      : rawMethod === "crypto"
+        ? "crypto"
+        : "cod";
+
   const paymentTxId = clean(input.payment?.transactionId, 240);
   if (paymentMethod === "crypto" && !paymentTxId) {
     return {
@@ -51,17 +61,32 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     };
   }
 
+  const plisioCurrency =
+    paymentMethod === "plisio"
+      ? getPlisioCurrency(clean(input.payment?.plisioCid || input.payment?.protocolCode, 40) || "USDT_TRX")
+      : null;
+
   const normalizedPayment: OrderPaymentInput | undefined =
-    paymentMethod === "crypto"
+    paymentMethod === "plisio" && plisioCurrency
       ? {
-          method: "crypto",
-          protocolCode: clean(input.payment?.protocolCode, 40),
-          protocolName: clean(input.payment?.protocolName, 80),
-          network: clean(input.payment?.network, 80),
-          depositAddress: clean(input.payment?.depositAddress, 200),
-          transactionId: paymentTxId,
+          method: "plisio",
+          gateway: "plisio",
+          protocolCode: plisioCurrency.code,
+          protocolName: `${plisioCurrency.name} · Plisio`,
+          network: plisioCurrency.network,
+          plisioCid: plisioCurrency.cid,
         }
-      : { method: "cod" };
+      : paymentMethod === "crypto"
+        ? {
+            method: "crypto",
+            gateway: "manual",
+            protocolCode: clean(input.payment?.protocolCode, 40),
+            protocolName: clean(input.payment?.protocolName, 80),
+            network: clean(input.payment?.network, 80),
+            depositAddress: clean(input.payment?.depositAddress, 200),
+            transactionId: paymentTxId,
+          }
+        : { method: "cod" };
 
   const rawCustomerNotes = clean(input.shipping?.notes, 600);
   const notesWithPayment = formatOrderNotesWithPayment(rawCustomerNotes, normalizedPayment);
@@ -104,7 +129,7 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
   try {
     const service = createServiceClient();
     if (service) {
-      // 1. Stamp structured payment fields on the order row when using Crypto
+      // 1. Stamp structured payment fields on the order row when using manual Crypto
       if (paymentMethod === "crypto" && normalizedPayment) {
         const methodDisplay = normalizedPayment.protocolCode
           ? `crypto (${normalizedPayment.protocolCode})`
@@ -164,6 +189,23 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     }
   } catch {
     // Non-fatal: `enrichNewOrderNotifications` also resolves item counts at read time
+  }
+
+  // 3. When using Plisio, immediately generate the unique Plisio invoice for this order
+  if (paymentMethod === "plisio" && plisioCurrency) {
+    const h = await headers();
+    const origin =
+      h.get("origin") ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      "http://localhost:3000";
+    const invoiceRes = await createPlisioOrderInvoice({
+      orderId,
+      cid: plisioCurrency.cid,
+      siteOrigin: origin,
+    });
+    if (invoiceRes.ok) {
+      return { ok: true, orderId, plisioInvoice: invoiceRes.invoice };
+    }
   }
 
   return { ok: true, orderId };

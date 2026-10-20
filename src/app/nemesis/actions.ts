@@ -1157,6 +1157,8 @@ const META_FALLBACK_KEYS = [
   "shipping_enabled",
   "shipping_rate_micros",
   "payment_cod_enabled",
+  "payment_plisio_enabled",
+  "payment_plisio_secret_key",
   "payment_crypto_enabled",
   "payment_crypto_protocols",
   "home_show_hero",
@@ -1389,6 +1391,8 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
 
 export async function savePaymentSettings(input: {
   payment_cod_enabled?: boolean;
+  payment_plisio_enabled?: boolean;
+  payment_plisio_secret_key?: string | null;
   payment_crypto_enabled?: boolean;
   payment_crypto_protocols?: CryptoProtocol[];
 }): Promise<{ ok: boolean; message?: string; error?: string }> {
@@ -1396,6 +1400,16 @@ export async function savePaymentSettings(input: {
     const patch: Record<string, unknown> = {};
     if (typeof input.payment_cod_enabled === "boolean") {
       patch.payment_cod_enabled = input.payment_cod_enabled;
+    }
+    if (typeof input.payment_plisio_enabled === "boolean") {
+      patch.payment_plisio_enabled = input.payment_plisio_enabled;
+    }
+    if (input.payment_plisio_secret_key !== undefined) {
+      const trimmed =
+        typeof input.payment_plisio_secret_key === "string"
+          ? input.payment_plisio_secret_key.trim()
+          : "";
+      patch.payment_plisio_secret_key = trimmed ? trimmed.slice(0, 200) : null;
     }
     if (typeof input.payment_crypto_enabled === "boolean") {
       patch.payment_crypto_enabled = input.payment_crypto_enabled;

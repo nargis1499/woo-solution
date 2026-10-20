@@ -55,9 +55,11 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
           <CircleCheckIcon />
           <AlertTitle>Thank you. Your order has been received!</AlertTitle>
           <AlertDescription className="text-current/80">
-            {paymentInfo.isCrypto
-              ? `We've received your Transaction ID (TXID) and sent a confirmation to ${order.customer_email ?? "your e-mail"}. The Admin will verify your payment shortly.`
-              : `We've sent a confirmation to ${order.customer_email ?? "your e-mail"}. Pay in cash when it arrives.`}
+            {paymentInfo.isPlisio && order.payment_status === "paid"
+              ? `Plisio verified your blockchain payment automatically! Your order is Paid and now Processing.`
+              : paymentInfo.isCrypto
+                ? `We've received your Transaction ID (TXID) and sent a confirmation to ${order.customer_email ?? "your e-mail"}. The Admin will verify your payment shortly.`
+                : `We've sent a confirmation to ${order.customer_email ?? "your e-mail"}. Pay in cash when it arrives.`}
           </AlertDescription>
         </Alert>
       )}
