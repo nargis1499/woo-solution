@@ -285,6 +285,7 @@ export async function createPlisioOrderInvoice(params: {
     ok: true,
     invoice: {
       orderId: String(order.id),
+      orderNumber,
       txnId,
       cid: currency.cid,
       code: currency.code,
@@ -293,11 +294,13 @@ export async function createPlisioOrderInvoice(params: {
       networkTag: currency.networkTag,
       walletAddress,
       cryptoAmount,
+      usdAmount,
       fiatAmountUsd: usdAmount,
       invoiceUrl,
       expiresAtMs,
       status:
         String(order.payment_status ?? "") === "paid" ? "completed" : "pending",
+      txId: parsedExisting.transactionId ?? null,
       mode,
     },
   };

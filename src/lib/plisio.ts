@@ -109,7 +109,7 @@ export const PLISIO_CURRENCIES: PlisioCurrency[] = [
 
 export type PlisioInvoiceSession = {
   orderId: string;
-  orderNumber: number;
+  orderNumber?: number;
   txnId: string;
   cid: string;
   code: string;
@@ -118,11 +118,12 @@ export type PlisioInvoiceSession = {
   networkTag: string;
   walletAddress: string;
   cryptoAmount: string;
-  usdAmount: string;
+  usdAmount?: string;
+  fiatAmountUsd?: string;
   invoiceUrl: string | null;
   expiresAtMs: number;
   status: "new" | "pending" | "completed" | "mismatch" | "expired" | "cancelled";
-  txId: string | null;
+  txId?: string | null;
   mode: "live" | "sandbox";
 };
 
