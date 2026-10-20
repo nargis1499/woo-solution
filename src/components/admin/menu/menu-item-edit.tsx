@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { SquarePenIcon } from "lucide-react";
 import { updateMenuItem } from "@/app/nemesis/ui/actions";
 import type { AdminFormState } from "@/lib/admin/form";
 import { MENU_KIND_LABELS, MENU_TITLE_MAX } from "@/lib/menu-config";
@@ -17,8 +18,8 @@ export function MenuItemEditButton({ item, href }: { item: MenuItem; href: strin
   const [open, setOpen] = useState(false);
   return (
     <DialogTrigger isOpen={open} onOpenChange={setOpen}>
-      <Button variant="outline" size="sm" aria-label={`Edit "${item.title}"`}>
-        Edit
+      <Button variant="outline" size="icon-sm" aria-label={`Edit "${item.title}"`}>
+        <SquarePenIcon className="size-4" />
       </Button>
       {/* The form mounts fresh every time the dialog opens, so old validation errors never linger. */}
       {open && <EditForm item={item} href={href} onSaved={() => setOpen(false)} />}

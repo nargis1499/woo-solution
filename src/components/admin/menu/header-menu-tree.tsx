@@ -272,25 +272,25 @@ function SortableHeaderMenuRow({
             <Button
               type="button"
               variant="ghost"
-              size="xs"
+              size="icon-sm"
               onPress={onOutdent}
               aria-label={`Move "${item.title}" to top level`}
               data-testid={`menu-outdent-${item.id}`}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground"
             >
-              <ArrowLeftToLineIcon className="size-3.5" /> Top level
+              <ArrowLeftToLineIcon className="size-4" />
             </Button>
           ) : canIndent && childCount === 0 ? (
             <Button
               type="button"
               variant="ghost"
-              size="xs"
+              size="icon-sm"
               onPress={onIndent}
               aria-label={`Make "${item.title}" a dropdown item under "${precedingTopTitle ?? "parent"}"`}
               data-testid={`menu-indent-${item.id}`}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground"
             >
-              <ArrowRightToLineIcon className="size-3.5" /> Sub-item
+              <ArrowRightToLineIcon className="size-4" />
             </Button>
           ) : null}
 

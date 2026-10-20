@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRightIcon, BanknoteIcon, DollarSignIcon, PackageIcon, PlusIcon, ShoppingCartIcon, UsersIcon } from "lucide-react";
+import { ArrowRightIcon, BanknoteIcon, DollarSignIcon, EyeIcon, PackageIcon, PlusIcon, ShoppingCartIcon, UsersIcon } from "lucide-react";
 import { adminGetLowStockProducts, adminGetRecentOrders, adminGetStats } from "@/lib/admin/data";
 import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { formatDate, formatOrderNumber } from "@/lib/format";
@@ -77,7 +77,8 @@ export default async function AdminDashboardPage() {
                 { id: "order", label: "Order", className: "pl-6" },
                 { id: "customer", label: "Customer" },
                 { id: "status", label: "Status" },
-                { id: "total", label: "Total", align: "right", className: "pr-6", cellClassName: "font-medium tabular-nums" },
+                { id: "total", label: "Total", align: "right", cellClassName: "font-medium tabular-nums" },
+                { id: "actions", label: "Actions", srOnly: true, align: "right", className: "pr-6" },
               ]}
               rows={recentOrders.map((o) => ({
                 id: o.id,
@@ -94,6 +95,16 @@ export default async function AdminDashboardPage() {
                   </div>,
                   <OrderStatusBadge key="s" status={o.status} />,
                   formatMoney(o.total_micros, orderMoney(o)),
+                  <div key="a" className="flex items-center justify-end">
+                    <Link
+                      href={`/nemesis/orders/${o.id}`}
+                      aria-label={`View order ${formatOrderNumber(o.order_number)}`}
+                      title={`View order ${formatOrderNumber(o.order_number)}`}
+                      className={buttonVariants({ variant: "outline", size: "icon-sm" })}
+                    >
+                      <EyeIcon className="size-4" />
+                    </Link>
+                  </div>,
                 ],
               }))}
             />

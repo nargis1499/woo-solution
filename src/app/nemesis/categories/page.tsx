@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { TagsIcon } from "lucide-react";
+import { EyeIcon, SquarePenIcon, TagsIcon } from "lucide-react";
 import { adminListCategoriesPage } from "@/lib/admin/data";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { deleteAllCategories, deleteCategories, deleteCategory, reorderCategories } from "@/app/nemesis/actions";
 import { CategoryForm } from "@/components/admin/category-form";
 import { CategoryThumb } from "@/components/category-thumb";
-import { DeleteAllButton, DeleteButton } from "@/components/admin/form-bits";
+import { DeleteAllButton, DeleteButton, OpenTabButton } from "@/components/admin/form-bits";
 import { ListToolbar, Pagination } from "@/components/admin/pagination";
 import { DataTable, EmptyState, PageHeader, Section } from "@/components/admin/ui";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -83,9 +83,17 @@ export default async function AdminCategoriesPage({ searchParams }: { searchPara
                 <Link key="p" href={`/nemesis/products?category=${c.id}`} className="hover:underline">
                   {c.product_count ?? 0}
                 </Link>,
-                <div key="a" className="flex items-center justify-end gap-2">
-                  <Link href={`/nemesis/categories/${c.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                    Edit
+                <div key="a" className="flex items-center justify-end gap-1.5">
+                  <OpenTabButton href={`/shop?category=${c.slug}`} ariaLabel={`View "${c.name}" in the store`}>
+                    <EyeIcon className="size-4" />
+                  </OpenTabButton>
+                  <Link
+                    href={`/nemesis/categories/${c.id}`}
+                    aria-label={`Edit "${c.name}"`}
+                    title={`Edit "${c.name}"`}
+                    className={buttonVariants({ variant: "outline", size: "icon-sm" })}
+                  >
+                    <SquarePenIcon className="size-4" />
                   </Link>
                   <DeleteButton
                     action={deleteCategory}

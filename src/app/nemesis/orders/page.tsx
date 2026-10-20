@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ShoppingCartIcon } from "lucide-react";
+import { EyeIcon, ShoppingCartIcon } from "lucide-react";
 import { adminListOrders } from "@/lib/admin/data";
 import { ORDER_STATUSES } from "@/lib/admin/constants";
 import { listHref } from "@/lib/admin/pagination";
@@ -102,9 +102,14 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
                     {items} {items === 1 ? "item" : "items"}
                   </p>
                 </div>,
-                <div key="a" className="flex items-center justify-end gap-2">
-                  <Link href={detailHref(o.id)} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                    View
+                <div key="a" className="flex items-center justify-end gap-1.5">
+                  <Link
+                    href={detailHref(o.id)}
+                    aria-label={`View order ${formatOrderNumber(o.order_number)}`}
+                    title={`View order ${formatOrderNumber(o.order_number)}`}
+                    className={buttonVariants({ variant: "outline", size: "icon-sm" })}
+                  >
+                    <EyeIcon className="size-4" />
                   </Link>
                   <DeleteButton action={deleteOrder} id={o.id} returnTo={listUrl} title={`Delete order ${formatOrderNumber(o.order_number)}?`} description="The order and its line items are removed permanently. This cannot be undone." />
                 </div>,

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { EyeIcon, FileTextIcon, GlobeIcon, PencilLineIcon, PlusIcon } from "lucide-react";
+import { EyeIcon, FileTextIcon, GlobeIcon, PencilLineIcon, PlusIcon, SquarePenIcon } from "lucide-react";
 import { adminListPages } from "@/lib/admin/data";
 import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
@@ -123,18 +123,23 @@ export default async function AdminPagesPage({ searchParams }: { searchParams: S
                 p.author?.full_name || p.author?.email || "—",
                 formatDate(p.updated_at),
                 p.status === "published" && p.published_at ? formatDate(p.published_at) : "—",
-                <div key="actions" className="flex items-center justify-end gap-2">
+                <div key="actions" className="flex items-center justify-end gap-1.5">
                   {p.status === "published" ? (
                     <OpenTabButton href={pageHref(p.slug)} ariaLabel={`View "${p.title}" in the store`} testId="page-view-link">
-                      <EyeIcon /> View
+                      <EyeIcon className="size-4" />
                     </OpenTabButton>
                   ) : (
                     <OpenTabButton href={pagePreviewHref(p.id)} ariaLabel={`Preview "${p.title}"`}>
-                      <EyeIcon /> Preview
+                      <EyeIcon className="size-4" />
                     </OpenTabButton>
                   )}
-                  <Link href={editHref(p.id)} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                    Edit
+                  <Link
+                    href={editHref(p.id)}
+                    aria-label={`Edit "${p.title}"`}
+                    title={`Edit "${p.title}"`}
+                    className={buttonVariants({ variant: "outline", size: "icon-sm" })}
+                  >
+                    <SquarePenIcon className="size-4" />
                   </Link>
                   <DeleteButton action={deletePage} id={p.id} returnTo={listUrl} title={`Delete "${p.title}"?`} description={`The page and its public URL ${pageHref(p.slug)} are removed permanently. This cannot be undone.`} />
                 </div>,

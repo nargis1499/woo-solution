@@ -63,6 +63,7 @@ export function OpenTabButton({
   ariaLabel,
   children,
   variant = "ghost",
+  size = "icon-sm",
   className,
   testId,
 }: {
@@ -70,11 +71,12 @@ export function OpenTabButton({
   ariaLabel: string;
   children: ReactNode;
   variant?: "ghost" | "outline" | "secondary";
+  size?: "icon-sm" | "sm";
   className?: string;
   testId?: string;
 }) {
   return (
-    <Button variant={variant} size="sm" className={className} aria-label={ariaLabel} data-testid={testId} onPress={() => window.open(href, "_blank", "noopener,noreferrer")}>
+    <Button variant={variant} size={size} className={className} aria-label={ariaLabel} data-testid={testId} onPress={() => window.open(href, "_blank", "noopener,noreferrer")}>
       {children}
     </Button>
   );
@@ -250,11 +252,13 @@ export function DeleteButton({
     });
   }
 
+  const iconOnly = size !== "default";
+
   return (
     <AlertDialogTrigger isOpen={open} onOpenChange={setOpen}>
-      <Button variant="destructive" size={size} aria-label={label}>
+      <Button variant="destructive" size={iconOnly ? "icon-sm" : "default"} aria-label={label}>
         <Trash2Icon />
-        {label}
+        {!iconOnly && label}
       </Button>
       <AlertDialog isDismissable={!pending}>
         <AlertDialogHeader>

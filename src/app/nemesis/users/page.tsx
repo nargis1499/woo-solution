@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { UsersIcon } from "lucide-react";
+import { SquarePenIcon, UsersIcon } from "lucide-react";
 import { adminListUsers } from "@/lib/admin/data";
 import { getAdminStatus } from "@/lib/admin/auth";
 import { listHref } from "@/lib/admin/pagination";
@@ -88,9 +88,14 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
               u.order_count,
               formatMoney(u.total_spent_micros, money),
               formatDate(u.created_at),
-              <div key="a" className="flex items-center justify-end gap-2">
-                <Link href={detailHref(u.id)} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                  Edit
+              <div key="a" className="flex items-center justify-end gap-1.5">
+                <Link
+                  href={detailHref(u.id)}
+                  aria-label={`Edit ${u.full_name || u.email || "user"}`}
+                  title={`Edit ${u.full_name || u.email || "user"}`}
+                  className={buttonVariants({ variant: "outline", size: "icon-sm" })}
+                >
+                  <SquarePenIcon className="size-4" />
                 </Link>
                 {me?.id !== u.id && (
                   <DeleteButton action={deleteUser} id={u.id} returnTo={listUrl} title={`Delete ${u.email ?? "this user"}?`} description="Their account is removed permanently; orders are kept." />

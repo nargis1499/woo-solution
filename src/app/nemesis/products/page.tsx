@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PackageIcon, PlusIcon } from "lucide-react";
+import { EyeIcon, PackageIcon, PlusIcon, SquarePenIcon } from "lucide-react";
 import { adminListCategories, adminListProducts } from "@/lib/admin/data";
 import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { listHref } from "@/lib/admin/pagination";
@@ -10,7 +10,7 @@ import { deleteProduct, deleteProducts, toggleProductFeatured, toggleProductQuic
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { FilterSelect } from "@/components/admin/filter-select";
-import { DeleteButton, FeaturedToggleButton, QuickCheckoutToggleButton } from "@/components/admin/form-bits";
+import { DeleteButton, FeaturedToggleButton, OpenTabButton, QuickCheckoutToggleButton } from "@/components/admin/form-bits";
 import { SearchForm } from "@/components/admin/search-form";
 import { ListToolbar, Pagination } from "@/components/admin/pagination";
 import { DataTable, EmptyState, PageHeader, Thumb, ToneBadge } from "@/components/admin/ui";
@@ -135,9 +135,17 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
               </div>,
               <FeaturedToggleButton key="featured" id={p.id} name={p.name} initialFeatured={p.is_featured} action={toggleProductFeatured} />,
               <QuickCheckoutToggleButton key="quick_checkout" id={p.id} name={p.name} initialEnabled={Boolean(p.quick_checkout)} action={toggleProductQuickCheckout} />,
-              <div key="actions" className="flex items-center justify-end gap-2">
-                <Link href={editHref(p.id)} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                  Edit
+              <div key="actions" className="flex items-center justify-end gap-1.5">
+                <OpenTabButton href={`/products/${p.slug}`} ariaLabel={`View "${p.name}" in the store`}>
+                  <EyeIcon className="size-4" />
+                </OpenTabButton>
+                <Link
+                  href={editHref(p.id)}
+                  aria-label={`Edit "${p.name}"`}
+                  title={`Edit "${p.name}"`}
+                  className={buttonVariants({ variant: "outline", size: "icon-sm" })}
+                >
+                  <SquarePenIcon className="size-4" />
                 </Link>
                 <DeleteButton action={deleteProduct} id={p.id} returnTo={listUrl} title={`Delete "${p.name}"?`} description="The product is removed permanently. This cannot be undone." />
               </div>,
