@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { CheckCheckIcon, CheckIcon, SendIcon, ShieldCheckIcon } from "lucide-react";
 import { toast } from "sonner";
 import { updateCustomerVisibility } from "@/app/nemesis/actions";
+import {
+  notifyActiveOrderChatViewed,
+  registerActiveOrderChat,
+} from "@/components/notifications/mutations";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
@@ -69,6 +73,10 @@ export function OrderChat({
   // marked delivered, so coming back to it still upgrades the receipt.
   const reportedDelivered = useRef(new Set<string>(initialMessages.filter((m) => m.sender_type !== viewer).map((m) => m.id)));
   const reportedSeen = useRef(new Set<string>());
+
+  // Register this order's chat as active in the current tab so notifications for this order
+  // auto-mark as read while the tab is visible (without touching other orders' notifications).
+  useEffect(() => registerActiveOrderChat(orderId), [orderId]);
 
   const open = isOrderChatOpen(status);
   const latest = messages[messages.length - 1];
@@ -223,10 +231,18 @@ export function OrderChat({
       if (!liveRef.current) void syncThread();
     }, 4000);
     const onFocus = () => void syncThread();
+    const closeSource = () => {
+      liveRef.current = false;
+      source.close();
+    };
     window.addEventListener("focus", onFocus);
+    window.addEventListener("pagehide", closeSource);
+    window.addEventListener("beforeunload", closeSource);
     return () => {
       clearInterval(poll);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pagehide", closeSource);
+      window.removeEventListener("beforeunload", closeSource);
       source.close();
     };
   }, [orderId, mergeMessages, syncThread]);
@@ -243,11 +259,13 @@ export function OrderChat({
     report(ids, seen);
   }, [messages, undelivered, report]);
 
-  // Back at the tab: everything that arrived while it was hidden turns from ✓ into ✓✓.
+  // Back at the tab: everything that arrived while it was hidden turns from ✓ into ✓✓
+  // and any unread message notifications for this order are cleared.
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       void syncThread();
+      notifyActiveOrderChatViewed(orderId);
       const ids = unseen(messages);
       if (ids.length === 0) return;
       for (const id of ids) reportedSeen.current.add(id);
@@ -255,7 +273,7 @@ export function OrderChat({
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [messages, unseen, report, syncThread]);
+  }, [orderId, messages, unseen, report, syncThread]);
 
   // Keep the newest bubble in view: once on mount and again after every message. Only the list
   // scrolls – scrolling the page here would jump the whole order page down the moment it loads.
@@ -276,7 +294,10 @@ export function OrderChat({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: trimmed }),
       });
-      const payload = (await response.json().catch(() => null)) as { message?: OrderMessage; error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as {
+        message?: OrderMessage;
+        error?: string;
+      } | null;
       if (!response.ok || !payload?.message) {
         setError(payload?.error ?? "The message could not be sent. Please try again.");
         return;

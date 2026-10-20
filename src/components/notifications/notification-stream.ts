@@ -97,6 +97,11 @@ function close() {
   connection.unsubscribeLocal = null;
 }
 
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", close);
+  window.addEventListener("beforeunload", close);
+}
+
 /** Subscribe to the shared stream; the first subscriber opens the connection. */
 export function subscribeNotificationStream(listener: Listener): () => void {
   connection.listeners.add(listener);

@@ -11,13 +11,25 @@
  */
 
 type Listener = (unread: number) => void;
+type ActiveChatListener = (orderId: string) => void;
 
-const globalRef = globalThis as typeof globalThis & { __notificationLocalListeners?: Set<Listener> };
+const globalRef = globalThis as typeof globalThis & {
+  __notificationLocalListeners?: Set<Listener>;
+  __activeOrderChatIds?: Set<string>;
+  __activeOrderChatListeners?: Set<ActiveChatListener>;
+};
 const listeners = (globalRef.__notificationLocalListeners ??= new Set<Listener>());
+const activeOrderChatIds = (globalRef.__activeOrderChatIds ??= new Set<string>());
+const activeChatListeners = (globalRef.__activeOrderChatListeners ??= new Set<ActiveChatListener>());
 
 export function subscribeLocalNotificationChanges(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+export function subscribeActiveOrderChat(listener: ActiveChatListener): () => void {
+  activeChatListeners.add(listener);
+  return () => activeChatListeners.delete(listener);
 }
 
 function emit(unread: number) {
@@ -30,7 +42,46 @@ function emit(unread: number) {
   }
 }
 
-async function post(path: string, body: unknown): Promise<{ unread?: number } | null> {
+export function notifyActiveOrderChatViewed(orderId: string) {
+  if (!orderId || typeof document === "undefined" || document.visibilityState !== "visible") return;
+  for (const listener of activeChatListeners) {
+    try {
+      listener(orderId);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/**
+ * Registers an `OrderChat` instance mounted in the current tab.
+ * Used so incoming `order_message` notifications for the order being actively viewed
+ * (`document.visibilityState === "visible"`) are automatically marked read without
+ * flashing the bell counter, while messages from any other order still notify normally.
+ */
+export function registerActiveOrderChat(orderId: string): () => void {
+  activeOrderChatIds.add(orderId);
+  notifyActiveOrderChatViewed(orderId);
+  return () => {
+    activeOrderChatIds.delete(orderId);
+  };
+}
+
+export function getActiveOrderChatIds(): ReadonlySet<string> {
+  return activeOrderChatIds;
+}
+
+/**
+ * True only when `orderId` has an open `OrderChat` in this tab AND the tab is visible.
+ * Background/minimized tabs return `false` so the user still gets an unread badge.
+ */
+export function isOrderChatActivelyViewed(orderId: string | null | undefined): boolean {
+  if (!orderId || !activeOrderChatIds.has(orderId)) return false;
+  if (typeof document === "undefined") return false;
+  return document.visibilityState === "visible";
+}
+
+async function post(path: string, body: unknown, notifyRefresh = true): Promise<{ unread?: number } | null> {
   try {
     const response = await fetch(path, {
       method: "POST",
@@ -39,15 +90,15 @@ async function post(path: string, body: unknown): Promise<{ unread?: number } | 
     });
     if (!response.ok) return null;
     const data = (await response.json()) as { unread?: number };
-    if (typeof data.unread === "number") emit(data.unread);
+    if (notifyRefresh && typeof data.unread === "number") emit(data.unread);
     return data;
   } catch {
     return null;
   }
 }
 
-export function markNotificationsRead(ids: string[]) {
-  return ids.length === 0 ? Promise.resolve(null) : post("/api/notifications/read", { ids });
+export function markNotificationsRead(ids: string[], notifyRefresh = true) {
+  return ids.length === 0 ? Promise.resolve(null) : post("/api/notifications/read", { ids }, notifyRefresh);
 }
 
 export function markAllNotificationsRead() {

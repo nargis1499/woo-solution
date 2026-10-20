@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CLOSED_THREAD_MESSAGE, MAX_ORDER_MESSAGE_LENGTH, isOrderChatOpen, orderChatTurn } from "@/lib/order-chat";
 import { publishOrderChat } from "@/lib/order-chat-bus";
 import { insertOrderMessage, isMissingOrderMessagesError, listOrderMessagesSince } from "@/lib/order-messages";
+import { publishNotificationsChanged } from "@/lib/notification-bus";
 import { getPersonPresence, getStorePresence } from "@/lib/presence.server";
 import { presenceStatus, type Presence } from "@/lib/presence";
 import type { OrderStatus } from "@/lib/types";
@@ -110,6 +111,7 @@ export async function POST(request: Request, { params }: Params) {
     });
 
     publishOrderChat(order.id, { type: "message", message: saved });
+    publishNotificationsChanged(user.id);
     return json({ message: saved }, 201);
   } catch (e) {
     if (isMissingOrderMessagesError(e)) return json({ error: MISSING_TABLE }, 503);

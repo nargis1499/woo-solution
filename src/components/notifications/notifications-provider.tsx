@@ -4,7 +4,14 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { NOTIFICATION_MEMORY_SIZE, type AppNotification } from "@/lib/notifications";
-import { deleteNotifications, markAllNotificationsRead, markNotificationsRead } from "./mutations";
+import {
+  deleteNotifications,
+  getActiveOrderChatIds,
+  isOrderChatActivelyViewed,
+  markAllNotificationsRead,
+  markNotificationsRead,
+  subscribeActiveOrderChat,
+} from "./mutations";
 import { mergeNotification, subscribeNotificationStream } from "./notification-stream";
 
 /**
@@ -39,6 +46,11 @@ export function NotificationsProvider({ initial, children }: { initial: Notifica
   const [items, setItems] = useState<AppNotification[]>(initial.items);
   const [unread, setUnread] = useState(initial.unread);
   const [live, setLive] = useState(false);
+  const itemsRef = useRef<AppNotification[]>(initial.items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
   // A new server render (router.refresh, a navigation that re-renders the header) is the
   // freshest truth – adopt it instead of keeping a stale local copy.
   const [seed, setSeed] = useState(initial);
@@ -50,17 +62,90 @@ export function NotificationsProvider({ initial, children }: { initial: Notifica
   /** Ids a request is already changing, so a double click cannot post twice. */
   const inFlight = useRef(new Set<string>());
 
+  /** Silently mark specific notification IDs read when the user is actively in that order's chat. */
+  const autoMarkIdsRead = useCallback((ids: string[]) => {
+    const fresh = ids.filter((id) => !inFlight.current.has(id));
+    if (fresh.length === 0) return;
+    for (const id of fresh) inFlight.current.add(id);
+    void markNotificationsRead(fresh, false)
+      .then((result) => {
+        if (result && typeof result.unread === "number") {
+          setUnread(result.unread);
+        }
+      })
+      .finally(() => {
+        for (const id of fresh) inFlight.current.delete(id);
+      });
+  }, []);
+
+  /**
+   * Filters a snapshot of notifications so any unread `order_message` belonging to an
+   * order chat that is currently open and visible in this tab is immediately marked read
+   * without incrementing the unread badge. Notifications from other orders or other kinds
+   * are untouched.
+   */
+  const reconcileActiveChatItems = useCallback(
+    (rawItems: AppNotification[], rawUnread: number): { nextItems: AppNotification[]; nextUnread: number } => {
+      const at = new Date().toISOString();
+      const idsToMark: string[] = [];
+
+      const nextItems = rawItems.map((n) => {
+        if (n.kind === "order_message" && !n.read_at && isOrderChatActivelyViewed(n.order_id)) {
+          idsToMark.push(n.id);
+          return { ...n, read_at: at };
+        }
+        return n;
+      });
+
+      if (idsToMark.length > 0) {
+        autoMarkIdsRead(idsToMark);
+      }
+
+      return {
+        nextItems,
+        nextUnread: Math.max(0, rawUnread - idsToMark.length),
+      };
+    },
+    [autoMarkIdsRead],
+  );
+
+  const sweepActiveChatNotifications = useCallback(() => {
+    const activeIds = getActiveOrderChatIds();
+    if (activeIds.size === 0) return;
+    const current = itemsRef.current;
+    const idsToMark = current
+      .filter((n) => n.kind === "order_message" && !n.read_at && isOrderChatActivelyViewed(n.order_id))
+      .map((n) => n.id);
+    if (idsToMark.length === 0) return;
+
+    const at = new Date().toISOString();
+    const idSet = new Set(idsToMark);
+    setItems((prev) => prev.map((n) => (idSet.has(n.id) && !n.read_at ? { ...n, read_at: at } : n)));
+    setUnread((prev) => Math.max(0, prev - idsToMark.length));
+    autoMarkIdsRead(idsToMark);
+  }, [autoMarkIdsRead]);
+
+  // Run once on mount / initial seed change (in case OrderChat mounted first in the tree)
+  // and whenever an OrderChat mounts or becomes visible.
+  useEffect(() => {
+    sweepActiveChatNotifications();
+    return subscribeActiveOrderChat(() => {
+      sweepActiveChatNotifications();
+    });
+  }, [sweepActiveChatNotifications, seed]);
+
   const refresh = useCallback(async () => {
     try {
       const response = await fetch(`/api/notifications?preview=1&limit=${NOTIFICATION_MEMORY_SIZE}`, { cache: "no-store" });
       if (!response.ok) return;
       const data = (await response.json()) as NotificationSnapshot;
-      setItems(data.items);
-      setUnread(data.unread);
+      const { nextItems, nextUnread } = reconcileActiveChatItems(data.items, data.unread);
+      setItems(nextItems);
+      setUnread(nextUnread);
     } catch {
       // keep what we have – the next frame or focus will catch up
     }
-  }, []);
+  }, [reconcileActiveChatItems]);
 
   useEffect(() => {
     // A new row shows up immediately; the badge count is re-read from the server a beat
@@ -73,28 +158,38 @@ export function NotificationsProvider({ initial, children }: { initial: Notifica
     };
 
     const unsubscribe = subscribeNotificationStream((event) => {
-        if (event.type === "snapshot") {
-          setItems(event.items);
-          setUnread(event.unread);
-          setLive(true);
-        } else if (event.type === "notification") {
-          setItems((prev) => mergeNotification(prev, event.notification));
-          settle();
-        } else if (event.type === "unread") {
-          setUnread(event.unread);
-          setLive(true);
-        } else if (event.type === "live") {
-          setLive(event.live);
-        } else {
-          void refresh();
+      if (event.type === "snapshot") {
+        const { nextItems, nextUnread } = reconcileActiveChatItems(event.items, event.unread);
+        setItems(nextItems);
+        setUnread(nextUnread);
+        setLive(true);
+      } else if (event.type === "notification") {
+        const incoming = event.notification;
+        if (incoming.kind === "order_message" && !incoming.read_at && isOrderChatActivelyViewed(incoming.order_id)) {
+          const at = new Date().toISOString();
+          setItems((prev) => mergeNotification(prev, { ...incoming, read_at: at }));
+          autoMarkIdsRead([incoming.id]);
+          return;
         }
+        setItems((prev) => mergeNotification(prev, incoming));
+        settle();
+      } else if (event.type === "unread") {
+        if (inFlight.current.size === 0) {
+          setUnread(event.unread);
+        }
+        setLive(true);
+      } else if (event.type === "live") {
+        setLive(event.live);
+      } else {
+        void refresh();
+      }
     });
 
     return () => {
       if (pending) clearTimeout(pending);
       unsubscribe();
     };
-  }, [refresh]);
+  }, [refresh, reconcileActiveChatItems, autoMarkIdsRead]);
 
   // A background tab may miss a frame or two; coming back re-reads the truth once.
   useEffect(() => {

@@ -2,6 +2,7 @@ import { getAdminStatus } from "@/lib/admin/auth";
 import { createClient } from "@/lib/supabase/server";
 import { publishOrderChat } from "@/lib/order-chat-bus";
 import { markOrderMessagesReceived } from "@/lib/order-messages";
+import { publishNotificationsChanged } from "@/lib/notification-bus";
 
 /**
  * POST /api/orders/[id]/chat/receipt — read receipts for the inquiry thread.
@@ -34,6 +35,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const { ids, at } = await markOrderMessagesReceived(id, isAdmin ? "admin" : "customer", status);
     if (ids.length > 0) publishOrderChat(id, { type: "receipt", ids, status, at });
+    if (status === "seen") publishNotificationsChanged(user.id);
     return Response.json({ ok: true, ids, at }, { headers: { "cache-control": "no-store" } });
   } catch {
     return Response.json({ error: "The receipt could not be saved." }, { status: 500, headers: { "cache-control": "no-store" } });

@@ -1,7 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { createServiceClient } from "@/lib/supabase/service";
 import { NOTIFICATIONS_PER_PAGE, type AppNotification, type NotificationFilter } from "@/lib/notifications";
 import { pageCount } from "@/lib/pagination";
 
@@ -23,6 +22,9 @@ export type NotificationPage = {
   unread: number;
 };
 
+/** Cache resolved item counts by order_id so SSE ticks never re-query the same order. */
+const orderItemCountCache = new Map<string, number>();
+
 /**
  * Replaces stale "· 0 items" in `new_order` notifications (caused by the
  * `after insert on public.orders` trigger running before `order_items` rows are
@@ -30,34 +32,44 @@ export type NotificationPage = {
  */
 async function enrichNewOrderNotifications(
   items: AppNotification[],
-  fallbackClient: SupabaseClient,
+  supabase: SupabaseClient,
 ): Promise<AppNotification[]> {
   const zeroItemOrders = items.filter(
     (n) => n.kind === "new_order" && Boolean(n.order_id) && /\b0 items\b/i.test(n.body),
   );
   if (zeroItemOrders.length === 0) return items;
 
-  const orderIds = [...new Set(zeroItemOrders.map((n) => n.order_id as string))];
-  const db = createServiceClient() ?? fallbackClient;
+  const uncachedOrderIds = [
+    ...new Set(
+      zeroItemOrders
+        .map((n) => n.order_id as string)
+        .filter((id) => !orderItemCountCache.has(id)),
+    ),
+  ];
 
-  const { data, error } = await db
-    .from("order_items")
-    .select("order_id, quantity")
-    .in("order_id", orderIds);
+  if (uncachedOrderIds.length > 0) {
+    const { data, error } = await supabase
+      .from("order_items")
+      .select("order_id, quantity")
+      .in("order_id", uncachedOrderIds);
 
-  if (error || !data || data.length === 0) return items;
-
-  const qtyByOrder = new Map<string, number>();
-  for (const row of data as { order_id: string; quantity: number }[]) {
-    const qty = Math.max(1, Number(row.quantity) || 1);
-    qtyByOrder.set(row.order_id, (qtyByOrder.get(row.order_id) ?? 0) + qty);
+    if (!error && data) {
+      const counts = new Map<string, number>();
+      for (const row of data as { order_id: string; quantity: number }[]) {
+        const qty = Math.max(1, Number(row.quantity) || 1);
+        counts.set(row.order_id, (counts.get(row.order_id) ?? 0) + qty);
+      }
+      for (const id of uncachedOrderIds) {
+        orderItemCountCache.set(id, counts.get(id) ?? 0);
+      }
+    }
   }
 
   return items.map((n) => {
     if (n.kind !== "new_order" || !n.order_id || !/\b0 items\b/i.test(n.body)) {
       return n;
     }
-    const totalQty = qtyByOrder.get(n.order_id);
+    const totalQty = orderItemCountCache.get(n.order_id);
     if (!totalQty || totalQty <= 0) return n;
     const itemWord = totalQty === 1 ? "item" : "items";
     return {
@@ -164,6 +176,26 @@ export async function markNotificationsRead(ids: string[] | "all"): Promise<numb
   const { error } = await query;
   if (error && !isMissingNotificationsError(error)) throw error;
   return getUnreadNotificationCount();
+}
+
+/**
+ * Mark unread `order_message` notifications for a specific `order_id` as read for the
+ * signed-in caller. Other orders and non-message notifications on the same order are untouched.
+ */
+export async function markOrderMessageNotificationsRead(
+  orderId: string,
+  client?: SupabaseClient,
+): Promise<number> {
+  const supabase = client ?? (await createClient());
+  const at = new Date().toISOString();
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read_at: at })
+    .eq("order_id", orderId)
+    .eq("kind", "order_message")
+    .is("read_at", null);
+  if (error && !isMissingNotificationsError(error)) throw error;
+  return getUnreadNotificationCount(supabase);
 }
 
 /** Delete the caller's rows. */

@@ -1,12 +1,12 @@
 import { getAdminStatus } from "@/lib/admin/auth";
-import { markNotificationsRead } from "@/lib/notifications.server";
+import { markNotificationsRead, markOrderMessageNotificationsRead } from "@/lib/notifications.server";
 import { publishNotificationsChanged } from "@/lib/notification-bus";
 
 /**
- * POST /api/notifications/read — `{ ids: string[] }` or `{ all: true }`.
+ * POST /api/notifications/read — `{ ids: string[] }`, `{ all: true }`, or `{ orderId: string }`.
  *
- * The caller only ever sends ids: the row's recipient is enforced by RLS, so a forged id
- * simply matches nothing. Returns the fresh unread count for the badge.
+ * The caller only ever sends ids / orderId: the row's recipient is enforced by RLS, so a
+ * forged id simply matches nothing. Returns the fresh unread count for the badge.
  */
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
@@ -16,11 +16,22 @@ export async function POST(request: Request) {
   const { user } = await getAdminStatus();
   if (!user) return json({ error: "Sign in first." }, 401);
 
-  let body: { ids?: unknown; all?: unknown };
+  let body: { ids?: unknown; all?: unknown; orderId?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return json({ error: "Invalid request." }, 400);
+  }
+
+  const orderId = typeof body.orderId === "string" && UUID_RE.test(body.orderId) ? body.orderId : null;
+  if (orderId) {
+    try {
+      const unread = await markOrderMessageNotificationsRead(orderId);
+      publishNotificationsChanged(user.id);
+      return json({ ok: true, unread });
+    } catch {
+      return json({ error: "The notifications could not be updated." }, 500);
+    }
   }
 
   const all = body.all === true;
