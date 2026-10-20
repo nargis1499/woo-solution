@@ -12,6 +12,7 @@ import {
   EyeOffIcon,
   KeyRoundIcon,
   PlusIcon,
+  RefreshCwIcon,
   ShieldCheckIcon,
   Trash2Icon,
   ZapIcon,
@@ -23,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { CryptoProtocol } from "@/lib/crypto-protocols";
-import { PLISIO_CURRENCIES } from "@/lib/plisio";
+import { inferPlisioNetworkInfo, type PlisioCurrency } from "@/lib/plisio";
 import type { SiteSettings } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -41,8 +42,19 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
   const [plisioSecretKey, setPlisioSecretKey] = useState<string>(
     settings.payment_plisio_secret_key ?? "",
   );
+  const [plisioCurrencies, setPlisioCurrencies] = useState<PlisioCurrency[]>(
+    settings.payment_plisio_currencies,
+  );
   const [showPlisioKey, setShowPlisioKey] = useState<boolean>(false);
   const [copiedWebhook, setCopiedWebhook] = useState<boolean>(false);
+  const [syncingPlisio, setSyncingPlisio] = useState<boolean>(false);
+
+  // Quick Add New Plisio Coin form state
+  const [newPlisioCid, setNewPlisioCid] = useState("");
+  const [newPlisioCode, setNewPlisioCode] = useState("");
+  const [newPlisioName, setNewPlisioName] = useState("");
+  const [newPlisioNetwork, setNewPlisioNetwork] = useState("");
+  const [newPlisioRate, setNewPlisioRate] = useState("1");
 
   const [cryptoEnabled, setCryptoEnabled] = useState<boolean>(
     settings.payment_crypto_enabled,
@@ -56,7 +68,7 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
   const [plisioExpanded, setPlisioExpanded] = useState<boolean>(false);
   const [cryptoExpanded, setCryptoExpanded] = useState<boolean>(false);
 
-  // Quick Add New Protocol form state
+  // Quick Add New Manual Protocol form state
   const [newCode, setNewCode] = useState("");
   const [newName, setNewName] = useState("");
   const [newNetwork, setNewNetwork] = useState("");
@@ -73,12 +85,17 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
     payment_plisio_enabled?: boolean;
     payment_plisio_test_mode?: boolean;
     payment_plisio_secret_key?: string | null;
+    payment_plisio_currencies?: PlisioCurrency[];
     payment_crypto_enabled?: boolean;
     payment_crypto_protocols?: CryptoProtocol[];
   }) {
     startTransition(async () => {
       try {
         const res = await savePaymentSettings(next);
+        if (!res.ok) {
+          toast.error(res.error || "Failed to save payment settings");
+          return;
+        }
         toast.success(res.message || "Payment settings saved");
         router.refresh();
       } catch (e) {
@@ -113,6 +130,45 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
     });
   }
 
+  async function handleSyncPlisioCoins(secretOverride?: string) {
+    const keyToUse = (secretOverride ?? plisioSecretKey).trim();
+    if (!keyToUse) {
+      toast.error("Please enter your Plisio Secret Key first.");
+      return;
+    }
+
+    setSyncingPlisio(true);
+    try {
+      const res = await fetch("/api/plisio/currencies", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ secretKey: keyToUse }),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        currencies?: PlisioCurrency[];
+        error?: string;
+      } | null;
+
+      if (!data?.ok || !Array.isArray(data.currencies)) {
+        toast.error(
+          data?.error || "Could not sync currencies from Plisio API.",
+        );
+        return;
+      }
+
+      setPlisioCurrencies(data.currencies);
+      toast.success(
+        `Synced ${data.currencies.length} cryptocurrencies from your Plisio account!`,
+      );
+      router.refresh();
+    } catch {
+      toast.error("Failed to reach Plisio currency sync endpoint.");
+    } finally {
+      setSyncingPlisio(false);
+    }
+  }
+
   async function handleSavePlisioKey(e: React.FormEvent) {
     e.preventDefault();
     const cleanedKey = plisioSecretKey.trim();
@@ -124,6 +180,88 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
       payment_plisio_enabled: plisioEnabled,
       payment_plisio_secret_key: cleanedKey,
     });
+    // If no coins have been loaded yet, automatically sync from Plisio API using the new key
+    if (plisioCurrencies.length === 0) {
+      await handleSyncPlisioCoins(cleanedKey);
+    }
+  }
+
+  async function handleTogglePlisioCoin(cid: string, enabled: boolean) {
+    const updated = plisioCurrencies.map((c) =>
+      c.cid === cid ? { ...c, enabled } : c,
+    );
+    setPlisioCurrencies(updated);
+    await persistPayment({ payment_plisio_currencies: updated });
+  }
+
+  async function handleSetAllPlisioCoins(enabled: boolean) {
+    const updated = plisioCurrencies.map((c) => ({ ...c, enabled }));
+    setPlisioCurrencies(updated);
+    await persistPayment({ payment_plisio_currencies: updated });
+  }
+
+  function handleChangePlisioCoinField(
+    cid: string,
+    field: keyof PlisioCurrency,
+    value: string | number,
+  ) {
+    setPlisioCurrencies((prev) =>
+      prev.map((c) => (c.cid === cid ? { ...c, [field]: value } : c)),
+    );
+  }
+
+  async function handleSavePlisioCoinRow() {
+    await persistPayment({ payment_plisio_currencies: plisioCurrencies });
+  }
+
+  async function handleDeletePlisioCoin(cid: string) {
+    const updated = plisioCurrencies.filter((c) => c.cid !== cid);
+    setPlisioCurrencies(updated);
+    await persistPayment({ payment_plisio_currencies: updated });
+  }
+
+  async function handleAddPlisioCoin(e: React.FormEvent) {
+    e.preventDefault();
+    const cid = newPlisioCid.trim().toUpperCase();
+    if (!cid) {
+      toast.error(
+        "Please enter the Plisio CID (e.g. USDT_TRX, USDT_BSC, BTC, ETH, SOL, TON).",
+      );
+      return;
+    }
+    if (plisioCurrencies.some((c) => c.cid.toUpperCase() === cid)) {
+      toast.error(`Coin ${cid} already exists in your Plisio list.`);
+      return;
+    }
+
+    const inferred = inferPlisioNetworkInfo(
+      cid,
+      newPlisioName.trim() || undefined,
+      newPlisioCode.trim() || undefined,
+    );
+    const parsedRate = Number(newPlisioRate);
+    const newCoin: PlisioCurrency = {
+      cid,
+      code: newPlisioCode.trim().toUpperCase() || inferred.code,
+      name: newPlisioName.trim() || inferred.name,
+      network: newPlisioNetwork.trim() || inferred.network,
+      networkTag: inferred.networkTag,
+      badge: null,
+      eta: inferred.eta,
+      approxUsdRate:
+        Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : 1,
+      decimals: inferred.decimals,
+      enabled: true,
+    };
+
+    const updated = [...plisioCurrencies, newCoin];
+    setPlisioCurrencies(updated);
+    setNewPlisioCid("");
+    setNewPlisioCode("");
+    setNewPlisioName("");
+    setNewPlisioNetwork("");
+    setNewPlisioRate("1");
+    await persistPayment({ payment_plisio_currencies: updated });
   }
 
   async function handleCopyWebhook() {
@@ -202,6 +340,7 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
   }
 
   const hasPlisioKey = Boolean(plisioSecretKey.trim());
+  const activePlisioCoinCount = plisioCurrencies.filter((c) => c.enabled).length;
 
   return (
     <div className="space-y-4">
@@ -352,6 +491,9 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
                 >
                   {hasPlisioKey ? "Secret Key Configured" : "No Secret Key"}
                 </span>
+                <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  {activePlisioCoinCount} / {plisioCurrencies.length} coins active
+                </span>
                 <span
                   data-testid="payment-plisio-mode-badge"
                   className={cn(
@@ -465,7 +607,7 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
                 </span>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+              <div className="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
                 <div className="space-y-1.5">
                   <Label htmlFor="plisio-secret-key">
                     Secret Key (from Plisio Dashboard → Shops → API Settings)
@@ -474,7 +616,7 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
                     <Input
                       id="plisio-secret-key"
                       type={showPlisioKey ? "text" : "password"}
-                      placeholder="Enter your Plisio Secret Key (e.g. sk_plisio_...)"
+                      placeholder="Enter your Plisio Secret Key"
                       value={plisioSecretKey}
                       onChange={(e) => setPlisioSecretKey(e.target.value)}
                       className="pr-10 font-mono text-xs"
@@ -501,10 +643,23 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
 
                 <Button
                   type="submit"
-                  isDisabled={isPending}
+                  isDisabled={isPending || syncingPlisio}
                   data-testid="payment-plisio-save-key"
                 >
                   Save Secret Key
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  isDisabled={isPending || syncingPlisio || !hasPlisioKey}
+                  onPress={() => void handleSyncPlisioCoins()}
+                  data-testid="payment-plisio-sync-coins"
+                >
+                  <RefreshCwIcon
+                    className={cn("size-3.5", syncingPlisio && "animate-spin")}
+                  />
+                  {syncingPlisio ? "Syncing from Plisio…" : "Sync Coins from Plisio API"}
                 </Button>
               </div>
 
@@ -524,7 +679,7 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => void handleCopyWebhook()}
+                    onPress={() => void handleCopyWebhook()}
                     data-testid="payment-plisio-copy-webhook"
                   >
                     {copiedWebhook ? (
@@ -543,37 +698,259 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
               </div>
             </form>
 
-            {/* Supported Plisio Cryptocurrencies Preview */}
-            <div className="space-y-2.5">
+            {/* Dynamic Plisio Coins Management Section */}
+            <div className="space-y-3" data-testid="plisio-currencies-section">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
-                  Supported Plisio White-Label Coins ({PLISIO_CURRENCIES.length})
-                </p>
-                <span className="text-xs text-muted-foreground">
-                  Displayed automatically in Quick Checkout &amp; /checkout when enabled
-                </span>
+                <div>
+                  <p className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
+                    Plisio Cryptocurrencies ({activePlisioCoinCount} Enabled /{" "}
+                    {plisioCurrencies.length} Total)
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Toggle which Plisio coins are shown in Quick Checkout &amp; /checkout, or edit their display labels and rates.
+                  </p>
+                </div>
+
+                {plisioCurrencies.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      isDisabled={isPending}
+                      onPress={() => void handleSetAllPlisioCoins(true)}
+                      data-testid="payment-plisio-enable-all"
+                    >
+                      Enable All
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      isDisabled={isPending}
+                      onPress={() => void handleSetAllPlisioCoins(false)}
+                      data-testid="payment-plisio-disable-all"
+                    >
+                      Disable All
+                    </Button>
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {PLISIO_CURRENCIES.map((coin) => (
+              <div className="space-y-2.5" data-testid="plisio-currencies-list">
+                {plisioCurrencies.map((coin) => (
                   <div
                     key={coin.cid}
-                    className="flex items-center justify-between rounded-xl border bg-background/60 px-3 py-2"
+                    data-testid={`plisio-coin-row-${coin.cid.toLowerCase()}`}
+                    className={cn(
+                      "rounded-xl border p-4 transition-colors",
+                      coin.enabled
+                        ? "border-border bg-background"
+                        : "border-border/60 bg-muted/25 opacity-75",
+                    )}
                   >
-                    <div>
-                      <p className="text-xs font-extrabold text-foreground">
-                        {coin.code}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {coin.network}
-                      </p>
+                    <div className="grid gap-3 md:grid-cols-[130px_100px_160px_1fr_130px_auto] md:items-end">
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`plisio-cid-${coin.cid}`}>Plisio CID</Label>
+                        <Input
+                          id={`plisio-cid-${coin.cid}`}
+                          value={coin.cid}
+                          readOnly
+                          className="bg-muted/40 font-mono text-xs font-bold uppercase"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`plisio-code-${coin.cid}`}>Symbol</Label>
+                        <Input
+                          id={`plisio-code-${coin.cid}`}
+                          value={coin.code}
+                          onChange={(e) =>
+                            handleChangePlisioCoinField(
+                              coin.cid,
+                              "code",
+                              e.target.value.toUpperCase(),
+                            )
+                          }
+                          onBlur={() => void handleSavePlisioCoinRow()}
+                          className="font-mono font-bold uppercase"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`plisio-name-${coin.cid}`}>
+                          Currency Name
+                        </Label>
+                        <Input
+                          id={`plisio-name-${coin.cid}`}
+                          value={coin.name}
+                          onChange={(e) =>
+                            handleChangePlisioCoinField(
+                              coin.cid,
+                              "name",
+                              e.target.value,
+                            )
+                          }
+                          onBlur={() => void handleSavePlisioCoinRow()}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`plisio-network-${coin.cid}`}>
+                          Protocol / Network
+                        </Label>
+                        <Input
+                          id={`plisio-network-${coin.cid}`}
+                          value={coin.network}
+                          onChange={(e) =>
+                            handleChangePlisioCoinField(
+                              coin.cid,
+                              "network",
+                              e.target.value,
+                            )
+                          }
+                          onBlur={() => void handleSavePlisioCoinRow()}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`plisio-rate-${coin.cid}`}>
+                          USD Rate ($)
+                        </Label>
+                        <Input
+                          id={`plisio-rate-${coin.cid}`}
+                          type="number"
+                          step="any"
+                          value={String(coin.approxUsdRate)}
+                          onChange={(e) =>
+                            handleChangePlisioCoinField(
+                              coin.cid,
+                              "approxUsdRate",
+                              Number(e.target.value) || 1,
+                            )
+                          }
+                          onBlur={() => void handleSavePlisioCoinRow()}
+                          className="font-mono text-xs"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2.5 pb-1">
+                        <Switch
+                          aria-label={`Enable ${coin.cid}`}
+                          isSelected={coin.enabled}
+                          isDisabled={isPending}
+                          onChange={(enabled) =>
+                            void handleTogglePlisioCoin(coin.cid, enabled)
+                          }
+                          data-testid={`plisio-coin-switch-${coin.cid.toLowerCase()}`}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Remove ${coin.cid}`}
+                          isDisabled={isPending}
+                          onPress={() => void handleDeletePlisioCoin(coin.cid)}
+                          data-testid={`plisio-coin-delete-${coin.cid.toLowerCase()}`}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2Icon className="size-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <span className="rounded-md bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-500">
-                      {coin.networkTag}
-                    </span>
                   </div>
                 ))}
+
+                {plisioCurrencies.length === 0 && (
+                  <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    No Plisio cryptocurrencies configured yet. Enter your{" "}
+                    <strong className="font-semibold text-foreground">
+                      Plisio Secret Key
+                    </strong>{" "}
+                    above and click{" "}
+                    <strong className="font-semibold text-foreground">
+                      Sync Coins from Plisio API
+                    </strong>{" "}
+                    to load all coins from your Plisio Shop, or add a coin manually below.
+                  </div>
+                )}
               </div>
+
+              {/* Add Custom Plisio Coin Form */}
+              <form
+                onSubmit={(e) => void handleAddPlisioCoin(e)}
+                className="rounded-xl border border-dashed bg-muted/20 p-4"
+                data-testid="add-plisio-coin-form"
+              >
+                <p className="mb-3 text-xs font-bold tracking-wider text-muted-foreground uppercase">
+                  Add Plisio Coin Manually
+                </p>
+                <div className="grid gap-3 md:grid-cols-[130px_100px_160px_1fr_130px_auto] md:items-end">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-plisio-cid">Plisio CID *</Label>
+                    <Input
+                      id="new-plisio-cid"
+                      placeholder="USDT_TRX"
+                      value={newPlisioCid}
+                      onChange={(e) =>
+                        setNewPlisioCid(e.target.value.toUpperCase())
+                      }
+                      className="font-mono uppercase"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-plisio-code">Symbol</Label>
+                    <Input
+                      id="new-plisio-code"
+                      placeholder="USDT"
+                      value={newPlisioCode}
+                      onChange={(e) =>
+                        setNewPlisioCode(e.target.value.toUpperCase())
+                      }
+                      className="font-mono uppercase"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-plisio-name">Name</Label>
+                    <Input
+                      id="new-plisio-name"
+                      placeholder="Tether USD"
+                      value={newPlisioName}
+                      onChange={(e) => setNewPlisioName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-plisio-network">Protocol / Network</Label>
+                    <Input
+                      id="new-plisio-network"
+                      placeholder="TRON (TRC20)"
+                      value={newPlisioNetwork}
+                      onChange={(e) => setNewPlisioNetwork(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-plisio-rate">USD Rate ($)</Label>
+                    <Input
+                      id="new-plisio-rate"
+                      type="number"
+                      step="any"
+                      placeholder="1"
+                      value={newPlisioRate}
+                      onChange={(e) => setNewPlisioRate(e.target.value)}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    variant="secondary"
+                    isDisabled={isPending}
+                    data-testid="add-plisio-coin-submit"
+                  >
+                    <PlusIcon className="size-4" />
+                    Add Coin
+                  </Button>
+                </div>
+              </form>
             </div>
           </div>
         )}

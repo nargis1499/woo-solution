@@ -20,6 +20,7 @@ import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradie
 import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
 import { isCategoryIconId } from "@/lib/category-icons";
 import { normaliseCryptoProtocols, type CryptoProtocol } from "@/lib/crypto-protocols";
+import { normalisePlisioCurrencies, type PlisioCurrency } from "@/lib/plisio";
 import { MENU_TAG } from "@/lib/menu";
 import { PRESENCE_VISIBILITIES, type PresenceVisibility } from "@/lib/presence";
 import { passwordProblem } from "@/lib/password";
@@ -1160,6 +1161,7 @@ const META_FALLBACK_KEYS = [
   "payment_plisio_enabled",
   "payment_plisio_test_mode",
   "payment_plisio_secret_key",
+  "payment_plisio_currencies",
   "payment_crypto_enabled",
   "payment_crypto_protocols",
   "home_show_hero",
@@ -1395,6 +1397,7 @@ export async function savePaymentSettings(input: {
   payment_plisio_enabled?: boolean;
   payment_plisio_test_mode?: boolean;
   payment_plisio_secret_key?: string | null;
+  payment_plisio_currencies?: PlisioCurrency[];
   payment_crypto_enabled?: boolean;
   payment_crypto_protocols?: CryptoProtocol[];
 }): Promise<{ ok: boolean; message?: string; error?: string }> {
@@ -1415,6 +1418,11 @@ export async function savePaymentSettings(input: {
           ? input.payment_plisio_secret_key.trim()
           : "";
       patch.payment_plisio_secret_key = trimmed ? trimmed.slice(0, 200) : null;
+    }
+    if (Array.isArray(input.payment_plisio_currencies)) {
+      patch.payment_plisio_currencies = normalisePlisioCurrencies(
+        input.payment_plisio_currencies,
+      );
     }
     if (typeof input.payment_crypto_enabled === "boolean") {
       patch.payment_crypto_enabled = input.payment_crypto_enabled;

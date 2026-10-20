@@ -16,7 +16,7 @@ import {
 import { toast } from "sonner";
 import {
   estimatePlisioCryptoAmount,
-  PLISIO_CURRENCIES,
+  resolvePlisioCurrency,
   type PlisioCurrency,
   type PlisioInvoiceSession,
 } from "@/lib/plisio";
@@ -56,6 +56,7 @@ function PlisioQrCodeSvg({ value }: { value: string }) {
 }
 
 export function PlisioCoinSelector({
+  currencies,
   selectedCid,
   active,
   totalMicros,
@@ -63,6 +64,7 @@ export function PlisioCoinSelector({
   onSelectCoin,
   testIdPrefix = "plisio",
 }: {
+  currencies: PlisioCurrency[];
   selectedCid: string;
   active: boolean;
   totalMicros: number;
@@ -70,8 +72,7 @@ export function PlisioCoinSelector({
   onSelectCoin: (currency: PlisioCurrency) => void;
   testIdPrefix?: string;
 }) {
-  const selectedCurrency =
-    PLISIO_CURRENCIES.find((c) => c.cid === selectedCid) ?? PLISIO_CURRENCIES[0];
+  const selectedCurrency = resolvePlisioCurrency(currencies, selectedCid);
   const estimatedCrypto = estimatePlisioCryptoAmount(totalMicros, selectedCurrency);
 
   return (
@@ -91,104 +92,122 @@ export function PlisioCoinSelector({
         </p>
       </div>
 
-      {/* Coin Grid */}
-      <div
-        className="grid grid-cols-2 gap-2.5 sm:grid-cols-4"
-        data-testid={`${testIdPrefix}-coin-grid`}
-      >
-        {PLISIO_CURRENCIES.map((coin) => {
-          const isSelected = active && coin.cid === selectedCurrency.cid;
-          const coinEstimate = estimatePlisioCryptoAmount(totalMicros, coin);
-          return (
-            <button
-              key={coin.cid}
-              type="button"
-              onClick={() => onSelectCoin(coin)}
-              data-testid={`${testIdPrefix}-coin-${coin.cid}`}
-              data-selected={isSelected ? "true" : "false"}
-              className={cn(
-                "relative flex cursor-pointer flex-col items-start justify-between rounded-2xl border p-3 text-left transition-all",
-                isSelected
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-xs ring-2 ring-primary/15"
-                  : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
-              )}
-            >
-              <div className="flex w-full items-center justify-between gap-1.5">
-                <span className="text-sm font-black tracking-tight text-foreground">
-                  {coin.code}
-                </span>
-                <span
+      {currencies.length === 0 ? (
+        <div
+          className="flex items-center gap-3 rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-xs text-muted-foreground sm:text-sm"
+          data-testid={`${testIdPrefix}-empty-notice`}
+        >
+          <ZapIcon className="size-5 shrink-0 text-primary" aria-hidden />
+          <span>
+            Plisio Crypto Gateway is enabled — no cryptocurrencies have been enabled in{" "}
+            <strong className="font-semibold text-foreground">
+              Admin → E-commerce → Payment
+            </strong>{" "}
+            yet.
+          </span>
+        </div>
+      ) : (
+        <>
+          {/* Coin Grid */}
+          <div
+            className="grid grid-cols-2 gap-2.5 sm:grid-cols-4"
+            data-testid={`${testIdPrefix}-coin-grid`}
+          >
+            {currencies.map((coin) => {
+              const isSelected = active && coin.cid === selectedCurrency.cid;
+              const coinEstimate = estimatePlisioCryptoAmount(totalMicros, coin);
+              return (
+                <button
+                  key={coin.cid}
+                  type="button"
+                  onClick={() => onSelectCoin(coin)}
+                  data-testid={`${testIdPrefix}-coin-${coin.cid}`}
+                  data-selected={isSelected ? "true" : "false"}
                   className={cn(
-                    "rounded-md px-1.5 py-0.5 text-[10px] font-extrabold tracking-tight uppercase",
+                    "relative flex cursor-pointer flex-col items-start justify-between rounded-2xl border p-3 text-left transition-all",
                     isSelected
-                      ? "bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground)"
-                      : "bg-muted text-muted-foreground",
+                      ? "border-2 border-primary bg-primary/[0.06] shadow-xs ring-2 ring-primary/15"
+                      : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
                   )}
                 >
-                  {coin.networkTag}
-                </span>
-              </div>
-
-              <p className="mt-1 line-clamp-1 text-[11px] font-medium text-muted-foreground">
-                {coin.network}
-              </p>
-
-              <div className="mt-2 flex w-full items-center justify-between gap-1 border-t border-border/60 pt-1.5">
-                <span className="font-mono text-[11px] font-extrabold text-primary tabular-nums">
-                  ≈ {coinEstimate} {coin.code}
-                </span>
-                <span className="text-[10px] text-muted-foreground">{coin.eta}</span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Selected Plisio Coin Hassle-Free Summary Banner */}
-      {active && (
-        <div
-          className="rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/[0.06] via-card to-emerald-500/[0.05] p-4 shadow-2xs"
-          data-testid={`${testIdPrefix}-selected-banner`}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground) shadow-xs">
-                <ShieldCheckIcon className="size-5" aria-hidden />
-              </span>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-extrabold text-foreground sm:text-base">
-                    {selectedCurrency.name} ({selectedCurrency.code})
-                  </span>
-                  <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-extrabold text-primary">
-                    {selectedCurrency.network}
-                  </span>
-                  {selectedCurrency.badge && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                      <SparklesIcon className="size-2.5" aria-hidden />
-                      {selectedCurrency.badge}
+                  <div className="flex w-full items-center justify-between gap-1.5">
+                    <span className="text-sm font-black tracking-tight text-foreground">
+                      {coin.code}
                     </span>
-                  )}
+                    <span
+                      className={cn(
+                        "rounded-md px-1.5 py-0.5 text-[10px] font-extrabold tracking-tight uppercase",
+                        isSelected
+                          ? "bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground)"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {coin.networkTag}
+                    </span>
+                  </div>
+
+                  <p className="mt-1 line-clamp-1 text-[11px] font-medium text-muted-foreground">
+                    {coin.network}
+                  </p>
+
+                  <div className="mt-2 flex w-full items-center justify-between gap-1 border-t border-border/60 pt-1.5">
+                    <span className="font-mono text-[11px] font-extrabold text-primary tabular-nums">
+                      ≈ {coinEstimate} {coin.code}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">{coin.eta}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Selected Plisio Coin Hassle-Free Summary Banner */}
+          {active && (
+            <div
+              className="rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/[0.06] via-card to-emerald-500/[0.05] p-4 shadow-2xs"
+              data-testid={`${testIdPrefix}-selected-banner`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground) shadow-xs">
+                    <ShieldCheckIcon className="size-5" aria-hidden />
+                  </span>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-extrabold text-foreground sm:text-base">
+                        {selectedCurrency.name} ({selectedCurrency.code})
+                      </span>
+                      <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-extrabold text-primary">
+                        {selectedCurrency.network}
+                      </span>
+                      {selectedCurrency.badge && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                          <SparklesIcon className="size-2.5" aria-hidden />
+                          {selectedCurrency.badge}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Automated Plisio blockchain detection · Order moves to{" "}
+                      <strong className="font-semibold text-foreground">Paid</strong> &amp;{" "}
+                      <strong className="font-semibold text-foreground">Processing</strong>{" "}
+                      automatically
+                    </p>
+                  </div>
                 </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Automated Plisio blockchain detection · Order moves to{" "}
-                  <strong className="font-semibold text-foreground">Paid</strong> &amp;{" "}
-                  <strong className="font-semibold text-foreground">Processing</strong>{" "}
-                  automatically
-                </p>
+
+                <div className="text-right">
+                  <p className="text-[11px] font-semibold text-muted-foreground">
+                    Estimated Crypto Total
+                  </p>
+                  <p className="font-mono text-base font-black text-primary tabular-nums sm:text-lg">
+                    {estimatedCrypto} {selectedCurrency.code}
+                  </p>
+                </div>
               </div>
             </div>
-
-            <div className="text-right">
-              <p className="text-[11px] font-semibold text-muted-foreground">
-                Estimated Crypto Total
-              </p>
-              <p className="font-mono text-base font-black text-primary tabular-nums sm:text-lg">
-                {estimatedCrypto} {selectedCurrency.code}
-              </p>
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );

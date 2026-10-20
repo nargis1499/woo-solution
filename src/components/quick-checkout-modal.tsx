@@ -33,8 +33,8 @@ import {
 import { parseProductFeatures } from "@/lib/home-sections";
 import { formatMoney } from "@/lib/money";
 import {
-  getPlisioCurrency,
-  PLISIO_CURRENCIES,
+  resolvePlisioCurrency,
+  type PlisioCurrency,
   type PlisioInvoiceSession,
 } from "@/lib/plisio";
 import { generateQrMatrix } from "@/lib/qr-code";
@@ -55,6 +55,7 @@ type QuickCheckoutCustomer = {
 type QuickCheckoutPayment = {
   codEnabled: boolean;
   plisioEnabled?: boolean;
+  plisioCurrencies?: PlisioCurrency[];
   cryptoEnabled: boolean;
   cryptoProtocols: CryptoProtocol[];
 };
@@ -214,20 +215,21 @@ export function QuickCheckoutModal({
     initialData?.payment ?? {
       codEnabled: true,
       plisioEnabled: false,
+      plisioCurrencies: [],
       cryptoEnabled: true,
       cryptoProtocols: DEFAULT_CRYPTO_PROTOCOLS,
     },
   );
   const [paymentMode, setPaymentMode] = useState<"crypto" | "plisio" | "cod">(() => {
     const p = initialData?.payment;
-    if (p?.plisioEnabled) return "plisio";
+    if (p?.plisioEnabled && (p.plisioCurrencies?.length ?? 0) > 0) return "plisio";
     if (p && (!p.cryptoEnabled || p.cryptoProtocols.length === 0) && p.codEnabled) {
       return "cod";
     }
     return "crypto";
   });
   const [selectedPlisioCid, setSelectedPlisioCid] = useState<string>(
-    PLISIO_CURRENCIES[0].cid,
+    initialData?.payment?.plisioCurrencies?.[0]?.cid ?? "USDT_TRX",
   );
   const [plisioInvoice, setPlisioInvoice] = useState<PlisioInvoiceSession | null>(
     null,
@@ -288,7 +290,11 @@ export function QuickCheckoutModal({
         }
         if (data.payment) {
           setPaymentConfig(data.payment);
-          if (data.payment.plisioEnabled) {
+          const firstPlisioCid = data.payment.plisioCurrencies?.[0]?.cid;
+          if (firstPlisioCid) {
+            setSelectedPlisioCid((prev) => prev || firstPlisioCid);
+          }
+          if (data.payment.plisioEnabled && (data.payment.plisioCurrencies?.length ?? 0) > 0) {
             setPaymentMode("plisio");
           } else if (
             (!data.payment.cryptoEnabled ||
@@ -386,7 +392,11 @@ export function QuickCheckoutModal({
     }
   }
 
-  const selectedPlisioCurrency = getPlisioCurrency(selectedPlisioCid);
+  const activePlisioCurrencies = paymentConfig.plisioCurrencies ?? [];
+  const selectedPlisioCurrency = resolvePlisioCurrency(
+    activePlisioCurrencies,
+    selectedPlisioCid,
+  );
 
   async function handleProceedFromStep3() {
     setVerifyError(null);
@@ -1212,9 +1222,10 @@ export function QuickCheckoutModal({
                   )}
 
                   {/* 2. Plisio Automated Crypto Gateway Option (when enabled) */}
-                  {paymentConfig.plisioEnabled && (
+                  {paymentConfig.plisioEnabled && activePlisioCurrencies.length > 0 && (
                     <PlisioCoinSelector
-                      selectedCid={selectedPlisioCid}
+                      currencies={activePlisioCurrencies}
+                      selectedCid={selectedPlisioCurrency.cid}
                       active={paymentMode === "plisio"}
                       totalMicros={selectedTier.priceMicros}
                       formattedStoreTotal={`${formatMoney(selectedTier.priceMicros, money)} ${money.currency}`}

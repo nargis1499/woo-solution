@@ -22,8 +22,8 @@ import { lineKey, selectCartSubtotal, useCartStore, useHydrated } from "@/lib/ca
 import { shortNetworkTag, type CryptoProtocol } from "@/lib/crypto-protocols";
 import { formatMoney } from "@/lib/money";
 import {
-  getPlisioCurrency,
-  PLISIO_CURRENCIES,
+  resolvePlisioCurrency,
+  type PlisioCurrency,
   type PlisioInvoiceSession,
 } from "@/lib/plisio";
 import { generateQrMatrix } from "@/lib/qr-code";
@@ -46,6 +46,7 @@ import { ProductImage } from "./product-image";
 type CheckoutPaymentConfig = {
   codEnabled: boolean;
   plisioEnabled?: boolean;
+  plisioCurrencies?: PlisioCurrency[];
   cryptoEnabled: boolean;
   cryptoProtocols: CryptoProtocol[];
 };
@@ -112,13 +113,16 @@ export function CheckoutForm({
   const [pending, startTransition] = useTransition();
 
   const activeProtocols = payment.cryptoProtocols;
+  const activePlisioCurrencies = payment.plisioCurrencies ?? [];
   const [paymentMode, setPaymentMode] = useState<"cod" | "plisio" | "crypto">(() => {
-    if (!payment.codEnabled && payment.plisioEnabled) return "plisio";
+    if (!payment.codEnabled && payment.plisioEnabled && activePlisioCurrencies.length > 0) {
+      return "plisio";
+    }
     if (!payment.codEnabled && payment.cryptoEnabled) return "crypto";
     return "cod";
   });
   const [selectedPlisioCid, setSelectedPlisioCid] = useState<string>(
-    PLISIO_CURRENCIES[0].cid,
+    activePlisioCurrencies[0]?.cid ?? "USDT_TRX",
   );
   const [pendingPlisioOrder, setPendingPlisioOrder] = useState<{
     invoice: PlisioInvoiceSession;
@@ -126,7 +130,10 @@ export function CheckoutForm({
     totalMicros: number;
     protocolLabel: string;
   } | null>(null);
-  const selectedPlisioCurrency = getPlisioCurrency(selectedPlisioCid);
+  const selectedPlisioCurrency = resolvePlisioCurrency(
+    activePlisioCurrencies,
+    selectedPlisioCid,
+  );
 
   const defaultProtocol =
     activeProtocols.find((p) => Boolean(p.badge)) ?? activeProtocols[0];
@@ -405,7 +412,8 @@ export function CheckoutForm({
               {/* 2. Plisio Automated Crypto Gateway Option */}
               {payment.plisioEnabled && (
                 <PlisioCoinSelector
-                  selectedCid={selectedPlisioCid}
+                  currencies={activePlisioCurrencies}
+                  selectedCid={selectedPlisioCurrency.cid}
                   active={paymentMode === "plisio"}
                   totalMicros={totalMicros}
                   formattedStoreTotal={`${formatPrice(totalMicros)} ${money.currency}`}

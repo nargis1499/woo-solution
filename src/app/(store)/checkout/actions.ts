@@ -5,8 +5,9 @@ import {
   formatOrderNotesWithPayment,
   type OrderPaymentInput,
 } from "@/lib/order-payment";
-import { getPlisioCurrency, type PlisioInvoiceSession } from "@/lib/plisio";
+import { resolvePlisioCurrency, type PlisioInvoiceSession } from "@/lib/plisio";
 import { createPlisioOrderInvoice } from "@/lib/plisio.server";
+import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { ShippingInput } from "@/lib/types";
@@ -61,10 +62,14 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     };
   }
 
-  const plisioCurrency =
-    paymentMethod === "plisio"
-      ? getPlisioCurrency(clean(input.payment?.plisioCid || input.payment?.protocolCode, 40) || "USDT_TRX")
-      : null;
+  let plisioCurrency = null;
+  if (paymentMethod === "plisio") {
+    const settings = await getSiteSettingsFresh();
+    plisioCurrency = resolvePlisioCurrency(
+      settings.payment_plisio_currencies,
+      clean(input.payment?.plisioCid || input.payment?.protocolCode, 40) || "USDT_TRX",
+    );
+  }
 
   const normalizedPayment: OrderPaymentInput | undefined =
     paymentMethod === "plisio" && plisioCurrency

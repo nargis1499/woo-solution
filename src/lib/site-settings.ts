@@ -13,6 +13,7 @@ import {
   normaliseHomeCategorySections,
 } from "@/lib/home-sections";
 import { isCurrencyCode, moneyFromSettings, type Money } from "@/lib/money";
+import { normalisePlisioCurrencies } from "@/lib/plisio";
 import { DEFAULT_CRYPTO_PROTOCOLS, normaliseCryptoProtocols } from "@/lib/crypto-protocols";
 import { DEFAULT_THEME, normaliseColors, normaliseGradients, templateTheme } from "@/lib/theme";
 import type { SiteSettings } from "@/lib/types";
@@ -46,6 +47,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   payment_plisio_enabled: false,
   payment_plisio_test_mode: false,
   payment_plisio_secret_key: null,
+  payment_plisio_currencies: [],
   payment_crypto_enabled: true,
   payment_crypto_protocols: DEFAULT_CRYPTO_PROTOCOLS,
   home_show_hero: true,
@@ -130,6 +132,11 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     payment_plisio_enabled: flag(row.payment_plisio_enabled ?? meta.payment_plisio_enabled, false),
     payment_plisio_test_mode: flag(row.payment_plisio_test_mode ?? meta.payment_plisio_test_mode, false),
     payment_plisio_secret_key: text(row.payment_plisio_secret_key ?? meta.payment_plisio_secret_key),
+    payment_plisio_currencies: normalisePlisioCurrencies(
+      Array.isArray(row.payment_plisio_currencies)
+        ? row.payment_plisio_currencies
+        : meta.payment_plisio_currencies,
+    ),
     payment_crypto_enabled: flag(row.payment_crypto_enabled ?? meta.payment_crypto_enabled, true),
     payment_crypto_protocols: normaliseCryptoProtocols(
       Array.isArray(row.payment_crypto_protocols)

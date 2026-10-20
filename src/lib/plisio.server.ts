@@ -5,7 +5,8 @@ import { publishNotificationsChanged } from "@/lib/notification-bus";
 import { formatOrderNotesWithPayment, parseOrderPaymentInfo } from "@/lib/order-payment";
 import {
   estimatePlisioCryptoAmount,
-  getPlisioCurrency,
+  inferPlisioNetworkInfo,
+  resolvePlisioCurrency,
   type PlisioCurrency,
   type PlisioInvoiceSession,
 } from "@/lib/plisio";
@@ -66,6 +67,7 @@ export async function getPlisioSecretKey(): Promise<{
   testMode: boolean;
   isAdmin: boolean;
   secretKey: string | null;
+  currencies: PlisioCurrency[];
 }> {
   const [settings, isAdmin] = await Promise.all([
     getSiteSettingsFresh(),
@@ -81,7 +83,117 @@ export async function getPlisioSecretKey(): Promise<{
     testMode,
     isAdmin,
     secretKey: secretKey ?? null,
+    currencies: settings.payment_plisio_currencies,
   };
+}
+
+/**
+ * Queries Plisio's live `/currencies/USD` endpoint using the Admin's Secret Key
+ * and returns the merged dynamic `PlisioCurrency[]` list.
+ */
+export async function fetchPlisioCurrenciesFromApi(
+  secretKeyOverride?: string | null,
+): Promise<
+  | { ok: true; currencies: PlisioCurrency[] }
+  | { ok: false; error: string }
+> {
+  const settings = await getSiteSettingsFresh();
+  const secretKey = (secretKeyOverride ?? settings.payment_plisio_secret_key ?? "").trim();
+  if (!secretKey) {
+    return {
+      ok: false,
+      error: "Please enter and save your Plisio Secret Key first.",
+    };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const res = await fetch(
+      `${PLISIO_API_BASE}/currencies/USD?api_key=${encodeURIComponent(secretKey)}`,
+      {
+        method: "GET",
+        headers: { accept: "application/json" },
+        signal: controller.signal,
+        cache: "no-store",
+      },
+    ).finally(() => clearTimeout(timeout));
+
+    const json = (await res.json().catch(() => null)) as {
+      status?: string;
+      data?:
+        | Array<{
+            cid?: string;
+            currency?: string;
+            name?: string;
+            price_usd?: string | number;
+            rate_usd?: string | number;
+            fiat_rate?: string | number;
+            precision?: number;
+            output_precision?: number;
+            hidden?: number | boolean;
+            message?: string;
+          }>
+        | { message?: string };
+    } | null;
+
+    if (json?.status !== "success" || !Array.isArray(json.data)) {
+      const msg =
+        json?.data && !Array.isArray(json.data) && json.data.message
+          ? json.data.message
+          : "Plisio rejected the request. Please verify your Plisio Secret Key.";
+      return { ok: false, error: msg };
+    }
+
+    const existingByCid = new Map<string, PlisioCurrency>();
+    for (const c of settings.payment_plisio_currencies) {
+      existingByCid.set(c.cid.toUpperCase(), c);
+    }
+
+    const synced: PlisioCurrency[] = [];
+    for (const item of json.data) {
+      const cid = String(item.cid ?? "").trim().toUpperCase();
+      if (!cid) continue;
+
+      const existing = existingByCid.get(cid);
+      const inferred = inferPlisioNetworkInfo(cid, item.name, item.currency);
+
+      const rawPriceUsd = Number(item.price_usd ?? 0);
+      const rawFiatRate = Number(item.fiat_rate ?? item.rate_usd ?? 0);
+      const approxUsdRate =
+        Number.isFinite(rawPriceUsd) && rawPriceUsd > 0
+          ? rawPriceUsd
+          : Number.isFinite(rawFiatRate) && rawFiatRate > 0
+            ? 1 / rawFiatRate
+            : existing?.approxUsdRate ?? 1;
+
+      const isHiddenOnPlisio = item.hidden === 1 || item.hidden === true;
+
+      synced.push({
+        cid,
+        code: existing?.code || inferred.code,
+        name: existing?.name || inferred.name,
+        network: existing?.network || inferred.network,
+        networkTag: existing?.networkTag || inferred.networkTag,
+        badge: existing?.badge ?? null,
+        eta: existing?.eta || inferred.eta,
+        approxUsdRate: Number(approxUsdRate.toPrecision(6)),
+        decimals: existing?.decimals ?? inferred.decimals,
+        // Preserve Admin's toggle if already in DB; otherwise enable coins that aren't hidden in Plisio
+        enabled: existing ? existing.enabled : !isHiddenOnPlisio,
+      });
+    }
+
+    return { ok: true, currencies: synced };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        e instanceof Error
+          ? `Could not connect to Plisio API: ${e.message}`
+          : "Could not connect to Plisio API.",
+    };
+  }
 }
 
 /**
@@ -160,7 +272,7 @@ export async function createPlisioOrderInvoice(params: {
   cid: string;
   siteOrigin: string;
 }): Promise<{ ok: true; invoice: PlisioInvoiceSession } | { ok: false; error: string }> {
-  const { enabled, testMode, secretKey } = await getPlisioSecretKey();
+  const { enabled, testMode, secretKey, currencies } = await getPlisioSecretKey();
   if (!enabled) {
     return {
       ok: false,
@@ -183,7 +295,7 @@ export async function createPlisioOrderInvoice(params: {
   const orderNumber = Number(order.order_number ?? 1);
   const totalMicros = Number(order.total_micros ?? 0);
   const usdAmount = Math.max(0.5, totalMicros / 1_000_000).toFixed(2);
-  const currency = getPlisioCurrency(params.cid);
+  const currency = resolvePlisioCurrency(currencies, params.cid);
   const customerEmail =
     typeof order.customer_email === "string" ? order.customer_email : "";
 
@@ -360,8 +472,9 @@ export async function markOrderPaidViaPlisio(params: {
     notes: typeof order.notes === "string" ? order.notes : null,
   });
 
+  const { currencies } = await getPlisioSecretKey();
   const cid = params.cid || parsed.plisioCid || "USDT_TRX";
-  const currency = getPlisioCurrency(cid);
+  const currency = resolvePlisioCurrency(currencies, cid);
   const resolvedTxnId =
     params.txnId || parsed.plisioTxnId || `plisio_${params.orderId.slice(0, 8)}`;
   const resolvedTxHash =

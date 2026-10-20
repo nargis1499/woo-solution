@@ -37,6 +37,9 @@ async function CheckoutGate() {
           settings.payment_plisio_enabled &&
           (Boolean(settings.payment_plisio_secret_key) ||
             (settings.payment_plisio_test_mode && isAdmin)),
+        plisioCurrencies: settings.payment_plisio_currencies.filter(
+          (c) => c.enabled,
+        ),
         cryptoEnabled: settings.payment_crypto_enabled,
         cryptoProtocols: settings.payment_crypto_protocols.filter((p) => p.enabled),
       }}

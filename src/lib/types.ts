@@ -1,6 +1,7 @@
 import type { ThemeColors, ThemeGradientSets } from "@/lib/theme";
 import type { CurrencyCode } from "@/lib/money";
 import type { CryptoProtocol } from "@/lib/crypto-protocols";
+import type { PlisioCurrency } from "@/lib/plisio";
 // Hand-written row types that mirror `supabase/migrations/*_init.sql`.
 // Tip: once your schema grows, generate them instead:
 //   npx supabase gen types typescript --project-id <ref> > src/lib/database.types.ts
@@ -358,6 +359,7 @@ export type SiteSettings = {
   payment_plisio_enabled: boolean;
   payment_plisio_test_mode: boolean;
   payment_plisio_secret_key: string | null;
+  payment_plisio_currencies: PlisioCurrency[];
   payment_crypto_enabled: boolean;
   payment_crypto_protocols: CryptoProtocol[];
   // Home page (UI → Home page): which sections the storefront home renders + hero content
