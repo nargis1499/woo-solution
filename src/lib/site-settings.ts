@@ -125,19 +125,11 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     shipping_rate_micros: nonNegative(row.shipping_rate_micros ?? meta.shipping_rate_micros, FLAT_SHIPPING_MICROS),
     payment_cod_enabled: flag(row.payment_cod_enabled ?? meta.payment_cod_enabled, true),
     payment_crypto_enabled: flag(row.payment_crypto_enabled ?? meta.payment_crypto_enabled, true),
-    payment_crypto_protocols: (() => {
-      const rawProtocols =
-        Array.isArray(row.payment_crypto_protocols) && row.payment_crypto_protocols.length > 0
-          ? row.payment_crypto_protocols
-          : Array.isArray(meta.payment_crypto_protocols)
-            ? meta.payment_crypto_protocols
-            : "payment_crypto_protocols" in meta
-              ? meta.payment_crypto_protocols
-              : null;
-      return rawProtocols !== null
-        ? normaliseCryptoProtocols(rawProtocols)
-        : DEFAULT_CRYPTO_PROTOCOLS;
-    })(),
+    payment_crypto_protocols: normaliseCryptoProtocols(
+      Array.isArray(row.payment_crypto_protocols)
+        ? row.payment_crypto_protocols
+        : meta.payment_crypto_protocols,
+    ),
     home_show_hero: flag(row.home_show_hero ?? meta.home_show_hero, true),
     home_hero_badge:
       "home_hero_badge" in row && row.home_hero_badge !== undefined

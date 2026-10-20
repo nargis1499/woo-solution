@@ -32,9 +32,9 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
     settings.payment_crypto_protocols,
   );
 
-  // Expandable / collapsible payment gateway sections
+  // All payment gateway sections are collapsed by default
   const [codExpanded, setCodExpanded] = useState<boolean>(false);
-  const [cryptoExpanded, setCryptoExpanded] = useState<boolean>(true);
+  const [cryptoExpanded, setCryptoExpanded] = useState<boolean>(false);
 
   // Add / Edit Crypto Protocol modal state
   const [modalOpen, setModalOpen] = useState<boolean>(false);
@@ -67,7 +67,6 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
 
   async function handleToggleCryptoGateway(enabled: boolean) {
     setCryptoEnabled(enabled);
-    if (enabled) setCryptoExpanded(true);
     await persistPayment({ payment_crypto_enabled: enabled });
   }
 
@@ -97,7 +96,7 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
 
   return (
     <div className="space-y-4" data-testid="woocommerce-payment-settings">
-      {/* ── 1. Cash on Delivery (COD) Option (Top Section, Expandable / Collapsible) ── */}
+      {/* ── 1. Cash on Delivery (COD) Option (Top Section, Collapsed by Default) ── */}
       <div
         className="overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground shadow-2xs"
         data-testid="payment-cod-section"
@@ -165,7 +164,7 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
         )}
       </div>
 
-      {/* ── 2. Cryptocurrency Payment System (Below COD, Expandable / Collapsible) ── */}
+      {/* ── 2. Cryptocurrency Payment System (Below COD, Collapsed by Default) ── */}
       <div
         className="overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground shadow-2xs"
         data-testid="payment-crypto-section"
@@ -252,93 +251,103 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
               </div>
 
               <div className="space-y-3" data-testid="crypto-protocols-list">
-                {protocols.map((protocol) => (
-                  <div
-                    key={protocol.id}
-                    data-testid={`crypto-protocol-row-${protocol.id}`}
-                    className={cn(
-                      "flex flex-col gap-4 rounded-2xl border border-border/80 bg-muted/15 p-4 transition-opacity lg:flex-row lg:items-center lg:justify-between",
-                      !protocol.enabled && "opacity-60",
-                    )}
-                  >
-                    {/* Left: Coin Code Badge + Name + Network */}
-                    <div className="flex min-w-56 items-center gap-3.5">
-                      <span className="grid size-12 shrink-0 place-items-center rounded-xl border border-border/80 bg-card text-xs font-black tracking-tight text-foreground shadow-2xs">
-                        {protocol.code}
-                      </span>
-                      <div className="min-w-0 space-y-0.5">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-extrabold text-foreground">
-                            {protocol.code}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            ({protocol.name})
-                          </span>
-                          {protocol.badge && (
-                            <span className="rounded-full bg-primary/12 px-2 py-0.5 text-[10px] font-bold text-primary">
-                              {protocol.badge}
+                {protocols.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border/80 bg-muted/15 px-5 py-8 text-center text-xs text-muted-foreground sm:text-sm">
+                    No crypto protocols configured yet. Click{" "}
+                    <strong className="font-semibold text-foreground">
+                      + Add Crypto Protocol
+                    </strong>{" "}
+                    to add one.
+                  </div>
+                ) : (
+                  protocols.map((protocol) => (
+                    <div
+                      key={protocol.id}
+                      data-testid={`crypto-protocol-row-${protocol.id}`}
+                      className={cn(
+                        "flex flex-col gap-4 rounded-2xl border border-border/80 bg-muted/15 p-4 transition-opacity lg:flex-row lg:items-center lg:justify-between",
+                        !protocol.enabled && "opacity-60",
+                      )}
+                    >
+                      {/* Left: Coin Code Badge + Name + Network */}
+                      <div className="flex min-w-56 items-center gap-3.5">
+                        <span className="grid size-12 shrink-0 place-items-center rounded-xl border border-border/80 bg-card text-xs font-black tracking-tight text-foreground shadow-2xs">
+                          {protocol.code}
+                        </span>
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-extrabold text-foreground">
+                              {protocol.code}
                             </span>
-                          )}
+                            <span className="text-xs text-muted-foreground">
+                              ({protocol.name})
+                            </span>
+                            {protocol.badge && (
+                              <span className="rounded-full bg-primary/12 px-2 py-0.5 text-[10px] font-bold text-primary">
+                                {protocol.badge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {protocol.network}
+                          </p>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {protocol.network}
+                      </div>
+
+                      {/* Middle: Deposit Address */}
+                      <div className="flex-1 space-y-1">
+                        <p className="text-[10px] font-extrabold tracking-wider text-muted-foreground uppercase">
+                          DEPOSIT ADDRESS
                         </p>
+                        <input
+                          type="text"
+                          defaultValue={protocol.address}
+                          onBlur={(e) => {
+                            const nextVal = e.target.value.trim();
+                            if (nextVal && nextVal !== protocol.address) {
+                              void handleUpdateAddressInline(protocol.id, nextVal);
+                            }
+                          }}
+                          aria-label={`${protocol.code} (${protocol.network}) deposit address`}
+                          className="h-10 w-full rounded-xl border border-border/80 bg-card px-3.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        />
+                      </div>
+
+                      {/* Right: Enable Switch + Edit + Delete */}
+                      <div className="flex items-center justify-end gap-3 lg:pl-2">
+                        <Switch
+                          aria-label={`Enable ${protocol.code} (${protocol.network})`}
+                          isSelected={protocol.enabled}
+                          isDisabled={saving}
+                          onChange={(val) =>
+                            void handleToggleProtocol(protocol.id, val)
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProtocol(protocol);
+                            setModalOpen(true);
+                          }}
+                          aria-label={`Edit ${protocol.code} (${protocol.network})`}
+                          data-testid={`edit-crypto-protocol-${protocol.id}`}
+                          className="grid size-9 cursor-pointer place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        >
+                          <SquarePenIcon className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteProtocol(protocol.id)}
+                          aria-label={`Delete ${protocol.code} (${protocol.network})`}
+                          data-testid={`delete-crypto-protocol-${protocol.id}`}
+                          className="grid size-9 cursor-pointer place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2Icon className="size-4" />
+                        </button>
                       </div>
                     </div>
-
-                    {/* Middle: Deposit Address */}
-                    <div className="flex-1 space-y-1">
-                      <p className="text-[10px] font-extrabold tracking-wider text-muted-foreground uppercase">
-                        DEPOSIT ADDRESS
-                      </p>
-                      <input
-                        type="text"
-                        defaultValue={protocol.address}
-                        onBlur={(e) => {
-                          const nextVal = e.target.value.trim();
-                          if (nextVal && nextVal !== protocol.address) {
-                            void handleUpdateAddressInline(protocol.id, nextVal);
-                          }
-                        }}
-                        aria-label={`${protocol.code} (${protocol.network}) deposit address`}
-                        className="h-10 w-full rounded-xl border border-border/80 bg-card px-3.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
-                      />
-                    </div>
-
-                    {/* Right: Enable Switch + Edit + Delete */}
-                    <div className="flex items-center justify-end gap-3 lg:pl-2">
-                      <Switch
-                        aria-label={`Enable ${protocol.code} (${protocol.network})`}
-                        isSelected={protocol.enabled}
-                        isDisabled={saving}
-                        onChange={(val) =>
-                          void handleToggleProtocol(protocol.id, val)
-                        }
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingProtocol(protocol);
-                          setModalOpen(true);
-                        }}
-                        aria-label={`Edit ${protocol.code} (${protocol.network})`}
-                        data-testid={`edit-crypto-protocol-${protocol.id}`}
-                        className="grid size-9 cursor-pointer place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      >
-                        <SquarePenIcon className="size-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteProtocol(protocol.id)}
-                        aria-label={`Delete ${protocol.code} (${protocol.network})`}
-                        data-testid={`delete-crypto-protocol-${protocol.id}`}
-                        className="grid size-9 cursor-pointer place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                      >
-                        <Trash2Icon className="size-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>

@@ -237,7 +237,13 @@ export function QuickCheckoutModal({
       cryptoProtocols: DEFAULT_CRYPTO_PROTOCOLS,
     },
   );
-  const [paymentMode, setPaymentMode] = useState<"crypto" | "cod">("crypto");
+  const [paymentMode, setPaymentMode] = useState<"crypto" | "cod">(() => {
+    const p = initialData?.payment;
+    if (p && (!p.cryptoEnabled || p.cryptoProtocols.length === 0) && p.codEnabled) {
+      return "cod";
+    }
+    return "crypto";
+  });
   const [selectedProtocolId, setSelectedProtocolId] = useState<string>("");
   const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
 
@@ -285,7 +291,11 @@ export function QuickCheckoutModal({
         }
         if (data.payment) {
           setPaymentConfig(data.payment);
-          if (!data.payment.cryptoEnabled && data.payment.codEnabled) {
+          if (
+            (!data.payment.cryptoEnabled ||
+              data.payment.cryptoProtocols.length === 0) &&
+            data.payment.codEnabled
+          ) {
             setPaymentMode("cod");
           }
         }
@@ -329,10 +339,7 @@ export function QuickCheckoutModal({
   const activeTierId = selectedTierByProduct[selectedProduct.id] ?? preferredDefaultTier?.id;
   const selectedTier = tiers.find((t) => t.id === activeTierId) ?? preferredDefaultTier ?? tiers[0];
 
-  const activeProtocols =
-    paymentConfig.cryptoProtocols.length > 0
-      ? paymentConfig.cryptoProtocols
-      : DEFAULT_CRYPTO_PROTOCOLS;
+  const activeProtocols = paymentConfig.cryptoProtocols;
   const defaultProtocol =
     activeProtocols.find((p) => Boolean(p.badge)) ?? activeProtocols[0];
   const selectedProtocol =
