@@ -18,8 +18,8 @@ export default async function AdminSettingsPage({
   searchParams: SearchParams;
 }) {
   const params = await searchParams;
-  if (params.tab === "woocommerce") {
-    redirect("/nemesis/woocommerce");
+  if (params.tab === "woocommerce" || params.tab === "ecommerce") {
+    redirect("/nemesis/ecommerce");
   }
 
   const [settings, { user }] = await Promise.all([adminGetSiteSettings(), getAdminStatus()]);

@@ -382,7 +382,7 @@ export function CheckoutForm({
                         Cryptocurrency gateway is enabled — no wallet protocols have been configured
                         in{" "}
                         <strong className="font-semibold text-foreground">
-                          Admin → WooCommerce → Payment
+                          Admin → E-commerce → Payment
                         </strong>{" "}
                         yet.
                       </span>

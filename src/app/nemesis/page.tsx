@@ -123,8 +123,8 @@ export default async function AdminDashboardPage() {
           {!manageStock ? (
             <p className="px-6 py-10 text-center text-sm text-muted-foreground">
               Stock management is off – every product is unlimited.{" "}
-              <Link href="/nemesis/woocommerce" className="text-primary hover:underline">
-                Change in WooCommerce
+              <Link href="/nemesis/ecommerce" className="text-primary hover:underline">
+                Change in E-commerce
               </Link>
               .
             </p>

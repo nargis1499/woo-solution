@@ -34,14 +34,14 @@ export function WoocommerceTabs({
     setTab(key);
     const url =
       key === "general"
-        ? "/nemesis/woocommerce"
-        : `/nemesis/woocommerce?tab=${String(key)}`;
+        ? "/nemesis/ecommerce"
+        : `/nemesis/ecommerce?tab=${String(key)}`;
     window.history.replaceState(null, "", url);
   }
 
   return (
     <Tabs selectedKey={tab} onSelectionChange={select} className="gap-5">
-      <TabsList aria-label="WooCommerce sections" className="h-auto max-w-full flex-wrap">
+      <TabsList aria-label="E-commerce sections" className="h-auto max-w-full flex-wrap">
         {WOOCOMMERCE_TABS.map((t) => (
           <TabsTrigger key={t.id} id={t.id} className="px-3 py-1.5" data-testid={`woo-tab-${t.id}`}>
             <t.icon /> {t.label}
