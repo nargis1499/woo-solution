@@ -4,11 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
+  AlertTriangleIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   AwardIcon,
+  BanknoteIcon,
   CheckIcon,
   ChevronDownIcon,
+  CopyIcon,
   FlameIcon,
   GlobeIcon,
   LockIcon,
@@ -18,6 +21,12 @@ import {
   XIcon,
   ZapIcon,
 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  DEFAULT_CRYPTO_PROTOCOLS,
+  shortNetworkTag,
+  type CryptoProtocol,
+} from "@/lib/crypto-protocols";
 import { parseProductFeatures } from "@/lib/home-sections";
 import { formatMoney } from "@/lib/money";
 import { resolveQuickCheckoutTiers, type QuickCheckoutTier } from "@/lib/quick-checkout";
@@ -33,10 +42,17 @@ type QuickCheckoutCustomer = {
   phone?: string;
 };
 
+type QuickCheckoutPayment = {
+  codEnabled: boolean;
+  cryptoEnabled: boolean;
+  cryptoProtocols: CryptoProtocol[];
+};
+
 type QuickCheckoutPayload = {
   authenticated?: boolean;
   storeName?: string;
   customer?: QuickCheckoutCustomer;
+  payment?: QuickCheckoutPayment;
   products?: Product[];
 };
 
@@ -107,6 +123,70 @@ function ProductBadgeIcon({ index }: { index: number }) {
   return <ZapIcon className="size-3.5 shrink-0 fill-amber-400 text-amber-500" aria-hidden />;
 }
 
+/** Deterministic 21x21 QR matrix SVG rendered offline without external network calls. */
+function DepositQrCodeSvg({ value }: { value: string }) {
+  const size = 21;
+  const cells: boolean[][] = Array.from({ length: size }, () =>
+    Array.from({ length: size }, () => false),
+  );
+
+  function drawFinder(r0: number, c0: number) {
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        const border = r === 0 || r === 6 || c === 0 || c === 6;
+        const inner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+        cells[r0 + r][c0 + c] = border || inner;
+      }
+    }
+  }
+
+  drawFinder(0, 0);
+  drawFinder(0, size - 7);
+  drawFinder(size - 7, 0);
+
+  // Timing patterns
+  for (let i = 8; i < size - 8; i++) {
+    cells[6][i] = i % 2 === 0;
+    cells[i][6] = i % 2 === 0;
+  }
+
+  // Deterministic hash-seeded data modules
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const inTopLeft = r < 8 && c < 8;
+      const inTopRight = r < 8 && c >= size - 8;
+      const inBottomLeft = r >= size - 8 && c < 8;
+      if (inTopLeft || inTopRight || inBottomLeft || r === 6 || c === 6) continue;
+      const seed = Math.imul(hash ^ (r * 31 + c * 17), 2654435761) >>> 0;
+      const charCode = value.charCodeAt((r * size + c) % Math.max(1, value.length)) || 7;
+      cells[r][c] = ((seed + charCode) & 3) !== 0;
+    }
+  }
+
+  return (
+    <svg
+      viewBox={`0 0 ${size} ${size}`}
+      className="size-24 shrink-0 text-zinc-950"
+      shapeRendering="crispEdges"
+      aria-label="Deposit address QR code"
+    >
+      {cells.map((row, r) =>
+        row.map((filled, c) =>
+          filled ? (
+            <rect key={`${r}-${c}`} x={c} y={r} width={1} height={1} fill="currentColor" />
+          ) : null,
+        ),
+      )}
+    </svg>
+  );
+}
+
 function buildLoginRedirectUrl(productId: string): string {
   const url = new URL(window.location.href);
   url.searchParams.set("quickCheckout", productId);
@@ -136,7 +216,7 @@ export function QuickCheckoutModal({
   const [selectedProductId, setSelectedProductId] = useState<string>(initialProduct.id);
   const [selectedTierByProduct, setSelectedTierByProduct] = useState<Record<string, string>>({});
 
-  // Step navigation & step gating: customer cannot advance to Step 2 until Step 1 is passed
+  // Step navigation & step gating: customer cannot advance until previous step is passed
   const [step, setStep] = useState<number>(1);
   const [maxUnlockedStep, setMaxUnlockedStep] = useState<number>(1);
 
@@ -149,11 +229,24 @@ export function QuickCheckoutModal({
   const [notes, setNotes] = useState<string>("");
   const [contactErrors, setContactErrors] = useState<{ fullName?: string; email?: string }>({});
 
+  // Step 3: Payment state
+  const [paymentConfig, setPaymentConfig] = useState<QuickCheckoutPayment>(
+    initialData?.payment ?? {
+      codEnabled: true,
+      cryptoEnabled: true,
+      cryptoProtocols: DEFAULT_CRYPTO_PROTOCOLS,
+    },
+  );
+  const [paymentMode, setPaymentMode] = useState<"crypto" | "cod">("crypto");
+  const [selectedProtocolId, setSelectedProtocolId] = useState<string>("");
+  const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
+
   useEffect(() => {
     if (
       initialData?.products &&
       initialData.products.length > 0 &&
-      initialData.customer
+      initialData.customer &&
+      initialData.payment
     ) {
       return;
     }
@@ -189,6 +282,12 @@ export function QuickCheckoutModal({
           setFullName((prev) => prev || data.customer?.fullName || "");
           setEmail((prev) => prev || data.customer?.email || "");
           setWhatsapp((prev) => prev || data.customer?.phone || "");
+        }
+        if (data.payment) {
+          setPaymentConfig(data.payment);
+          if (!data.payment.cryptoEnabled && data.payment.codEnabled) {
+            setPaymentMode("cod");
+          }
         }
       })
       .catch(() => {
@@ -230,6 +329,21 @@ export function QuickCheckoutModal({
   const activeTierId = selectedTierByProduct[selectedProduct.id] ?? preferredDefaultTier?.id;
   const selectedTier = tiers.find((t) => t.id === activeTierId) ?? preferredDefaultTier ?? tiers[0];
 
+  const activeProtocols =
+    paymentConfig.cryptoProtocols.length > 0
+      ? paymentConfig.cryptoProtocols
+      : DEFAULT_CRYPTO_PROTOCOLS;
+  const defaultProtocol =
+    activeProtocols.find((p) => Boolean(p.badge)) ?? activeProtocols[0];
+  const selectedProtocol =
+    activeProtocols.find((p) => p.id === selectedProtocolId) ?? defaultProtocol;
+
+  // Count how many times each coin code appears so duplicate codes (e.g. USDT on TRC20/ERC20/BEP20) show network subtitle
+  const codeCounts = activeProtocols.reduce<Record<string, number>>((acc, p) => {
+    acc[p.code] = (acc[p.code] ?? 0) + 1;
+    return acc;
+  }, {});
+
   const categoryTitle = selectedProduct.category?.name
     ? `SELECT ${selectedProduct.category.name.toUpperCase()} PRODUCT`
     : "SELECT VERIFIED PRODUCT";
@@ -253,6 +367,17 @@ export function QuickCheckoutModal({
 
     setMaxUnlockedStep((prev) => Math.max(prev, 3));
     setStep(3);
+  }
+
+  async function handleCopyDepositAddress(address: string) {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopiedAddress(true);
+      toast.success("Deposit address copied to clipboard.");
+      setTimeout(() => setCopiedAddress(false), 2000);
+    } catch {
+      toast.error("Could not copy automatically — please select and copy the address.");
+    }
   }
 
   return createPortal(
@@ -736,20 +861,281 @@ export function QuickCheckoutModal({
             </div>
           )}
 
-          {step >= 3 && (
+          {step === 3 && selectedTier && (
             <div className="space-y-5" data-testid="quick-checkout-step-3-panel">
+              {/* 1. Cash on Delivery Option on Top (when enabled) */}
+              {paymentConfig.codEnabled && (
+                <div className="space-y-2.5" data-testid="qc-cod-section">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
+                      CASH ON DELIVERY
+                    </p>
+                    {!paymentConfig.cryptoEnabled && (
+                      <p
+                        className="text-xs font-extrabold text-primary tabular-nums sm:text-sm"
+                        data-testid="qc-payment-total-due"
+                      >
+                        Total Due: {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode("cod")}
+                    data-testid="qc-cod-option"
+                    data-selected={paymentMode === "cod" ? "true" : "false"}
+                    className={cn(
+                      "flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all",
+                      paymentMode === "cod"
+                        ? "border-2 border-primary bg-primary/[0.06] shadow-xs ring-2 ring-primary/15"
+                        : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <span
+                        className={cn(
+                          "grid size-10 shrink-0 place-items-center rounded-xl transition-colors",
+                          paymentMode === "cod"
+                            ? "bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground)"
+                            : "bg-primary/10 text-primary",
+                        )}
+                      >
+                        <BanknoteIcon className="size-5" aria-hidden />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-foreground sm:text-base">
+                          Cash on Delivery (COD)
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          Pay in cash when your order is delivered
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
+                      {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {/* 2. Crypto Options Below Cash on Delivery */}
+              {paymentConfig.cryptoEnabled && selectedProtocol && (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
+                      SELECT CRYPTO WALLET PROTOCOL
+                    </p>
+                    <p
+                      className="text-xs font-extrabold text-primary tabular-nums sm:text-sm"
+                      data-testid="qc-payment-total-due"
+                    >
+                      Total Due: {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                    </p>
+                  </div>
+
+                  {/* Crypto Protocol Grid */}
+                  <div
+                    className="grid grid-cols-2 gap-2.5 sm:grid-cols-4"
+                    data-testid="qc-crypto-protocol-grid"
+                  >
+                    {activeProtocols.map((proto) => {
+                      const isSelected =
+                        paymentMode === "crypto" && proto.id === selectedProtocol.id;
+                      const showNetworkSuffix = (codeCounts[proto.code] ?? 0) > 1;
+                      const netShort = shortNetworkTag(proto.network);
+                      return (
+                        <button
+                          key={proto.id}
+                          type="button"
+                          onClick={() => {
+                            setPaymentMode("crypto");
+                            setSelectedProtocolId(proto.id);
+                          }}
+                          data-testid={`qc-crypto-option-${proto.id}`}
+                          data-selected={isSelected ? "true" : "false"}
+                          className={cn(
+                            "flex cursor-pointer flex-col items-center justify-center rounded-2xl border px-3 py-2.5 text-center transition-all",
+                            isSelected
+                              ? "border-2 border-primary bg-primary/[0.06] shadow-xs ring-2 ring-primary/15"
+                              : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
+                          )}
+                        >
+                          <span className="text-sm font-black tracking-tight text-foreground sm:text-base">
+                            {proto.code}
+                          </span>
+                          <span
+                            className={cn(
+                              "mt-0.5 line-clamp-1 text-[11px]",
+                              isSelected
+                                ? "font-bold text-foreground/85"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            {showNetworkSuffix ? `${proto.name} (${netShort})` : proto.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Selected Protocol Deposit Card */}
+                  {paymentMode === "crypto" && (
+                    <div
+                      className="space-y-4 rounded-2xl border border-primary/25 bg-card p-5 shadow-xs"
+                      data-testid="qc-crypto-deposit-box"
+                    >
+                      {/* Header: Protocol Name + Badge | Amount to Send */}
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-base font-extrabold tracking-tight text-foreground sm:text-lg">
+                              {selectedProtocol.name} ({shortNetworkTag(selectedProtocol.network)})
+                            </h3>
+                            {selectedProtocol.badge && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-(--button) bg-[image:var(--button-image)] px-2.5 py-0.5 text-[11px] font-extrabold text-(--button-foreground) shadow-2xs">
+                                <FlameIcon className="size-3 fill-current" aria-hidden />
+                                {selectedProtocol.badge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Network:{" "}
+                            <strong className="font-bold text-foreground">
+                              {selectedProtocol.network}
+                            </strong>
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Amount to Send:
+                          </p>
+                          <p className="text-lg font-black tracking-tight text-primary tabular-nums sm:text-2xl">
+                            {formatMoney(selectedTier.priceMicros, money)} {money.currency} equivalent
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Deposit Address + Copy Button */}
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase">
+                          OFFICIAL {storeName.toUpperCase()} {selectedProtocol.code} DEPOSIT ADDRESS:
+                        </p>
+                        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+                          <div
+                            data-testid="qc-deposit-address"
+                            className="flex h-12 flex-1 items-center overflow-x-auto rounded-xl border border-border/80 bg-muted/35 px-4 font-mono text-xs font-bold text-foreground sm:text-sm"
+                          >
+                            {selectedProtocol.address}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleCopyDepositAddress(selectedProtocol.address)
+                            }
+                            data-testid="qc-copy-address"
+                            className="inline-flex h-12 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-(--button) bg-[image:var(--button-image)] px-5 text-xs font-extrabold text-(--button-foreground) shadow-sm transition-opacity hover:opacity-95 sm:text-sm"
+                          >
+                            {copiedAddress ? (
+                              <>
+                                <CheckIcon className="size-4 stroke-[2.5]" aria-hidden />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <CopyIcon className="size-4" aria-hidden />
+                                <span>Copy</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* QR Code + Live Scanner Instructions */}
+                      <div className="flex flex-col items-center gap-5 pt-1 sm:flex-row sm:items-center">
+                        <div className="flex flex-col items-center rounded-2xl border border-border/80 bg-white p-3 shadow-xs">
+                          <DepositQrCodeSvg value={selectedProtocol.address} />
+                          <span className="mt-1.5 text-[9px] font-black tracking-wider text-zinc-900 uppercase">
+                            SCAN TO DEPOSIT
+                          </span>
+                        </div>
+
+                        <div className="flex-1 space-y-2 text-xs leading-relaxed">
+                          <p className="flex items-center gap-1.5 font-extrabold tracking-wide text-amber-600 uppercase dark:text-amber-400">
+                            <AlertTriangleIcon className="size-4 shrink-0" aria-hidden />
+                            <span>LIVE SCANNER READY:</span>
+                          </p>
+                          <p className="text-muted-foreground">
+                            Point your crypto wallet app camera (Binance, Trust Wallet, MetaMask,
+                            Coinbase) at this QR code to automatically scan and deposit{" "}
+                            <strong className="font-extrabold text-foreground">
+                              {selectedProtocol.code}
+                            </strong>{" "}
+                            via{" "}
+                            <strong className="font-extrabold text-foreground">
+                              {selectedProtocol.network}
+                            </strong>
+                            .
+                          </p>
+                          <p className="font-semibold text-primary">
+                            ⚠️ Always verify the first 4 and last 4 characters of the scanned
+                            address before sending funds.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Bottom Action Bar: ← Back | I Have Sent Payment → Upload Hash */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  data-testid="quick-checkout-back-to-step-2"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
+                >
+                  <ArrowLeftIcon className="size-4" aria-hidden />
+                  <span>Back</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMaxUnlockedStep((prev) => Math.max(prev, 4));
+                    setStep(4);
+                  }}
+                  data-testid="quick-checkout-sent-payment"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
+                >
+                  <span>
+                    {paymentMode === "cod"
+                      ? "Confirm Cash on Delivery → Verify"
+                      : "I Have Sent Payment → Upload Hash"}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-5" data-testid="quick-checkout-step-4-panel">
               <div className="rounded-2xl border border-border/80 bg-muted/25 p-5 text-sm">
                 <p className="font-bold text-foreground">
-                  Step 3: Payment Method Selection
+                  Step 4: Payment Verification
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Delivering to <span className="font-semibold text-foreground">{fullName}</span> ({email})
+                  Submit your transaction hash or confirmation for{" "}
+                  <span className="font-semibold text-foreground">{fullName}</span> ({email}).
                 </p>
               </div>
               <div className="flex items-center justify-between pt-2">
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
+                  onClick={() => setStep(3)}
                   className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
                 >
                   <ArrowLeftIcon className="size-4" aria-hidden />

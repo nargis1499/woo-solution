@@ -141,6 +141,11 @@ export async function GET(request: NextRequest) {
       authenticated: true,
       storeName: settings.store_name,
       customer,
+      payment: {
+        codEnabled: settings.payment_cod_enabled,
+        cryptoEnabled: settings.payment_crypto_enabled,
+        cryptoProtocols: settings.payment_crypto_protocols.filter((p) => p.enabled),
+      },
       products,
     });
   } catch (e) {

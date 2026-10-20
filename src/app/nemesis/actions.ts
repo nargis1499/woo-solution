@@ -19,6 +19,7 @@ import {
 import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradientSets } from "@/lib/theme";
 import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
 import { isCategoryIconId } from "@/lib/category-icons";
+import { normaliseCryptoProtocols, type CryptoProtocol } from "@/lib/crypto-protocols";
 import { MENU_TAG } from "@/lib/menu";
 import { PRESENCE_VISIBILITIES, type PresenceVisibility } from "@/lib/presence";
 import { passwordProblem } from "@/lib/password";
@@ -1155,6 +1156,9 @@ const META_FALLBACK_KEYS = [
   "footer_text",
   "shipping_enabled",
   "shipping_rate_micros",
+  "payment_cod_enabled",
+  "payment_crypto_enabled",
+  "payment_crypto_protocols",
   "home_show_hero",
   "home_hero_badge",
   "home_hero_title",
@@ -1176,7 +1180,7 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
   if (error) {
     if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
       const message = error.message ?? "";
-      if (/footer_text|shipping_|home_show_hero|home_hero_|home_show_category_sections|home_category_/i.test(message)) {
+      if (/footer_text|shipping_|payment_|home_show_hero|home_hero_|home_show_category_sections|home_category_/i.test(message)) {
         const { data: current } = await supabase.from("site_settings").select("theme_gradients").eq("id", 1).maybeSingle();
         const existingGradients =
           current?.theme_gradients && typeof current.theme_gradients === "object" && !Array.isArray(current.theme_gradients)
@@ -1380,6 +1384,33 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
     return { success: "Setting Saved", values };
   } catch (e) {
     return { error: friendlyError(e), values };
+  }
+}
+
+export async function savePaymentSettings(input: {
+  payment_cod_enabled?: boolean;
+  payment_crypto_enabled?: boolean;
+  payment_crypto_protocols?: CryptoProtocol[];
+}): Promise<{ ok: boolean; message?: string; error?: string }> {
+  try {
+    const patch: Record<string, unknown> = {};
+    if (typeof input.payment_cod_enabled === "boolean") {
+      patch.payment_cod_enabled = input.payment_cod_enabled;
+    }
+    if (typeof input.payment_crypto_enabled === "boolean") {
+      patch.payment_crypto_enabled = input.payment_crypto_enabled;
+    }
+    if (Array.isArray(input.payment_crypto_protocols)) {
+      patch.payment_crypto_protocols = normaliseCryptoProtocols(
+        input.payment_crypto_protocols,
+      );
+    }
+
+    const problem = await saveSiteSettings(patch);
+    if (problem) return { ok: false, error: problem };
+    return { ok: true, message: "Payment settings saved." };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
   }
 }
 

@@ -12,6 +12,7 @@ import type { SiteSettings } from "@/lib/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShopSettingsForm } from "./settings-forms";
+import { PaymentSettings } from "./payment-settings";
 
 export function WoocommerceTabs({
   settings,
@@ -42,7 +43,7 @@ export function WoocommerceTabs({
     <Tabs selectedKey={tab} onSelectionChange={select} className="gap-5">
       <TabsList aria-label="WooCommerce sections" className="h-auto max-w-full flex-wrap">
         {WOOCOMMERCE_TABS.map((t) => (
-          <TabsTrigger key={t.id} id={t.id} className="px-3 py-1.5">
+          <TabsTrigger key={t.id} id={t.id} className="px-3 py-1.5" data-testid={`woo-tab-${t.id}`}>
             <t.icon /> {t.label}
           </TabsTrigger>
         ))}
@@ -57,6 +58,9 @@ export function WoocommerceTabs({
           </Alert>
         )}
         <ShopSettingsForm settings={settings} />
+      </TabsContent>
+      <TabsContent id="payment" shouldForceMount className="space-y-5 data-inert:hidden">
+        <PaymentSettings settings={settings} />
       </TabsContent>
     </Tabs>
   );

@@ -13,6 +13,7 @@ import {
   normaliseHomeCategorySections,
 } from "@/lib/home-sections";
 import { isCurrencyCode, moneyFromSettings, type Money } from "@/lib/money";
+import { DEFAULT_CRYPTO_PROTOCOLS, normaliseCryptoProtocols } from "@/lib/crypto-protocols";
 import { DEFAULT_THEME, normaliseColors, normaliseGradients, templateTheme } from "@/lib/theme";
 import type { SiteSettings } from "@/lib/types";
 
@@ -41,6 +42,9 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   usd_to_bdt_rate: null,
   shipping_enabled: true,
   shipping_rate_micros: FLAT_SHIPPING_MICROS,
+  payment_cod_enabled: true,
+  payment_crypto_enabled: true,
+  payment_crypto_protocols: DEFAULT_CRYPTO_PROTOCOLS,
   home_show_hero: true,
   home_hero_badge: DEFAULT_HOME_HERO_BADGE,
   home_hero_title: null,
@@ -119,6 +123,21 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     usd_to_bdt_rate: positive(row.usd_to_bdt_rate),
     shipping_enabled: flag(row.shipping_enabled ?? meta.shipping_enabled, true),
     shipping_rate_micros: nonNegative(row.shipping_rate_micros ?? meta.shipping_rate_micros, FLAT_SHIPPING_MICROS),
+    payment_cod_enabled: flag(row.payment_cod_enabled ?? meta.payment_cod_enabled, true),
+    payment_crypto_enabled: flag(row.payment_crypto_enabled ?? meta.payment_crypto_enabled, true),
+    payment_crypto_protocols: (() => {
+      const rawProtocols =
+        Array.isArray(row.payment_crypto_protocols) && row.payment_crypto_protocols.length > 0
+          ? row.payment_crypto_protocols
+          : Array.isArray(meta.payment_crypto_protocols)
+            ? meta.payment_crypto_protocols
+            : "payment_crypto_protocols" in meta
+              ? meta.payment_crypto_protocols
+              : null;
+      return rawProtocols !== null
+        ? normaliseCryptoProtocols(rawProtocols)
+        : DEFAULT_CRYPTO_PROTOCOLS;
+    })(),
     home_show_hero: flag(row.home_show_hero ?? meta.home_show_hero, true),
     home_hero_badge:
       "home_hero_badge" in row && row.home_hero_badge !== undefined

@@ -1,8 +1,9 @@
-import { StoreIcon } from "lucide-react";
+import { CreditCardIcon, StoreIcon } from "lucide-react";
 
 /** Tabs on /nemesis/woocommerce. */
 export const WOOCOMMERCE_TABS = [
   { id: "general", label: "General", icon: StoreIcon },
+  { id: "payment", label: "Payment", icon: CreditCardIcon },
 ] as const;
 
 export type WoocommerceTabId = (typeof WOOCOMMERCE_TABS)[number]["id"];

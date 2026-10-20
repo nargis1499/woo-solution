@@ -1,5 +1,6 @@
 import type { ThemeColors, ThemeGradientSets } from "@/lib/theme";
 import type { CurrencyCode } from "@/lib/money";
+import type { CryptoProtocol } from "@/lib/crypto-protocols";
 // Hand-written row types that mirror `supabase/migrations/*_init.sql`.
 // Tip: once your schema grows, generate them instead:
 //   npx supabase gen types typescript --project-id <ref> > src/lib/database.types.ts
@@ -348,6 +349,10 @@ export type SiteSettings = {
   shipping_enabled: boolean;
   /** Flat checkout shipping rate in USD micro-dollars */
   shipping_rate_micros: number;
+  // WooCommerce → Payment
+  payment_cod_enabled: boolean;
+  payment_crypto_enabled: boolean;
+  payment_crypto_protocols: CryptoProtocol[];
   // Home page (UI → Home page): which sections the storefront home renders + hero content
   home_show_hero: boolean;
   home_hero_badge: string | null;
