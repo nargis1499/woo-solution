@@ -485,9 +485,13 @@ export async function checkAndSyncPlisioOrder(params: {
 
     const cid = parsed.plisioCid || "USDT_TRX";
     const simulatedTxHash = buildTestModeBlockchainTxId(params.orderId, cid);
+    const simulatedTxnId =
+      parsed.plisioTxnId && parsed.plisioTxnId.startsWith("plisio_test_")
+        ? parsed.plisioTxnId
+        : `plisio_test_${parsed.plisioTxnId || params.orderId.slice(0, 12)}`;
     const updated = await markOrderPaidViaPlisio({
       orderId: params.orderId,
-      txnId: parsed.plisioTxnId,
+      txnId: simulatedTxnId,
       blockchainTxId: simulatedTxHash,
       cid,
       walletAddress: parsed.depositAddress,

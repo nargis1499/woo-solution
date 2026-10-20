@@ -17,6 +17,7 @@ export type OrderPaymentInput = {
 export type ParsedOrderPayment = {
   isCrypto: boolean;
   isPlisio: boolean;
+  isTestMode: boolean;
   methodLabel: string;
   shortMethodLabel: string;
   protocolCode: string | null;
@@ -153,11 +154,17 @@ export function parseOrderPaymentInfo(
   const plisioTxnId = meta?.ptx || null;
   const plisioCid = meta?.cid || null;
   const cryptoAmount = meta?.amt || null;
+  const isTestMode = Boolean(
+    isPlisio &&
+      ((plisioTxnId && /^plisio_test_/i.test(plisioTxnId)) ||
+        (transactionId && /^TEST_SIMULATED_/i.test(transactionId))),
+  );
 
   if (!isCrypto) {
     return {
       isCrypto: false,
       isPlisio: false,
+      isTestMode: false,
       methodLabel: "Cash on Delivery (COD)",
       shortMethodLabel: "COD",
       protocolCode: null,
@@ -175,9 +182,12 @@ export function parseOrderPaymentInfo(
   const netShort = network ? shortNetworkTag(network) : null;
   const codeOrName = protocolCode || protocolName || "CRYPTO";
   const prefix = isPlisio ? "PLISIO" : "CRYPTO";
-  const shortMethodLabel = netShort
+  const baseShortLabel = netShort
     ? `${prefix} · ${codeOrName} (${netShort})`
     : `${prefix} · ${codeOrName}`;
+  const shortMethodLabel = isTestMode
+    ? `${baseShortLabel} [TEST]`
+    : baseShortLabel;
 
   const fullProto =
     protocolName && network
@@ -187,8 +197,9 @@ export function parseOrderPaymentInfo(
   return {
     isCrypto: true,
     isPlisio,
+    isTestMode,
     methodLabel: isPlisio
-      ? `Plisio Crypto — ${fullProto}`
+      ? `${isTestMode ? "Plisio Crypto [TEST MODE]" : "Plisio Crypto"} — ${fullProto}`
       : `Cryptocurrency — ${fullProto}`,
     shortMethodLabel,
     protocolCode,

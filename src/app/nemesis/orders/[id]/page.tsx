@@ -147,14 +147,24 @@ export default async function AdminOrderPage({
                       Payment method
                     </dt>
                     <dd
-                      className="mt-1 font-medium"
+                      className="mt-1 flex flex-wrap items-center gap-2 font-medium"
                       data-testid="admin-order-payment-method"
                     >
-                      {paymentInfo.isPlisio
-                        ? "Plisio (Automated Crypto)"
-                        : paymentInfo.isCrypto
-                          ? "Cryptocurrency"
-                          : "Cash on Delivery (COD)"}
+                      <span>
+                        {paymentInfo.isPlisio
+                          ? "Plisio (Automated Crypto)"
+                          : paymentInfo.isCrypto
+                            ? "Cryptocurrency"
+                            : "Cash on Delivery (COD)"}
+                      </span>
+                      {paymentInfo.isTestMode && (
+                        <span
+                          data-testid="admin-order-test-mode-badge"
+                          className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider text-amber-600 uppercase dark:text-amber-400"
+                        >
+                          TEST MODE · SIMULATED
+                        </span>
+                      )}
                     </dd>
                   </div>
 
