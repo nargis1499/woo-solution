@@ -7,6 +7,7 @@ import { CircleCheckIcon } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyOrder } from "@/lib/data/orders";
 import { listOrderMessagesOrNull } from "@/lib/order-messages";
+import { parseOrderPaymentInfo } from "@/lib/order-payment";
 import { getStorePresence } from "@/lib/presence.server";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
@@ -41,6 +42,7 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
   const order = await getMyOrder(id);
   if (!order) notFound();
   const items = order.order_items ?? [];
+  const paymentInfo = parseOrderPaymentInfo(order);
   // `null` = migration 17 not run yet → the thread is simply not shown.
   // The store's presence is resolved *for this customer*: their per-customer override (migration 20),
   // else the admin's global switch. The customer never gets an activity time the admin hid.
@@ -53,7 +55,9 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
           <CircleCheckIcon />
           <AlertTitle>Thank you. Your order has been received!</AlertTitle>
           <AlertDescription className="text-current/80">
-            We&apos;ve sent a confirmation to {order.customer_email ?? "your e-mail"}. Pay in cash when it arrives.
+            {paymentInfo.isCrypto
+              ? `We've received your Transaction ID (TXID) and sent a confirmation to ${order.customer_email ?? "your e-mail"}. The Admin will verify your payment shortly.`
+              : `We've sent a confirmation to ${order.customer_email ?? "your e-mail"}. Pay in cash when it arrives.`}
           </AlertDescription>
         </Alert>
       )}
@@ -102,13 +106,19 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
               <dt className="text-muted-foreground">Shipping</dt>
               <dd className="tabular-nums">{order.shipping_micros === 0 ? "Free" : formatMoney(order.shipping_micros, orderMoney(order))}</dd>
             </div>
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">Payment</dt>
-              <dd>
-                {order.payment_method === "cod" ? "Cash on delivery" : order.payment_method} ·{" "}
+              <dd className="text-right">
+                {paymentInfo.methodLabel} ·{" "}
                 {order.payment_status === "paid" ? "Paid" : order.payment_status === "refunded" ? "Refunded" : "Unpaid"}
               </dd>
             </div>
+            {paymentInfo.transactionId && (
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Transaction ID (TXID)</dt>
+                <dd className="font-mono text-xs break-all text-right">{paymentInfo.transactionId}</dd>
+              </div>
+            )}
             <Separator />
             <div className="flex justify-between text-base font-semibold">
               <dt>Total</dt>
@@ -153,7 +163,7 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
             <CardTitle>Order notes</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">{order.notes || "—"}</p>
+            <p className="text-sm text-muted-foreground">{paymentInfo.customerNotes || "—"}</p>
           </CardContent>
         </Card>
       </div>
@@ -165,8 +175,6 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
           viewer="customer"
           initialMessages={messages}
           customerName={user.name ?? order.shipping_name}
-          // The customer talks to the store, not to a person: no name, no photo, just the
-          // badge. Presence is already filtered by the admin's own visibility mode.
           counterpart={{ name: "Admin", avatarUrl: null, presence: { online: store.online, lastActiveAt: store.lastActiveAt, visibility: store.visibility } }}
         />
       )}

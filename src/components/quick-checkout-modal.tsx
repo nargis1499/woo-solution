@@ -11,7 +11,9 @@ import {
   BanknoteIcon,
   CheckIcon,
   ChevronDownIcon,
+  CircleCheckIcon,
   CopyIcon,
+  ExternalLinkIcon,
   FlameIcon,
   GlobeIcon,
   LockIcon,
@@ -22,6 +24,7 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { placeOrder } from "@/app/(store)/checkout/actions";
 import {
   DEFAULT_CRYPTO_PROTOCOLS,
   shortNetworkTag,
@@ -217,6 +220,12 @@ export function QuickCheckoutModal({
   const [selectedProtocolId, setSelectedProtocolId] = useState<string>("");
   const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
 
+  // Step 4: Payment Verification & Thank You state
+  const [txId, setTxId] = useState<string>("");
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [submittedOrderId, setSubmittedOrderId] = useState<string | null>(null);
+
   useEffect(() => {
     if (
       initialData?.products &&
@@ -357,6 +366,81 @@ export function QuickCheckoutModal({
     }
   }
 
+  async function handleSubmitOrder() {
+    if (!selectedProduct || !selectedTier || submitting) return;
+    setVerifyError(null);
+
+    if (paymentMode === "crypto") {
+      if (!selectedProtocol) {
+        setVerifyError("Please select a crypto wallet protocol in Step 3.");
+        return;
+      }
+      if (!txId.trim()) {
+        setVerifyError(
+          "Please enter your Transaction ID (TXID) so the Admin can verify your payment.",
+        );
+        return;
+      }
+    }
+
+    setSubmitting(true);
+    try {
+      const fallbackVariationId =
+        selectedTier.variationId ??
+        (selectedProduct.type === "variable"
+          ? (selectedProduct.variations?.find((v) => v.is_active !== false)?.id ?? null)
+          : null);
+      const itemQty = selectedTier.variationId ? 1 : Math.max(1, selectedTier.quantity);
+
+      const res = await placeOrder({
+        items: [
+          {
+            product_id: selectedProduct.id,
+            variation_id: fallbackVariationId,
+            quantity: itemQty,
+          },
+        ],
+        shipping: {
+          name: fullName.trim() || "Customer",
+          phone: whatsapp.trim(),
+          address_line1: email.trim()
+            ? `Delivery Email: ${email.trim()}`
+            : "Quick Checkout Delivery",
+          address_line2: telegram.trim() ? `Telegram: ${telegram.trim()}` : "",
+          city: country.trim() || "Online",
+          postal_code: "",
+          country: country.trim() || "United States",
+          notes: notes.trim(),
+        },
+        payment:
+          paymentMode === "crypto" && selectedProtocol
+            ? {
+                method: "crypto",
+                protocolCode: selectedProtocol.code,
+                protocolName: selectedProtocol.name,
+                network: selectedProtocol.network,
+                depositAddress: selectedProtocol.address,
+                transactionId: txId.trim(),
+              }
+            : { method: "cod" },
+      });
+
+      if (!res.ok) {
+        setVerifyError(res.error);
+        return;
+      }
+
+      setSubmittedOrderId(res.orderId);
+      toast.success("Order submitted! Thank you for your purchase.");
+    } catch (e) {
+      setVerifyError(
+        e instanceof Error ? e.message : "Failed to submit order. Please try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-3 backdrop-blur-xs animate-in fade-in-0 duration-150 sm:p-5"
@@ -389,7 +473,7 @@ export function QuickCheckoutModal({
                 </span>
               </div>
               <p className="truncate text-xs text-slate-300/85">
-                Automated verification &amp; instant recovery file delivery
+                Fast &amp; secure express order checkout
               </p>
             </div>
           </div>
@@ -409,9 +493,9 @@ export function QuickCheckoutModal({
         <div className="border-b border-border/80 bg-muted/30 px-6 py-3.5">
           <div className="mx-auto flex max-w-xl items-center justify-between gap-2">
             {STEPS.map((s) => {
-              const active = step === s.num;
-              const completed = step > s.num;
-              const canNavigate = s.num <= maxUnlockedStep;
+              const completed = Boolean(submittedOrderId) || step > s.num;
+              const active = !submittedOrderId && step === s.num;
+              const canNavigate = !submittedOrderId && s.num <= maxUnlockedStep;
               return (
                 <button
                   key={s.num}
@@ -462,664 +546,844 @@ export function QuickCheckoutModal({
 
         {/* ── Scrollable Modal Content ───────────────────────────────────── */}
         <div className="flex-1 space-y-6 overflow-y-auto p-6">
-          {step === 1 && (
-            <>
-              {/* 1. Product Selector (Clicked Product + Same-Category Products) */}
-              <div className="space-y-3">
-                <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
-                  {categoryTitle}
-                </p>
-
-                <div
-                  className="grid gap-3 sm:grid-cols-2"
-                  data-testid="quick-checkout-product-list"
-                >
-                  {products.map((item, idx) => {
-                    const isSelected = item.id === selectedProduct.id;
-                    const itemTiers = resolveQuickCheckoutTiers(item);
-                    const lowestMicros =
-                      itemTiers.length > 0
-                        ? Math.min(...itemTiers.map((t) => t.priceMicros))
-                        : item.price_micros;
-
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setSelectedProductId(item.id)}
-                        data-testid={`quick-checkout-product-option-${item.slug}`}
-                        data-selected={isSelected ? "true" : "false"}
-                        className={cn(
-                          "flex cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all",
-                          isSelected
-                            ? "border-2 border-primary bg-primary/[0.05] shadow-xs ring-2 ring-primary/15"
-                            : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
-                        )}
-                      >
-                        <div className="min-w-0 space-y-1">
-                          <p className="truncate text-sm font-extrabold text-foreground sm:text-base">
-                            {item.name}
-                          </p>
-                          <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                            <ProductBadgeIcon index={idx} />
-                            <span className="truncate">{productSubtitleText(item, idx)}</span>
-                          </p>
-                        </div>
-
-                        <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
-                          From {formatMoney(lowestMicros, money)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+          {submittedOrderId && selectedTier ? (
+            <div
+              className="space-y-6 py-2 text-center"
+              data-testid="quick-checkout-thank-you"
+            >
+              <div className="mx-auto grid size-16 place-items-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                <CircleCheckIcon className="size-9 stroke-[2.2]" aria-hidden />
               </div>
 
-              {/* 2. Dynamic Quantity Tier Selector */}
-              <div className="space-y-3.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
-                    SELECT QUANTITY TIER ({selectedProduct.name.toUpperCase()})
-                  </p>
-                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/12 px-2.5 py-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                    <SparklesIcon className="size-3" aria-hidden />
-                    Instant Tier Pricing
+              <div className="space-y-1.5">
+                <h3 className="text-xl font-extrabold tracking-tight text-foreground sm:text-2xl">
+                  Thank You! Your Order Has Been Submitted.
+                </h3>
+                <p className="mx-auto max-w-lg text-xs text-muted-foreground sm:text-sm">
+                  {paymentMode === "crypto"
+                    ? "Your Transaction ID (TXID) has been sent to the Admin for payment verification."
+                    : "Your Cash on Delivery order has been received and will be processed shortly."}
+                </p>
+              </div>
+
+              {/* Order Summary Card */}
+              <div className="mx-auto max-w-xl space-y-2.5 rounded-2xl border border-border/80 bg-muted/25 p-5 text-left text-xs sm:text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-semibold text-muted-foreground">Order Summary:</span>
+                  <span className="font-extrabold text-foreground">
+                    {selectedTier.title} {selectedProduct.name}
                   </span>
                 </div>
-
-                <div
-                  className={cn(
-                    "grid gap-2.5 pt-1",
-                    tiers.length <= 5
-                      ? "grid-cols-2 sm:grid-cols-5"
-                      : "grid-cols-2 sm:grid-cols-4 md:grid-cols-7",
-                  )}
-                  data-testid="quick-checkout-tier-list"
-                >
-                  {tiers.map((tier) => {
-                    const isSelected = selectedTier?.id === tier.id;
-                    return (
-                      <button
-                        key={tier.id}
-                        type="button"
-                        onClick={() =>
-                          setSelectedTierByProduct((prev) => ({
-                            ...prev,
-                            [selectedProduct.id]: tier.id,
-                          }))
-                        }
-                        data-testid={`quick-checkout-tier-${tier.quantity}`}
-                        data-selected={isSelected ? "true" : "false"}
-                        className={cn(
-                          "relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border px-2.5 py-4 text-center transition-all",
-                          isSelected
-                            ? "border-transparent bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground) shadow-lg ring-2 ring-primary/35 -translate-y-0.5"
-                            : "border-border/80 bg-card text-foreground hover:border-primary/45 hover:bg-muted/25",
-                        )}
-                      >
-                        {tier.popular && (
-                          <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black tracking-wider text-zinc-950 uppercase shadow-xs">
-                            POPULAR
-                          </span>
-                        )}
-
-                        <span className="text-lg font-black tracking-tight tabular-nums sm:text-xl">
-                          {tier.title}
-                        </span>
-
-                        <span
-                          className={cn(
-                            "mt-0.5 text-xs font-extrabold tabular-nums sm:text-sm",
-                            isSelected ? "text-(--button-foreground)" : "text-primary",
-                          )}
-                        >
-                          {formatMoney(tier.priceMicros, money)}
-                        </span>
-
-                        <span
-                          className={cn(
-                            "mt-1 line-clamp-1 text-[10px] font-medium",
-                            isSelected
-                              ? "text-(--button-foreground)/85"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {tier.subtitle}
-                        </span>
-                      </button>
-                    );
-                  })}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Payment Protocol:</span>
+                  <span className="font-semibold text-foreground">
+                    {paymentMode === "crypto" && selectedProtocol
+                      ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
+                      : "Cash on Delivery (COD)"}
+                  </span>
                 </div>
-              </div>
-
-              {/* 3. Selected Package & Final Price Summary Card */}
-              {selectedTier && (
-                <div
-                  className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/80 bg-muted/25 px-5 py-4"
-                  data-testid="quick-checkout-summary"
-                >
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Selected Package:
-                    </p>
-                    <p
-                      className="truncate text-base font-extrabold text-foreground sm:text-lg"
-                      data-testid="quick-checkout-summary-package"
+                {paymentMode === "crypto" && txId.trim() && (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Transaction ID (TXID):</span>
+                    <span
+                      className="max-w-[260px] truncate font-mono text-xs font-bold text-foreground"
+                      title={txId.trim()}
                     >
-                      {selectedProduct.name} ({selectedTier.quantity}{" "}
-                      {selectedTier.quantity === 1 ? "Unit" : "Units"})
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Estimated Unit Cost: {formatMoney(selectedTier.unitPriceMicros, money)}/unit
-                    </p>
-                  </div>
-
-                  <div className="text-right">
-                    <p className="text-xs font-medium text-muted-foreground">Total Due:</p>
-                    <p
-                      className="text-2xl font-black tracking-tight text-primary tabular-nums sm:text-3xl"
-                      data-testid="quick-checkout-total-due"
-                    >
-                      {formatMoney(selectedTier.priceMicros, money)} {money.currency}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* 4. Bottom Action Bar */}
-              <div className="flex items-center justify-end pt-1">
-                <button
-                  type="button"
-                  onClick={handlePassStep1}
-                  data-testid="quick-checkout-continue"
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
-                >
-                  <span>Continue to Contact Details</span>
-                  <ArrowRightIcon className="size-4" aria-hidden />
-                </button>
-              </div>
-            </>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-5" data-testid="quick-checkout-step-2-panel">
-              {/* Top Privacy / Delivery Notice Banner */}
-              <div
-                className="flex items-center gap-2.5 rounded-xl border border-sky-500/25 bg-sky-500/[0.08] px-4 py-3 text-xs font-medium text-sky-700 dark:text-sky-300 sm:text-sm"
-                data-testid="quick-checkout-contact-notice"
-              >
-                <ShieldCheckIcon
-                  className="size-4.5 shrink-0 text-sky-600 dark:text-sky-400"
-                  aria-hidden
-                />
-                <span>
-                  Your contact details are strictly used for instant recovery spreadsheet
-                  delivery and order notifications.
-                </span>
-              </div>
-
-              {/* 2-Column Contact Form Grid */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                {/* 1. Full Name */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="qc-full-name"
-                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
-                  >
-                    FULL NAME *
-                  </label>
-                  <input
-                    id="qc-full-name"
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => {
-                      setFullName(e.target.value);
-                      if (contactErrors.fullName) {
-                        setContactErrors((prev) => ({ ...prev, fullName: undefined }));
-                      }
-                    }}
-                    placeholder="e.g. Alexander Vance"
-                    data-testid="qc-contact-full-name"
-                    className={cn(
-                      "h-11 w-full rounded-xl border bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20",
-                      contactErrors.fullName ? "border-destructive" : "border-border/80",
-                    )}
-                  />
-                  {contactErrors.fullName && (
-                    <p className="text-xs font-medium text-destructive">
-                      {contactErrors.fullName}
-                    </p>
-                  )}
-                </div>
-
-                {/* 2. Email Address (For Delivery) */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="qc-email"
-                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
-                  >
-                    EMAIL ADDRESS * (FOR DELIVERY)
-                  </label>
-                  <input
-                    id="qc-email"
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      if (contactErrors.email) {
-                        setContactErrors((prev) => ({ ...prev, email: undefined }));
-                      }
-                    }}
-                    placeholder="e.g. alex@scaleagency.io"
-                    data-testid="qc-contact-email"
-                    className={cn(
-                      "h-11 w-full rounded-xl border bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20",
-                      contactErrors.email ? "border-destructive" : "border-border/80",
-                    )}
-                  />
-                  {contactErrors.email && (
-                    <p className="text-xs font-medium text-destructive">
-                      {contactErrors.email}
-                    </p>
-                  )}
-                </div>
-
-                {/* 3. Telegram Username (Optional) */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="qc-telegram"
-                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
-                  >
-                    TELEGRAM USERNAME (OPTIONAL)
-                  </label>
-                  <input
-                    id="qc-telegram"
-                    type="text"
-                    value={telegram}
-                    onChange={(e) => setTelegram(e.target.value)}
-                    placeholder="e.g. @vance_scale (Optional)"
-                    data-testid="qc-contact-telegram"
-                    className="h-11 w-full rounded-xl border border-border/80 bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
-
-                {/* 4. WhatsApp Number (Optional) */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="qc-whatsapp"
-                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
-                  >
-                    WHATSAPP NUMBER (OPTIONAL)
-                  </label>
-                  <input
-                    id="qc-whatsapp"
-                    type="tel"
-                    value={whatsapp}
-                    onChange={(e) => setWhatsapp(e.target.value)}
-                    placeholder="e.g. +1 (415) 892-3341 (Optional)"
-                    data-testid="qc-contact-whatsapp"
-                    className="h-11 w-full rounded-xl border border-border/80 bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
-
-                {/* 5. Country / Jurisdiction */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="qc-country"
-                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
-                  >
-                    COUNTRY / JURISDICTION
-                  </label>
-                  <div className="relative">
-                    <select
-                      id="qc-country"
-                      value={country}
-                      onChange={(e) => setCountry(e.target.value)}
-                      data-testid="qc-contact-country"
-                      className="h-11 w-full appearance-none rounded-xl border border-border/80 bg-muted/20 pr-9 pl-3.5 text-sm font-medium text-foreground transition-colors outline-none focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
-                    >
-                      {COUNTRIES.map((c) => (
-                        <option key={c} value={c} className="bg-card text-foreground">
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDownIcon
-                      className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground"
-                      aria-hidden
-                    />
-                  </div>
-                </div>
-
-                {/* 6. Order Notes / Custom Requests (Optional) */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="qc-notes"
-                    className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
-                  >
-                    ORDER NOTES / CUSTOM REQUESTS (OPTIONAL)
-                  </label>
-                  <input
-                    id="qc-notes"
-                    type="text"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="e.g. Need NY or TX state IP profiles only"
-                    data-testid="qc-contact-notes"
-                    className="h-11 w-full rounded-xl border border-border/80 bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
-              </div>
-
-              {/* Bottom Action Bar: ← Back | Select Payment Method → */}
-              <div className="flex items-center justify-between gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  data-testid="quick-checkout-back-to-step-1"
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
-                >
-                  <ArrowLeftIcon className="size-4" aria-hidden />
-                  <span>Back</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleContinueToPayment}
-                  data-testid="quick-checkout-select-payment"
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
-                >
-                  <span>Select Payment Method</span>
-                  <ArrowRightIcon className="size-4" aria-hidden />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === 3 && selectedTier && (
-            <div className="space-y-5" data-testid="quick-checkout-step-3-panel">
-              {/* 1. Cash on Delivery Option on Top (when enabled) */}
-              {paymentConfig.codEnabled && (
-                <div className="space-y-2.5" data-testid="qc-cod-section">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
-                      CASH ON DELIVERY
-                    </p>
-                    {!paymentConfig.cryptoEnabled && (
-                      <p
-                        className="text-xs font-extrabold text-primary tabular-nums sm:text-sm"
-                        data-testid="qc-payment-total-due"
-                      >
-                        Total Due: {formatMoney(selectedTier.priceMicros, money)} {money.currency}
-                      </p>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode("cod")}
-                    data-testid="qc-cod-option"
-                    data-selected={paymentMode === "cod" ? "true" : "false"}
-                    className={cn(
-                      "flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all",
-                      paymentMode === "cod"
-                        ? "border-2 border-primary bg-primary/[0.06] shadow-xs ring-2 ring-primary/15"
-                        : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
-                    )}
-                  >
-                    <div className="flex min-w-0 items-center gap-3.5">
-                      <span
-                        className={cn(
-                          "grid size-10 shrink-0 place-items-center rounded-xl transition-colors",
-                          paymentMode === "cod"
-                            ? "bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground)"
-                            : "bg-primary/10 text-primary",
-                        )}
-                      >
-                        <BanknoteIcon className="size-5" aria-hidden />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-extrabold text-foreground sm:text-base">
-                          Cash on Delivery (COD)
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          Pay in cash when your order is delivered
-                        </p>
-                      </div>
-                    </div>
-
-                    <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
-                      {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                      {txId.trim()}
                     </span>
-                  </button>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-2.5 text-sm font-extrabold sm:text-base">
+                  <span className="text-primary">
+                    {paymentMode === "crypto" ? "Total Paid:" : "Total Due:"}
+                  </span>
+                  <span className="text-primary tabular-nums">
+                    {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                  </span>
                 </div>
-              )}
+              </div>
 
-              {/* 2. Crypto Options Below Cash on Delivery */}
-              {paymentConfig.cryptoEnabled && selectedProtocol && (
-                <>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
-                      SELECT CRYPTO WALLET PROTOCOL
-                    </p>
-                    <p
-                      className="text-xs font-extrabold text-primary tabular-nums sm:text-sm"
-                      data-testid="qc-payment-total-due"
-                    >
-                      Total Due: {formatMoney(selectedTier.priceMicros, money)} {money.currency}
-                    </p>
-                  </div>
-
-                  {/* Crypto Protocol Grid */}
-                  <div
-                    className="grid grid-cols-2 gap-2.5 sm:grid-cols-4"
-                    data-testid="qc-crypto-protocol-grid"
-                  >
-                    {activeProtocols.map((proto) => {
-                      const isSelected =
-                        paymentMode === "crypto" && proto.id === selectedProtocol.id;
-                      const showNetworkSuffix = (codeCounts[proto.code] ?? 0) > 1;
-                      const netShort = shortNetworkTag(proto.network);
-                      return (
-                        <button
-                          key={proto.id}
-                          type="button"
-                          onClick={() => {
-                            setPaymentMode("crypto");
-                            setSelectedProtocolId(proto.id);
-                          }}
-                          data-testid={`qc-crypto-option-${proto.id}`}
-                          data-selected={isSelected ? "true" : "false"}
-                          className={cn(
-                            "flex cursor-pointer flex-col items-center justify-center rounded-2xl border px-3 py-2.5 text-center transition-all",
-                            isSelected
-                              ? "border-2 border-primary bg-primary/[0.06] shadow-xs ring-2 ring-primary/15"
-                              : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
-                          )}
-                        >
-                          <span className="text-sm font-black tracking-tight text-foreground sm:text-base">
-                            {proto.code}
-                          </span>
-                          <span
-                            className={cn(
-                              "mt-0.5 line-clamp-1 text-[11px]",
-                              isSelected
-                                ? "font-bold text-foreground/85"
-                                : "text-muted-foreground",
-                            )}
-                          >
-                            {showNetworkSuffix ? `${proto.name} (${netShort})` : proto.name}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Selected Protocol Deposit Card */}
-                  {paymentMode === "crypto" && (
-                    <div
-                      className="space-y-4 rounded-2xl border border-primary/25 bg-card p-5 shadow-xs"
-                      data-testid="qc-crypto-deposit-box"
-                    >
-                      {/* Header: Protocol Name + Badge | Amount to Send */}
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-base font-extrabold tracking-tight text-foreground sm:text-lg">
-                              {selectedProtocol.name} ({shortNetworkTag(selectedProtocol.network)})
-                            </h3>
-                            {selectedProtocol.badge && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-(--button) bg-[image:var(--button-image)] px-2.5 py-0.5 text-[11px] font-extrabold text-(--button-foreground) shadow-2xs">
-                                <FlameIcon className="size-3 fill-current" aria-hidden />
-                                {selectedProtocol.badge}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Network:{" "}
-                            <strong className="font-bold text-foreground">
-                              {selectedProtocol.network}
-                            </strong>
-                          </p>
-                        </div>
-
-                        <div className="text-right">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            Amount to Send:
-                          </p>
-                          <p className="text-lg font-black tracking-tight text-primary tabular-nums sm:text-2xl">
-                            {formatMoney(selectedTier.priceMicros, money)} {money.currency} equivalent
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Deposit Address + Copy Button */}
-                      <div className="space-y-1.5">
-                        <p className="text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase">
-                          OFFICIAL {storeName.toUpperCase()} {selectedProtocol.code} DEPOSIT ADDRESS:
-                        </p>
-                        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
-                          <div
-                            data-testid="qc-deposit-address"
-                            className="flex h-12 flex-1 items-center overflow-x-auto rounded-xl border border-border/80 bg-muted/35 px-4 font-mono text-xs font-bold text-foreground sm:text-sm"
-                          >
-                            {selectedProtocol.address}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void handleCopyDepositAddress(selectedProtocol.address)
-                            }
-                            data-testid="qc-copy-address"
-                            className="inline-flex h-12 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-(--button) bg-[image:var(--button-image)] px-5 text-xs font-extrabold text-(--button-foreground) shadow-sm transition-opacity hover:opacity-95 sm:text-sm"
-                          >
-                            {copiedAddress ? (
-                              <>
-                                <CheckIcon className="size-4 stroke-[2.5]" aria-hidden />
-                                <span>Copied</span>
-                              </>
-                            ) : (
-                              <>
-                                <CopyIcon className="size-4" aria-hidden />
-                                <span>Copy</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* QR Code + Live Scanner Instructions */}
-                      <div className="flex flex-col items-center gap-5 pt-1 sm:flex-row sm:items-center">
-                        <div className="flex flex-col items-center rounded-2xl border border-border/80 bg-white p-3 shadow-xs">
-                          <DepositQrCodeSvg value={selectedProtocol.address} />
-                          <span className="mt-1.5 text-[9px] font-black tracking-wider text-zinc-900 uppercase">
-                            SCAN TO DEPOSIT
-                          </span>
-                        </div>
-
-                        <div className="flex-1 space-y-2 text-xs leading-relaxed">
-                          <p className="flex items-center gap-1.5 font-extrabold tracking-wide text-amber-600 uppercase dark:text-amber-400">
-                            <AlertTriangleIcon className="size-4 shrink-0" aria-hidden />
-                            <span>LIVE SCANNER READY:</span>
-                          </p>
-                          <p className="text-muted-foreground">
-                            Point your crypto wallet app camera (Binance, Trust Wallet, MetaMask,
-                            Coinbase) at this QR code to automatically scan and deposit{" "}
-                            <strong className="font-extrabold text-foreground">
-                              {selectedProtocol.code}
-                            </strong>{" "}
-                            via{" "}
-                            <strong className="font-extrabold text-foreground">
-                              {selectedProtocol.network}
-                            </strong>
-                            .
-                          </p>
-                          <p className="font-semibold text-primary">
-                            ⚠️ Always verify the first 4 and last 4 characters of the scanned
-                            address before sending funds.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Bottom Action Bar: ← Back | I Have Sent Payment → Upload Hash */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setStep(2)}
-                  data-testid="quick-checkout-back-to-step-2"
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
-                >
-                  <ArrowLeftIcon className="size-4" aria-hidden />
-                  <span>Back</span>
-                </button>
-
+              {/* Action Buttons: View Order Details | Close */}
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => {
-                    setMaxUnlockedStep((prev) => Math.max(prev, 4));
-                    setStep(4);
+                    onClose();
+                    router.push(`/orders/${submittedOrderId}?placed=1`);
                   }}
-                  data-testid="quick-checkout-sent-payment"
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
+                  data-testid="qc-thank-you-view-order"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-6 py-3 text-xs font-extrabold text-(--button-foreground) shadow-md transition-opacity hover:opacity-95 sm:text-sm"
                 >
-                  <span>
-                    {paymentMode === "cod"
-                      ? "Confirm Cash on Delivery → Verify"
-                      : "I Have Sent Payment → Upload Hash"}
-                  </span>
+                  <span>View Order Details</span>
+                  <ExternalLinkIcon className="size-4" aria-hidden />
                 </button>
-              </div>
-            </div>
-          )}
 
-          {step === 4 && (
-            <div className="space-y-5" data-testid="quick-checkout-step-4-panel">
-              <div className="rounded-2xl border border-border/80 bg-muted/25 p-5 text-sm">
-                <p className="font-bold text-foreground">
-                  Step 4: Payment Verification
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Submit your transaction hash or confirmation for{" "}
-                  <span className="font-semibold text-foreground">{fullName}</span> ({email}).
-                </p>
-              </div>
-              <div className="flex items-center justify-between pt-2">
                 <button
                   type="button"
-                  onClick={() => setStep(3)}
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
+                  onClick={onClose}
+                  data-testid="qc-thank-you-close"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-border/80 bg-card px-6 py-3 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
                 >
-                  <ArrowLeftIcon className="size-4" aria-hidden />
-                  <span>Back</span>
+                  <span>Close</span>
                 </button>
               </div>
             </div>
+          ) : (
+            <>
+              {step === 1 && (
+                <>
+                  {/* 1. Product Selector (Clicked Product + Same-Category Products) */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
+                      {categoryTitle}
+                    </p>
+
+                    <div
+                      className="grid gap-3 sm:grid-cols-2"
+                      data-testid="quick-checkout-product-list"
+                    >
+                      {products.map((item, idx) => {
+                        const isSelected = item.id === selectedProduct.id;
+                        const itemTiers = resolveQuickCheckoutTiers(item);
+                        const lowestMicros =
+                          itemTiers.length > 0
+                            ? Math.min(...itemTiers.map((t) => t.priceMicros))
+                            : item.price_micros;
+
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setSelectedProductId(item.id)}
+                            data-testid={`quick-checkout-product-option-${item.slug}`}
+                            data-selected={isSelected ? "true" : "false"}
+                            className={cn(
+                              "flex cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all",
+                              isSelected
+                                ? "border-2 border-primary bg-primary/[0.05] shadow-xs ring-2 ring-primary/15"
+                                : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
+                            )}
+                          >
+                            <div className="min-w-0 space-y-1">
+                              <p className="truncate text-sm font-extrabold text-foreground sm:text-base">
+                                {item.name}
+                              </p>
+                              <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                                <ProductBadgeIcon index={idx} />
+                                <span className="truncate">
+                                  {productSubtitleText(item, idx)}
+                                </span>
+                              </p>
+                            </div>
+
+                            <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
+                              From {formatMoney(lowestMicros, money)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 2. Dynamic Quantity Tier Selector */}
+                  <div className="space-y-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
+                        SELECT QUANTITY TIER ({selectedProduct.name.toUpperCase()})
+                      </p>
+                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/12 px-2.5 py-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                        <SparklesIcon className="size-3" aria-hidden />
+                        Instant Tier Pricing
+                      </span>
+                    </div>
+
+                    <div
+                      className={cn(
+                        "grid gap-2.5 pt-1",
+                        tiers.length <= 5
+                          ? "grid-cols-2 sm:grid-cols-5"
+                          : "grid-cols-2 sm:grid-cols-4 md:grid-cols-7",
+                      )}
+                      data-testid="quick-checkout-tier-list"
+                    >
+                      {tiers.map((tier) => {
+                        const isSelected = selectedTier?.id === tier.id;
+                        return (
+                          <button
+                            key={tier.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedTierByProduct((prev) => ({
+                                ...prev,
+                                [selectedProduct.id]: tier.id,
+                              }))
+                            }
+                            data-testid={`quick-checkout-tier-${tier.quantity}`}
+                            data-selected={isSelected ? "true" : "false"}
+                            className={cn(
+                              "relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border px-2.5 py-4 text-center transition-all",
+                              isSelected
+                                ? "border-transparent bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground) shadow-lg ring-2 ring-primary/35 -translate-y-0.5"
+                                : "border-border/80 bg-card text-foreground hover:border-primary/45 hover:bg-muted/25",
+                            )}
+                          >
+                            {tier.popular && (
+                              <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black tracking-wider text-zinc-950 uppercase shadow-xs">
+                                POPULAR
+                              </span>
+                            )}
+
+                            <span className="text-lg font-black tracking-tight tabular-nums sm:text-xl">
+                              {tier.title}
+                            </span>
+
+                            <span
+                              className={cn(
+                                "mt-0.5 text-xs font-extrabold tabular-nums sm:text-sm",
+                                isSelected ? "text-(--button-foreground)" : "text-primary",
+                              )}
+                            >
+                              {formatMoney(tier.priceMicros, money)}
+                            </span>
+
+                            <span
+                              className={cn(
+                                "mt-1 line-clamp-1 text-[10px] font-medium",
+                                isSelected
+                                  ? "text-(--button-foreground)/85"
+                                  : "text-muted-foreground",
+                              )}
+                            >
+                              {tier.subtitle}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 3. Selected Package & Final Price Summary Card */}
+                  {selectedTier && (
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/80 bg-muted/25 px-5 py-4"
+                      data-testid="quick-checkout-summary"
+                    >
+                      <div className="min-w-0 space-y-0.5">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Selected Package:
+                        </p>
+                        <p
+                          className="truncate text-base font-extrabold text-foreground sm:text-lg"
+                          data-testid="quick-checkout-summary-package"
+                        >
+                          {selectedProduct.name} ({selectedTier.quantity}{" "}
+                          {selectedTier.quantity === 1 ? "Unit" : "Units"})
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Estimated Unit Cost: {formatMoney(selectedTier.unitPriceMicros, money)}
+                          /unit
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        <p className="text-xs font-medium text-muted-foreground">Total Due:</p>
+                        <p
+                          className="text-2xl font-black tracking-tight text-primary tabular-nums sm:text-3xl"
+                          data-testid="quick-checkout-total-due"
+                        >
+                          {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 4. Bottom Action Bar */}
+                  <div className="flex items-center justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={handlePassStep1}
+                      data-testid="quick-checkout-continue"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
+                    >
+                      <span>Continue to Contact Details</span>
+                      <ArrowRightIcon className="size-4" aria-hidden />
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {step === 2 && (
+                <div className="space-y-5" data-testid="quick-checkout-step-2-panel">
+                  {/* Top Privacy / Delivery Notice Banner */}
+                  <div
+                    className="flex items-center gap-2.5 rounded-xl border border-sky-500/25 bg-sky-500/[0.08] px-4 py-3 text-xs font-medium text-sky-700 dark:text-sky-300 sm:text-sm"
+                    data-testid="quick-checkout-contact-notice"
+                  >
+                    <ShieldCheckIcon
+                      className="size-4.5 shrink-0 text-sky-600 dark:text-sky-400"
+                      aria-hidden
+                    />
+                    <span>
+                      Your contact details are strictly used for order delivery and order
+                      notifications.
+                    </span>
+                  </div>
+
+                  {/* 2-Column Contact Form Grid */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {/* 1. Full Name */}
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="qc-full-name"
+                        className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                      >
+                        FULL NAME *
+                      </label>
+                      <input
+                        id="qc-full-name"
+                        type="text"
+                        required
+                        value={fullName}
+                        onChange={(e) => {
+                          setFullName(e.target.value);
+                          if (contactErrors.fullName) {
+                            setContactErrors((prev) => ({ ...prev, fullName: undefined }));
+                          }
+                        }}
+                        placeholder="e.g. Alexander Vance"
+                        data-testid="qc-contact-full-name"
+                        className={cn(
+                          "h-11 w-full rounded-xl border bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20",
+                          contactErrors.fullName ? "border-destructive" : "border-border/80",
+                        )}
+                      />
+                      {contactErrors.fullName && (
+                        <p className="text-xs font-medium text-destructive">
+                          {contactErrors.fullName}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* 2. Email Address (For Delivery) */}
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="qc-email"
+                        className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                      >
+                        EMAIL ADDRESS * (FOR DELIVERY)
+                      </label>
+                      <input
+                        id="qc-email"
+                        type="email"
+                        required
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          if (contactErrors.email) {
+                            setContactErrors((prev) => ({ ...prev, email: undefined }));
+                          }
+                        }}
+                        placeholder="e.g. alex@scaleagency.io"
+                        data-testid="qc-contact-email"
+                        className={cn(
+                          "h-11 w-full rounded-xl border bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20",
+                          contactErrors.email ? "border-destructive" : "border-border/80",
+                        )}
+                      />
+                      {contactErrors.email && (
+                        <p className="text-xs font-medium text-destructive">
+                          {contactErrors.email}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* 3. Telegram Username (Optional) */}
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="qc-telegram"
+                        className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                      >
+                        TELEGRAM USERNAME (OPTIONAL)
+                      </label>
+                      <input
+                        id="qc-telegram"
+                        type="text"
+                        value={telegram}
+                        onChange={(e) => setTelegram(e.target.value)}
+                        placeholder="e.g. @vance_scale (Optional)"
+                        data-testid="qc-contact-telegram"
+                        className="h-11 w-full rounded-xl border border-border/80 bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+
+                    {/* 4. WhatsApp Number (Optional) */}
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="qc-whatsapp"
+                        className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                      >
+                        WHATSAPP NUMBER (OPTIONAL)
+                      </label>
+                      <input
+                        id="qc-whatsapp"
+                        type="tel"
+                        value={whatsapp}
+                        onChange={(e) => setWhatsapp(e.target.value)}
+                        placeholder="e.g. +1 (415) 892-3341 (Optional)"
+                        data-testid="qc-contact-whatsapp"
+                        className="h-11 w-full rounded-xl border border-border/80 bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+
+                    {/* 5. Country / Jurisdiction */}
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="qc-country"
+                        className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                      >
+                        COUNTRY / JURISDICTION
+                      </label>
+                      <div className="relative">
+                        <select
+                          id="qc-country"
+                          value={country}
+                          onChange={(e) => setCountry(e.target.value)}
+                          data-testid="qc-contact-country"
+                          className="h-11 w-full appearance-none rounded-xl border border-border/80 bg-muted/20 pr-9 pl-3.5 text-sm font-medium text-foreground transition-colors outline-none focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
+                        >
+                          {COUNTRIES.map((c) => (
+                            <option key={c} value={c} className="bg-card text-foreground">
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDownIcon
+                          className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground"
+                          aria-hidden
+                        />
+                      </div>
+                    </div>
+
+                    {/* 6. Order Notes / Custom Requests (Optional) */}
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="qc-notes"
+                        className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                      >
+                        ORDER NOTES / CUSTOM REQUESTS (OPTIONAL)
+                      </label>
+                      <input
+                        id="qc-notes"
+                        type="text"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="e.g. Need NY or TX state IP profiles only"
+                        data-testid="qc-contact-notes"
+                        className="h-11 w-full rounded-xl border border-border/80 bg-muted/20 px-3.5 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Bottom Action Bar: ← Back | Select Payment Method → */}
+                  <div className="flex items-center justify-between gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      data-testid="quick-checkout-back-to-step-1"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
+                    >
+                      <ArrowLeftIcon className="size-4" aria-hidden />
+                      <span>Back</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleContinueToPayment}
+                      data-testid="quick-checkout-select-payment"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
+                    >
+                      <span>Select Payment Method</span>
+                      <ArrowRightIcon className="size-4" aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {step === 3 && selectedTier && (
+                <div className="space-y-5" data-testid="quick-checkout-step-3-panel">
+                  {/* 1. Cash on Delivery Option on Top (when enabled) */}
+                  {paymentConfig.codEnabled && (
+                    <div className="space-y-2.5" data-testid="qc-cod-section">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
+                          CASH ON DELIVERY
+                        </p>
+                        {!paymentConfig.cryptoEnabled && (
+                          <p
+                            className="text-xs font-extrabold text-primary tabular-nums sm:text-sm"
+                            data-testid="qc-payment-total-due"
+                          >
+                            Total Due: {formatMoney(selectedTier.priceMicros, money)}{" "}
+                            {money.currency}
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMode("cod")}
+                        data-testid="qc-cod-option"
+                        data-selected={paymentMode === "cod" ? "true" : "false"}
+                        className={cn(
+                          "flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all",
+                          paymentMode === "cod"
+                            ? "border-2 border-primary bg-primary/[0.06] shadow-xs ring-2 ring-primary/15"
+                            : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
+                        )}
+                      >
+                        <div className="flex min-w-0 items-center gap-3.5">
+                          <span
+                            className={cn(
+                              "grid size-10 shrink-0 place-items-center rounded-xl transition-colors",
+                              paymentMode === "cod"
+                                ? "bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground)"
+                                : "bg-primary/10 text-primary",
+                            )}
+                          >
+                            <BanknoteIcon className="size-5" aria-hidden />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-extrabold text-foreground sm:text-base">
+                              Cash on Delivery (COD)
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              Pay in cash when your order is delivered
+                            </p>
+                          </div>
+                        </div>
+
+                        <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
+                          {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 2. Crypto Options Below Cash on Delivery */}
+                  {paymentConfig.cryptoEnabled && selectedProtocol && (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
+                          SELECT CRYPTO WALLET PROTOCOL
+                        </p>
+                        <p
+                          className="text-xs font-extrabold text-primary tabular-nums sm:text-sm"
+                          data-testid="qc-payment-total-due"
+                        >
+                          Total Due: {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                        </p>
+                      </div>
+
+                      {/* Crypto Protocol Grid */}
+                      <div
+                        className="grid grid-cols-2 gap-2.5 sm:grid-cols-4"
+                        data-testid="qc-crypto-protocol-grid"
+                      >
+                        {activeProtocols.map((proto) => {
+                          const isSelected =
+                            paymentMode === "crypto" && proto.id === selectedProtocol.id;
+                          const showNetworkSuffix = (codeCounts[proto.code] ?? 0) > 1;
+                          const netShort = shortNetworkTag(proto.network);
+                          return (
+                            <button
+                              key={proto.id}
+                              type="button"
+                              onClick={() => {
+                                setPaymentMode("crypto");
+                                setSelectedProtocolId(proto.id);
+                              }}
+                              data-testid={`qc-crypto-option-${proto.id}`}
+                              data-selected={isSelected ? "true" : "false"}
+                              className={cn(
+                                "flex cursor-pointer flex-col items-center justify-center rounded-2xl border px-3 py-2.5 text-center transition-all",
+                                isSelected
+                                  ? "border-2 border-primary bg-primary/[0.06] shadow-xs ring-2 ring-primary/15"
+                                  : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
+                              )}
+                            >
+                              <span className="text-sm font-black tracking-tight text-foreground sm:text-base">
+                                {proto.code}
+                              </span>
+                              <span
+                                className={cn(
+                                  "mt-0.5 line-clamp-1 text-[11px]",
+                                  isSelected
+                                    ? "font-bold text-foreground/85"
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {showNetworkSuffix ? `${proto.name} (${netShort})` : proto.name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Selected Protocol Deposit Card */}
+                      {paymentMode === "crypto" && (
+                        <div
+                          className="space-y-4 rounded-2xl border border-primary/25 bg-card p-5 shadow-xs"
+                          data-testid="qc-crypto-deposit-box"
+                        >
+                          {/* Header: Protocol Name + Badge | Amount to Send */}
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="text-base font-extrabold tracking-tight text-foreground sm:text-lg">
+                                  {selectedProtocol.name} (
+                                  {shortNetworkTag(selectedProtocol.network)})
+                                </h3>
+                                {selectedProtocol.badge && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-(--button) bg-[image:var(--button-image)] px-2.5 py-0.5 text-[11px] font-extrabold text-(--button-foreground) shadow-2xs">
+                                    <FlameIcon className="size-3 fill-current" aria-hidden />
+                                    {selectedProtocol.badge}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Network:{" "}
+                                <strong className="font-bold text-foreground">
+                                  {selectedProtocol.network}
+                                </strong>
+                              </p>
+                            </div>
+
+                            <div className="text-right">
+                              <p className="text-xs font-medium text-muted-foreground">
+                                Amount to Send:
+                              </p>
+                              <p className="text-lg font-black tracking-tight text-primary tabular-nums sm:text-2xl">
+                                {formatMoney(selectedTier.priceMicros, money)} {money.currency}{" "}
+                                equivalent
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Deposit Address + Copy Button */}
+                          <div className="space-y-1.5">
+                            <p className="text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase">
+                              OFFICIAL {storeName.toUpperCase()} {selectedProtocol.code} DEPOSIT
+                              ADDRESS:
+                            </p>
+                            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+                              <div
+                                data-testid="qc-deposit-address"
+                                className="flex h-12 flex-1 items-center overflow-x-auto rounded-xl border border-border/80 bg-muted/35 px-4 font-mono text-xs font-bold text-foreground sm:text-sm"
+                              >
+                                {selectedProtocol.address}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleCopyDepositAddress(selectedProtocol.address)
+                                }
+                                data-testid="qc-copy-address"
+                                className="inline-flex h-12 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-(--button) bg-[image:var(--button-image)] px-5 text-xs font-extrabold text-(--button-foreground) shadow-sm transition-opacity hover:opacity-95 sm:text-sm"
+                              >
+                                {copiedAddress ? (
+                                  <>
+                                    <CheckIcon className="size-4 stroke-[2.5]" aria-hidden />
+                                    <span>Copied</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CopyIcon className="size-4" aria-hidden />
+                                    <span>Copy</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* QR Code + Live Scanner Instructions */}
+                          <div className="flex flex-col items-center gap-5 pt-1 sm:flex-row sm:items-center">
+                            <div className="flex flex-col items-center rounded-2xl border border-border/80 bg-white p-3 shadow-xs">
+                              <DepositQrCodeSvg value={selectedProtocol.address} />
+                              <span className="mt-1.5 text-[9px] font-black tracking-wider text-zinc-900 uppercase">
+                                SCAN TO DEPOSIT
+                              </span>
+                            </div>
+
+                            <div className="flex-1 space-y-2 text-xs leading-relaxed">
+                              <p className="flex items-center gap-1.5 font-extrabold tracking-wide text-amber-600 uppercase dark:text-amber-400">
+                                <AlertTriangleIcon className="size-4 shrink-0" aria-hidden />
+                                <span>LIVE SCANNER READY:</span>
+                              </p>
+                              <p className="text-muted-foreground">
+                                Point your crypto wallet app camera (Binance, Trust Wallet,
+                                MetaMask, Coinbase) at this QR code to automatically scan and
+                                deposit{" "}
+                                <strong className="font-extrabold text-foreground">
+                                  {selectedProtocol.code}
+                                </strong>{" "}
+                                via{" "}
+                                <strong className="font-extrabold text-foreground">
+                                  {selectedProtocol.network}
+                                </strong>
+                                .
+                              </p>
+                              <p className="font-semibold text-primary">
+                                ⚠️ Always verify the first 4 and last 4 characters of the scanned
+                                address before sending funds.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Bottom Action Bar: ← Back | I Have Sent Payment → Upload Hash */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setStep(2)}
+                      data-testid="quick-checkout-back-to-step-2"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
+                    >
+                      <ArrowLeftIcon className="size-4" aria-hidden />
+                      <span>Back</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVerifyError(null);
+                        setMaxUnlockedStep((prev) => Math.max(prev, 4));
+                        setStep(4);
+                      }}
+                      data-testid="quick-checkout-sent-payment"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-(--button) bg-[image:var(--button-image)] px-7 py-3.5 text-sm font-extrabold text-(--button-foreground) shadow-lg transition-all hover:opacity-95 active:scale-[0.99]"
+                    >
+                      <span>
+                        {paymentMode === "cod"
+                          ? "Confirm Cash on Delivery → Verify"
+                          : "I Have Sent Payment → Enter TXID"}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {step === 4 && selectedTier && (
+                <div className="space-y-5" data-testid="quick-checkout-step-4-panel">
+                  {/* Simple Top Notice Box (no "automated verification" or long text) */}
+                  <div
+                    className="flex items-center gap-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3.5 text-xs font-semibold text-amber-800 dark:text-amber-300 sm:text-sm"
+                    data-testid="qc-verify-notice"
+                  >
+                    <AlertTriangleIcon
+                      className="size-4.5 shrink-0 text-amber-600 dark:text-amber-400"
+                      aria-hidden
+                    />
+                    <span>
+                      {paymentMode === "crypto"
+                        ? "Please enter your Transaction ID (TXID) below so the Admin can verify your payment."
+                        : "Please review your order summary below and submit your Cash on Delivery order."}
+                    </span>
+                  </div>
+
+                  {/* Transaction ID Input (Crypto only — no image upload) */}
+                  {paymentMode === "crypto" && (
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="qc-verify-txid"
+                        className="block text-[11px] font-extrabold tracking-wider text-muted-foreground uppercase"
+                      >
+                        CRYPTO TRANSACTION HASH / TXID * (REQUIRED)
+                      </label>
+                      <input
+                        id="qc-verify-txid"
+                        type="text"
+                        required
+                        value={txId}
+                        onChange={(e) => {
+                          setTxId(e.target.value);
+                          if (verifyError) setVerifyError(null);
+                        }}
+                        placeholder="e.g. 0x89f4b32a9c118e27a6d8924b1088c4b11f32a79c or TFshfiXsqxNxeTa..."
+                        data-testid="qc-verify-txid"
+                        className="h-12 w-full rounded-xl border border-border/80 bg-muted/20 px-4 font-mono text-xs text-foreground transition-colors outline-none placeholder:text-muted-foreground/70 focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/20 sm:text-sm"
+                      />
+                    </div>
+                  )}
+
+                  {verifyError && (
+                    <p
+                      className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-xs font-semibold text-destructive"
+                      data-testid="qc-verify-error"
+                    >
+                      {verifyError}
+                    </p>
+                  )}
+
+                  {/* Order Summary Card */}
+                  <div
+                    className="space-y-2.5 rounded-2xl border border-border/80 bg-muted/25 p-5 text-xs sm:text-sm"
+                    data-testid="qc-verify-order-summary"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-semibold text-muted-foreground">Order Summary:</span>
+                      <span className="font-extrabold text-foreground">
+                        {selectedTier.title} {selectedProduct.name}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Payment Protocol:</span>
+                      <span className="font-semibold text-muted-foreground">
+                        {paymentMode === "crypto" && selectedProtocol
+                          ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
+                          : "Cash on Delivery (COD)"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-2.5 text-sm font-extrabold sm:text-base">
+                      <span className="text-primary">
+                        {paymentMode === "crypto" ? "Total Paid:" : "Total Due:"}
+                      </span>
+                      <span className="text-primary tabular-nums">
+                        {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Bottom Action Bar: ← Back | Submit Order */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setStep(3)}
+                      data-testid="quick-checkout-back-to-step-3"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-card px-5 py-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:bg-muted/50 sm:text-sm"
+                    >
+                      <ArrowLeftIcon className="size-4" aria-hidden />
+                      <span>Back</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => void handleSubmitOrder()}
+                      data-testid="qc-submit-order"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-emerald-600 px-7 py-3.5 text-sm font-extrabold text-white shadow-lg transition-all hover:bg-emerald-500 active:scale-[0.99] disabled:opacity-60"
+                    >
+                      <CircleCheckIcon className="size-4.5" aria-hidden />
+                      <span>{submitting ? "Submitting Order…" : "Submit Order"}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

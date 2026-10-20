@@ -243,6 +243,10 @@ export type Order = {
   status: OrderStatus;
   payment_method: string;
   payment_status: "unpaid" | "paid" | "refunded";
+  payment_protocol?: string | null;
+  payment_network?: string | null;
+  payment_address?: string | null;
+  payment_tx_id?: string | null;
   /** Currency the customer saw at checkout; amounts below are USD micros × `exchange_rate` for display */
   currency: string;
   /** USD → `currency` rate stamped at checkout (1 for USD; missing before migration 12) */

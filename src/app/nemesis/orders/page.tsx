@@ -7,6 +7,7 @@ import { listHref } from "@/lib/admin/pagination";
 import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
+import { parseOrderPaymentInfo } from "@/lib/order-payment";
 import { deleteOrder, deleteOrders } from "@/app/nemesis/actions";
 import { OrderStatusBadge, PaymentStatusBadge } from "@/components/order-status-badge";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -65,6 +66,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
           }}
           rows={orders.map((o) => {
             const items = (o.order_items ?? []).reduce((n, i) => n + i.quantity, 0);
+            const paymentInfo = parseOrderPaymentInfo(o);
             return {
               id: o.id,
               href: detailHref(o.id),
@@ -80,9 +82,19 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
                   <p className="truncate text-xs text-muted-foreground">{o.customer_email ?? "—"}</p>
                 </div>,
                 <OrderStatusBadge key="s" status={o.status} />,
-                <div key="p">
+                <div key="p" className="min-w-0">
                   <PaymentStatusBadge status={o.payment_status} />
-                  <p className="mt-1 text-xs text-muted-foreground uppercase">{o.payment_method}</p>
+                  <p className="mt-1 text-xs font-medium text-muted-foreground uppercase">
+                    {paymentInfo.shortMethodLabel}
+                  </p>
+                  {paymentInfo.transactionId && (
+                    <p
+                      className="mt-0.5 max-w-[170px] truncate font-mono text-[11px] text-muted-foreground"
+                      title={paymentInfo.transactionId}
+                    >
+                      TXID: {paymentInfo.transactionId}
+                    </p>
+                  )}
                 </div>,
                 <div key="t">
                   <span className="font-medium">{formatMoney(o.total_micros, orderMoney(o))}</span>

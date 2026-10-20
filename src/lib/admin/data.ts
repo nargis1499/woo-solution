@@ -1,7 +1,7 @@
 import "server-only";
 import { MEDIA_REF_COLUMNS, isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
 import { createClient } from "@/lib/supabase/server";
-import { BASE_ORDER_COLUMNS, ORDER_COLUMNS, ORDER_ITEM_COLUMNS, ORDER_ITEM_COLUMNS_LEGACY, withOrderColumns } from "@/lib/data/order-columns";
+import { BASE_ORDER_COLUMNS, ORDER_COLUMNS, ORDER_COLUMNS_NO_PAYMENT, ORDER_ITEM_COLUMNS, ORDER_ITEM_COLUMNS_LEGACY, withOrderColumns } from "@/lib/data/order-columns";
 import { isMissingBrandColumn, isMissingVariationSchema } from "@/lib/data/product-columns";
 import { withSortedVariations } from "@/lib/variations";
 import { requireAdmin } from "@/lib/admin/auth";
@@ -373,7 +373,8 @@ export async function adminGetOrder(id: string): Promise<Order | null> {
       .eq("id", id)
       .maybeSingle();
   let { data, error } = await load(ORDER_COLUMNS, ORDER_ITEM_COLUMNS);
-  if (error && /variation_(id|label)/i.test(`${error.message} ${error.code}`)) ({ data, error } = await load(ORDER_COLUMNS, ORDER_ITEM_COLUMNS_LEGACY));
+  if (error && /payment_(protocol|network|address|tx_id)/i.test(`${error.message} ${error.code}`)) ({ data, error } = await load(ORDER_COLUMNS_NO_PAYMENT, ORDER_ITEM_COLUMNS));
+  if (error && /variation_(id|label)/i.test(`${error.message} ${error.code}`)) ({ data, error } = await load(ORDER_COLUMNS_NO_PAYMENT, ORDER_ITEM_COLUMNS_LEGACY));
   if (error && /exchange_rate/i.test(`${error.message} ${error.code}`)) ({ data, error } = await load(BASE_ORDER_COLUMNS, ORDER_ITEM_COLUMNS_LEGACY));
   if (error) throw new Error(`Failed to load order: ${error.message}`);
   return (data as unknown as Order) ?? null;
