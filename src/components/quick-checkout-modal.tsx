@@ -29,6 +29,7 @@ import {
 } from "@/lib/crypto-protocols";
 import { parseProductFeatures } from "@/lib/home-sections";
 import { formatMoney } from "@/lib/money";
+import { generateQrMatrix } from "@/lib/qr-code";
 import { resolveQuickCheckoutTiers, type QuickCheckoutTier } from "@/lib/quick-checkout";
 import type { Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -123,63 +124,32 @@ function ProductBadgeIcon({ index }: { index: number }) {
   return <ZapIcon className="size-3.5 shrink-0 fill-amber-400 text-amber-500" aria-hidden />;
 }
 
-/** Deterministic 21x21 QR matrix SVG rendered offline without external network calls. */
+/** Real ISO/IEC 18004 scannable QR code SVG rendered offline without external network calls. */
 function DepositQrCodeSvg({ value }: { value: string }) {
-  const size = 21;
-  const cells: boolean[][] = Array.from({ length: size }, () =>
-    Array.from({ length: size }, () => false),
-  );
-
-  function drawFinder(r0: number, c0: number) {
-    for (let r = 0; r < 7; r++) {
-      for (let c = 0; c < 7; c++) {
-        const border = r === 0 || r === 6 || c === 0 || c === 6;
-        const inner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
-        cells[r0 + r][c0 + c] = border || inner;
-      }
-    }
-  }
-
-  drawFinder(0, 0);
-  drawFinder(0, size - 7);
-  drawFinder(size - 7, 0);
-
-  // Timing patterns
-  for (let i = 8; i < size - 8; i++) {
-    cells[6][i] = i % 2 === 0;
-    cells[i][6] = i % 2 === 0;
-  }
-
-  // Deterministic hash-seeded data modules
-  let hash = 2166136261;
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      const inTopLeft = r < 8 && c < 8;
-      const inTopRight = r < 8 && c >= size - 8;
-      const inBottomLeft = r >= size - 8 && c < 8;
-      if (inTopLeft || inTopRight || inBottomLeft || r === 6 || c === 6) continue;
-      const seed = Math.imul(hash ^ (r * 31 + c * 17), 2654435761) >>> 0;
-      const charCode = value.charCodeAt((r * size + c) % Math.max(1, value.length)) || 7;
-      cells[r][c] = ((seed + charCode) & 3) !== 0;
-    }
-  }
+  const cells = generateQrMatrix(value);
+  const size = cells.length;
+  const quietZone = 2;
+  const totalSize = size + quietZone * 2;
 
   return (
     <svg
-      viewBox={`0 0 ${size} ${size}`}
+      viewBox={`0 0 ${totalSize} ${totalSize}`}
       className="size-24 shrink-0 text-zinc-950"
       shapeRendering="crispEdges"
       aria-label="Deposit address QR code"
     >
+      <rect x={0} y={0} width={totalSize} height={totalSize} fill="#ffffff" />
       {cells.map((row, r) =>
         row.map((filled, c) =>
           filled ? (
-            <rect key={`${r}-${c}`} x={c} y={r} width={1} height={1} fill="currentColor" />
+            <rect
+              key={`${r}-${c}`}
+              x={c + quietZone}
+              y={r + quietZone}
+              width={1}
+              height={1}
+              fill="currentColor"
+            />
           ) : null,
         ),
       )}
