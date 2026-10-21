@@ -2,20 +2,76 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { sortOrderMessages } from "@/lib/order-chat";
-import type { OrderMessage } from "@/lib/types";
+import type { OrderMessage, OrderMessageAttachment } from "@/lib/types";
 
 /**
  * Reads of the per-order inquiry thread. Every query runs through the request's own
  * Supabase client, so RLS decides who sees what: an order's owner, or an admin.
  */
-export const ORDER_MESSAGE_COLUMNS = "id, order_id, sender_type, sender_id, sender_name, sender_avatar_url, message, created_at, delivered_at, seen_at";
+export const ORDER_MESSAGE_COLUMNS =
+  "id, order_id, sender_type, sender_id, sender_name, sender_avatar_url, message, attachment_url, attachment_name, attachment_type, attachment_size, created_at, delivered_at, seen_at";
+/** Database without migration 47: same thread, no attachment columns yet. */
+const ORDER_MESSAGE_COLUMNS_NO_ATTACH =
+  "id, order_id, sender_type, sender_id, sender_name, sender_avatar_url, message, created_at, delivered_at, seen_at";
 /** Database without migration 18: same thread, no read receipts. */
-const ORDER_MESSAGE_COLUMNS_LEGACY = "id, order_id, sender_type, sender_id, sender_name, sender_avatar_url, message, created_at";
+const ORDER_MESSAGE_COLUMNS_LEGACY =
+  "id, order_id, sender_type, sender_id, sender_name, sender_avatar_url, message, created_at";
+
+const ATTACHMENT_AVATAR_PREFIX = "__ATTACHMENT__:";
+
+const needsNoAttachColumns = (error: unknown) => {
+  const e = error as { message?: string; details?: string; code?: string } | null;
+  return /attachment_url|attachment_name|attachment_type|attachment_size/i.test(
+    `${e?.message ?? ""} ${e?.details ?? ""} ${e?.code ?? ""}`,
+  );
+};
 
 const needsLegacyColumns = (error: unknown) => {
   const e = error as { message?: string; details?: string; code?: string } | null;
   return /delivered_at|seen_at/i.test(`${e?.message ?? ""} ${e?.details ?? ""} ${e?.code ?? ""}`);
 };
+
+type FallbackAttachmentPayload = {
+  url: string;
+  name: string;
+  type: string;
+  size: number;
+  emptyCaption?: boolean;
+};
+
+export function normaliseOrderMessage(raw: Record<string, unknown>): OrderMessage {
+  const row = { ...raw } as unknown as OrderMessage;
+  if (
+    !row.attachment_url &&
+    typeof row.sender_avatar_url === "string" &&
+    row.sender_avatar_url.startsWith(ATTACHMENT_AVATAR_PREFIX)
+  ) {
+    try {
+      const parsed = JSON.parse(
+        row.sender_avatar_url.slice(ATTACHMENT_AVATAR_PREFIX.length),
+      ) as FallbackAttachmentPayload;
+      if (parsed && typeof parsed.url === "string") {
+        row.attachment_url = parsed.url;
+        row.attachment_name = parsed.name || "attachment";
+        row.attachment_type = parsed.type || "application/octet-stream";
+        row.attachment_size = typeof parsed.size === "number" ? parsed.size : null;
+        if (parsed.emptyCaption) {
+          row.message = "";
+        }
+      }
+    } catch {
+      // ignore malformed fallback payload
+    }
+    row.sender_avatar_url = null;
+  }
+  return {
+    ...row,
+    attachment_url: row.attachment_url ?? null,
+    attachment_name: row.attachment_name ?? null,
+    attachment_type: row.attachment_type ?? null,
+    attachment_size: row.attachment_size != null ? Number(row.attachment_size) : null,
+  };
+}
 
 /** Newest threads are short; this is only a guard against a runaway one. */
 const MAX_MESSAGES = 500;
@@ -39,11 +95,12 @@ export async function listOrderMessages(orderId: string, since?: string | null, 
     return query;
   };
 
-  // Full row first; a database that has not run migration 18 falls back without the receipt columns.
+  // Full row first; fall back gracefully when older migrations are missing.
   let { data, error } = await load(ORDER_MESSAGE_COLUMNS);
+  if (error && needsNoAttachColumns(error)) ({ data, error } = await load(ORDER_MESSAGE_COLUMNS_NO_ATTACH));
   if (error && needsLegacyColumns(error)) ({ data, error } = await load(ORDER_MESSAGE_COLUMNS_LEGACY));
   if (error) throw error;
-  return (data ?? []) as unknown as OrderMessage[];
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map(normaliseOrderMessage);
 }
 
 /** True when the error is just "migration 17 has not been run yet". */
@@ -74,8 +131,11 @@ export async function insertOrderMessage(input: {
   senderName: string | null;
   senderAvatarUrl: string | null;
   message: string;
+  attachment?: OrderMessageAttachment | null;
 }): Promise<OrderMessage> {
   const supabase = await createClient();
+  const attachment = input.senderType === "admin" ? (input.attachment ?? null) : null;
+
   const { data, error } = await supabase
     .from("order_messages")
     .insert({
@@ -85,12 +145,52 @@ export async function insertOrderMessage(input: {
       sender_name: input.senderName,
       sender_avatar_url: input.senderAvatarUrl,
       message: input.message,
+      attachment_url: attachment?.url ?? null,
+      attachment_name: attachment?.name ?? null,
+      attachment_type: attachment?.type ?? null,
+      attachment_size: attachment?.size ?? null,
     })
     .select(ORDER_MESSAGE_COLUMNS)
     .single();
 
-  if (error) throw error;
-  return data as unknown as OrderMessage;
+  if (!error && data) {
+    return normaliseOrderMessage(data as unknown as Record<string, unknown>);
+  }
+
+  // Fallback for a database that has not run migration 47 yet:
+  if (error && (needsNoAttachColumns(error) || /order_messages_message_check/i.test(`${error.message ?? ""} ${error.details ?? ""}`))) {
+    const emptyCaption = !input.message.trim();
+    const fallbackMessage = emptyCaption && attachment
+      ? `📎 ${attachment.name}`.slice(0, 200)
+      : input.message;
+    const fallbackAvatar = attachment
+      ? `${ATTACHMENT_AVATAR_PREFIX}${JSON.stringify({
+          url: attachment.url,
+          name: attachment.name,
+          type: attachment.type,
+          size: attachment.size,
+          emptyCaption,
+        } satisfies FallbackAttachmentPayload)}`
+      : input.senderAvatarUrl;
+
+    const retry = await supabase
+      .from("order_messages")
+      .insert({
+        order_id: input.orderId,
+        sender_type: input.senderType,
+        sender_id: input.senderId,
+        sender_name: input.senderName,
+        sender_avatar_url: fallbackAvatar,
+        message: fallbackMessage,
+      })
+      .select(ORDER_MESSAGE_COLUMNS_NO_ATTACH)
+      .single();
+
+    if (retry.error) throw retry.error;
+    return normaliseOrderMessage(retry.data as unknown as Record<string, unknown>);
+  }
+
+  throw error;
 }
 
 /**

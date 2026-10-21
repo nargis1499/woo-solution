@@ -396,6 +396,13 @@ export type SettingsMedia = { favicon: MediaRef | null; share_image: MediaRef | 
 /** Who wrote an inquiry message – the two sides of the order chat. */
 export type OrderMessageSender = "customer" | "admin";
 
+export type OrderMessageAttachment = {
+  url: string;
+  name: string;
+  type: string;
+  size: number;
+};
+
 /**
  * One message of the per-order inquiry thread (`order_messages`, migration 17).
  * The author is snapshotted so a renamed or deleted account still renders.
@@ -407,8 +414,13 @@ export type OrderMessage = {
   sender_id: string | null;
   sender_name: string | null;
   sender_avatar_url: string | null;
-  /** 1–200 characters, enforced by the DB and by the POST route */
+  /** 0–200 characters (0 allowed when an admin sends an attachment without caption) */
   message: string;
+  /** Optional file attachment (Admin → Customer) */
+  attachment_url?: string | null;
+  attachment_name?: string | null;
+  attachment_type?: string | null;
+  attachment_size?: number | null;
   created_at: string;
   /** Read receipts (migration 18): stamped by the *recipient*, null until then */
   delivered_at?: string | null;

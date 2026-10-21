@@ -6,7 +6,7 @@ import { insertOrderMessage, isMissingOrderMessagesError, listOrderMessagesSince
 import { publishNotificationsChanged } from "@/lib/notification-bus";
 import { getPersonPresence, getStorePresence } from "@/lib/presence.server";
 import { presenceStatus, type Presence } from "@/lib/presence";
-import type { OrderStatus } from "@/lib/types";
+import type { OrderMessageAttachment, OrderStatus } from "@/lib/types";
 
 /**
  * The order inquiry thread — one endpoint for both sides.
@@ -16,7 +16,7 @@ import type { OrderStatus } from "@/lib/types";
  *                                           to every open SSE stream of that order
  *
  * A customer only ever reaches their own order (RLS) and may post again only after an
- * admin replied; an admin may post any number of messages. 200 characters, both sides.
+ * admin replied; an admin may post any number of messages and attach files.
  */
 
 type Params = { params: Promise<{ id: string }> };
@@ -81,16 +81,34 @@ export async function POST(request: Request, { params }: Params) {
 
   if (!isOrderChatOpen(order.status)) return json({ error: CLOSED_THREAD_MESSAGE }, 409);
 
-  let body: { message?: unknown };
+  let body: { message?: unknown; attachment?: unknown };
   try {
-    body = (await request.json()) as { message?: unknown };
+    body = (await request.json()) as { message?: unknown; attachment?: unknown };
   } catch {
     return json({ error: "Write a message first." }, 400);
   }
 
+  let attachment: OrderMessageAttachment | null = null;
+  if (body.attachment != null) {
+    if (!isAdmin) {
+      return json({ error: "Only admins can send file attachments." }, 403);
+    }
+    const raw = body.attachment as Record<string, unknown>;
+    const url = typeof raw?.url === "string" ? raw.url.trim() : "";
+    const name = typeof raw?.name === "string" ? raw.name.trim() : "";
+    const type = typeof raw?.type === "string" && raw.type.trim() ? raw.type.trim() : "application/octet-stream";
+    const size = typeof raw?.size === "number" && Number.isFinite(raw.size) && raw.size >= 0 ? Math.round(raw.size) : 0;
+    if (!url || !name) {
+      return json({ error: "Invalid attachment metadata." }, 400);
+    }
+    attachment = { url, name, type, size };
+  }
+
   const message = typeof body.message === "string" ? body.message.trim() : "";
-  if (!message) return json({ error: "Write a message first." }, 400);
-  if (message.length > MAX_ORDER_MESSAGE_LENGTH) return json({ error: `Messages are limited to ${MAX_ORDER_MESSAGE_LENGTH} characters.` }, 400);
+  if (!message && !attachment) return json({ error: "Write a message first." }, 400);
+  if (message.length > MAX_ORDER_MESSAGE_LENGTH) {
+    return json({ error: `Messages are limited to ${MAX_ORDER_MESSAGE_LENGTH} characters.` }, 400);
+  }
 
   const viewer = isAdmin ? "admin" : "customer";
 
@@ -108,6 +126,7 @@ export async function POST(request: Request, { params }: Params) {
       senderName: user.name ?? user.email ?? null,
       senderAvatarUrl: user.avatarUrl ?? null,
       message,
+      attachment,
     });
 
     publishOrderChat(order.id, { type: "message", message: saved });

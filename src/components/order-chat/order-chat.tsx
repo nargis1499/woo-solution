@@ -1,7 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { CheckCheckIcon, CheckIcon, SendIcon, ShieldCheckIcon } from "lucide-react";
+import {
+  CheckCheckIcon,
+  CheckIcon,
+  DownloadIcon,
+  FileArchiveIcon,
+  FileAudioIcon,
+  FileCodeIcon,
+  FileIcon,
+  FileImageIcon,
+  FileSpreadsheetIcon,
+  FileTextIcon,
+  FileVideoIcon,
+  Loader2Icon,
+  PaperclipIcon,
+  SendIcon,
+  ShieldCheckIcon,
+  XIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { updateCustomerVisibility } from "@/app/nemesis/actions";
 import {
@@ -13,10 +30,23 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { CLOSED_THREAD_MESSAGE, MESSAGE_RECEIPT_LABELS, MAX_ORDER_MESSAGE_LENGTH, customerVisibleReceipt, isOrderChatOpen, lastAdminReplyAt, messageReceipt, orderChatTurn, sortOrderMessages, type MessageReceipt, type OrderChatViewer } from "@/lib/order-chat";
+import { extensionOf, formatBytes, formatLabel } from "@/lib/media/shared";
+import {
+  CLOSED_THREAD_MESSAGE,
+  MESSAGE_RECEIPT_LABELS,
+  MAX_ORDER_MESSAGE_LENGTH,
+  customerVisibleReceipt,
+  isOrderChatOpen,
+  lastAdminReplyAt,
+  messageReceipt,
+  orderChatTurn,
+  sortOrderMessages,
+  type MessageReceipt,
+  type OrderChatViewer,
+} from "@/lib/order-chat";
 import { PRESENCE_VISIBILITY_LABELS, PRESENCE_VISIBILITIES, isOnline, type Presence, type PresenceVisibility } from "@/lib/presence";
 import { cn } from "@/lib/utils";
-import type { OrderMessage, OrderStatus } from "@/lib/types";
+import type { OrderMessage, OrderMessageAttachment, OrderStatus } from "@/lib/types";
 
 /**
  * The order inquiry thread — the same component for the customer (/orders/[id]) and the
@@ -26,6 +56,8 @@ import type { OrderMessage, OrderStatus } from "@/lib/types";
  * they re-check every rule the UI shows.
  *
  * Admin messages sit on the left, customer messages on the right – in both views.
+ * Only Admin can attach files (any file type), and Customer (as well as Admin) can
+ * download attachments directly from the chat bubble.
  */
 
 export type ChatCounterpart = {
@@ -33,6 +65,65 @@ export type ChatCounterpart = {
   avatarUrl: string | null;
   presence: Presence;
 };
+
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+type AttachmentKind = "image" | "archive" | "spreadsheet" | "code" | "audio" | "video" | "document" | "other";
+
+function classifyAttachment(name: string, mime?: string | null): {
+  kind: AttachmentKind;
+  badge: string;
+  isImage: boolean;
+} {
+  const m = (mime || "").toLowerCase();
+  const ext = extensionOf(name);
+  const badge = formatLabel(m, name);
+  const isImage =
+    m.startsWith("image/") ||
+    /^(jpe?g|png|gif|webp|avif|svg|bmp|ico)$/i.test(ext);
+
+  if (isImage) return { kind: "image", badge, isImage: true };
+  if (/^(zip|rar|7z|tar|gz|tgz|bz2|xz)$/i.test(ext) || /zip|compressed|tar|rar/i.test(m)) {
+    return { kind: "archive", badge, isImage: false };
+  }
+  if (/^(xlsx?|csv|tsv|ods)$/i.test(ext) || /spreadsheet|excel|csv/i.test(m)) {
+    return { kind: "spreadsheet", badge, isImage: false };
+  }
+  if (/^(json|xml|ya?ml|sql|html?|css|js|ts|py|sh|env|ini|conf|key|pem|crt)$/i.test(ext) || /json|xml|javascript/i.test(m)) {
+    return { kind: "code", badge, isImage: false };
+  }
+  if (m.startsWith("audio/") || /^(mp3|wav|ogg|m4a|flac|aac)$/i.test(ext)) {
+    return { kind: "audio", badge, isImage: false };
+  }
+  if (m.startsWith("video/") || /^(mp4|webm|mov|mkv|avi)$/i.test(ext)) {
+    return { kind: "video", badge, isImage: false };
+  }
+  if (/^(pdf|docx?|pptx?|txt|md|rtf|odt|epub)$/i.test(ext) || m.startsWith("text/") || /pdf|word|document/i.test(m)) {
+    return { kind: "document", badge, isImage: false };
+  }
+  return { kind: "other", badge, isImage: false };
+}
+
+function AttachmentTypeIcon({ kind, className }: { kind: AttachmentKind; className?: string }) {
+  switch (kind) {
+    case "image":
+      return <FileImageIcon className={className} />;
+    case "archive":
+      return <FileArchiveIcon className={className} />;
+    case "spreadsheet":
+      return <FileSpreadsheetIcon className={className} />;
+    case "code":
+      return <FileCodeIcon className={className} />;
+    case "audio":
+      return <FileAudioIcon className={className} />;
+    case "video":
+      return <FileVideoIcon className={className} />;
+    case "document":
+      return <FileTextIcon className={className} />;
+    default:
+      return <FileIcon className={className} />;
+  }
+}
 
 export function OrderChat({
   orderId,
@@ -59,6 +150,9 @@ export function OrderChat({
 }) {
   const [messages, setMessages] = useState<OrderMessage[]>(() => sortOrderMessages(initialMessages));
   const [draft, setDraft] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [live, setLive] = useState(false);
@@ -66,6 +160,7 @@ export function OrderChat({
   const [mode, setMode] = useState<PresenceVisibility>(visibility ?? "online");
   const [, startTransition] = useTransition();
   const list = useRef<HTMLUListElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Only used to build the stream URL once: everything after this timestamp is replayed on connect.
   const since = useRef(initialMessages.length > 0 ? initialMessages[initialMessages.length - 1].created_at : "");
   // Which of the other side's messages this tab already reported: `delivered` is sent once per
@@ -78,12 +173,19 @@ export function OrderChat({
   // auto-mark as read while the tab is visible (without touching other orders' notifications).
   useEffect(() => registerActiveOrderChat(orderId), [orderId]);
 
+  useEffect(() => {
+    return () => {
+      if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl);
+    };
+  }, [filePreviewUrl]);
+
   const open = isOrderChatOpen(status);
   const latest = messages[messages.length - 1];
   const turn = orderChatTurn(messages, viewer);
   const trimmed = draft.trim();
   const tooLong = trimmed.length > MAX_ORDER_MESSAGE_LENGTH;
-  const canSend = open && turn.canSend && trimmed.length > 0 && !tooLong && !sending;
+  const hasAttachment = viewer === "admin" && selectedFile !== null;
+  const canSend = open && turn.canSend && (trimmed.length > 0 || hasAttachment) && !tooLong && !sending;
 
   // The customer's side of the receipts: "seen" only while the admin lets them see it
   // (per-customer override, else the global switch) and only once the admin has answered
@@ -149,8 +251,21 @@ export function OrderChat({
         } else {
           const nextDelivered = item.delivered_at ?? existing.delivered_at;
           const nextSeen = item.seen_at ?? existing.seen_at;
-          if (nextDelivered !== existing.delivered_at || nextSeen !== existing.seen_at) {
-            byId.set(item.id, { ...existing, delivered_at: nextDelivered, seen_at: nextSeen });
+          const nextAttachUrl = item.attachment_url ?? existing.attachment_url;
+          if (
+            nextDelivered !== existing.delivered_at ||
+            nextSeen !== existing.seen_at ||
+            nextAttachUrl !== existing.attachment_url
+          ) {
+            byId.set(item.id, {
+              ...existing,
+              delivered_at: nextDelivered,
+              seen_at: nextSeen,
+              attachment_url: nextAttachUrl,
+              attachment_name: item.attachment_name ?? existing.attachment_name,
+              attachment_type: item.attachment_type ?? existing.attachment_type,
+              attachment_size: item.attachment_size ?? existing.attachment_size,
+            });
             changed = true;
           }
         }
@@ -284,15 +399,65 @@ export function OrderChat({
     element.scrollTo({ top: element.scrollHeight, behavior: smooth ? "smooth" : "auto" });
   }, [messages.length]);
 
+  function selectAttachmentFile(file: File | null) {
+    if (viewer !== "admin") return;
+    setError(null);
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+      setFilePreviewUrl(null);
+    }
+    if (!file) {
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (file.size <= 0) {
+      setError("The selected file is empty.");
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setError("Attachment exceeds the 25 MB limit.");
+      return;
+    }
+    setSelectedFile(file);
+    const info = classifyAttachment(file.name, file.type);
+    if (info.isImage) {
+      setFilePreviewUrl(URL.createObjectURL(file));
+    }
+  }
+
   async function send() {
     if (!canSend) return;
     setSending(true);
     setError(null);
     try {
+      let uploadedAttachment: OrderMessageAttachment | null = null;
+
+      if (viewer === "admin" && selectedFile) {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        const uploadRes = await fetch(`/api/orders/${orderId}/chat/attachment`, {
+          method: "POST",
+          body: formData,
+        });
+        const uploadPayload = (await uploadRes.json().catch(() => null)) as {
+          attachment?: OrderMessageAttachment;
+          error?: string;
+        } | null;
+        if (!uploadRes.ok || !uploadPayload?.attachment) {
+          setError(uploadPayload?.error ?? "The attachment could not be uploaded. Please try again.");
+          return;
+        }
+        uploadedAttachment = uploadPayload.attachment;
+      }
+
       const response = await fetch(`/api/orders/${orderId}/chat`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({
+          message: trimmed,
+          ...(uploadedAttachment ? { attachment: uploadedAttachment } : {}),
+        }),
       });
       const payload = (await response.json().catch(() => null)) as {
         message?: OrderMessage;
@@ -305,6 +470,7 @@ export function OrderChat({
       const saved = payload.message;
       mergeMessages([saved]);
       setDraft("");
+      selectAttachmentFile(null);
     } catch {
       setError("The message could not be sent. Please try again.");
     } finally {
@@ -325,6 +491,8 @@ export function OrderChat({
       }
     });
   }
+
+  const stagedInfo = selectedFile ? classifyAttachment(selectedFile.name, selectedFile.type) : null;
 
   return (
     <Card data-testid="order-chat">
@@ -376,23 +544,131 @@ export function OrderChat({
             {/* `overscroll-auto` (the browser default) is deliberate: once the thread is scrolled all
                 the way to its newest or oldest message, the wheel / finger keeps going and scrolls the
                 page instead of dying inside the box. `overscroll-contain` used to trap it here. */}
-            <ul ref={list} className="scrollbar-hidden max-h-64 space-y-3 overflow-y-auto overscroll-auto pr-1" data-testid="order-chat-messages">
+            <ul ref={list} className="scrollbar-hidden max-h-80 space-y-3 overflow-y-auto overscroll-auto pr-1" data-testid="order-chat-messages">
               {messages.map((message) => {
                 const mine = message.sender_type === viewer;
-                return <MessageBubble key={message.id} message={message} mine={mine} status={mine ? receiptFor(message) : null} customerName={customerName} />;
+                return (
+                  <MessageBubble
+                    key={message.id}
+                    orderId={orderId}
+                    message={message}
+                    mine={mine}
+                    status={mine ? receiptFor(message) : null}
+                    customerName={customerName}
+                  />
+                );
               })}
             </ul>
           </>
         )}
       </CardContent>
 
-      <CardFooter className="flex-col items-stretch gap-3 border-t">
+      <CardFooter
+        className={cn(
+          "flex-col items-stretch gap-3 border-t transition-colors",
+          viewer === "admin" && dragActive && "bg-primary/5 ring-2 ring-primary/40 ring-inset",
+        )}
+        onDragOver={
+          viewer === "admin" && open
+            ? (event) => {
+                event.preventDefault();
+                if (!dragActive) setDragActive(true);
+              }
+            : undefined
+        }
+        onDragLeave={
+          viewer === "admin" && open
+            ? (event) => {
+                if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                setDragActive(false);
+              }
+            : undefined
+        }
+        onDrop={
+          viewer === "admin" && open
+            ? (event) => {
+                event.preventDefault();
+                setDragActive(false);
+                const dropped = event.dataTransfer.files?.[0] ?? null;
+                if (dropped) selectAttachmentFile(dropped);
+              }
+            : undefined
+        }
+      >
         {!open ? (
           <p className="text-sm text-muted-foreground" data-testid="order-chat-closed">
             {CLOSED_THREAD_MESSAGE}
           </p>
         ) : (
           <>
+            {viewer === "admin" && (
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(event) => {
+                  const picked = event.target.files?.[0] ?? null;
+                  selectAttachmentFile(picked);
+                }}
+                data-testid="order-chat-file-input"
+              />
+            )}
+
+            {/* Staged file attachment preview (Admin only) */}
+            {viewer === "admin" && selectedFile && stagedInfo && (
+              <div
+                className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2"
+                data-testid="order-chat-staged-attachment"
+              >
+                {filePreviewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={filePreviewUrl}
+                    alt={selectedFile.name}
+                    className="size-10 shrink-0 rounded-md border border-border/60 object-cover"
+                  />
+                ) : (
+                  <div className="flex size-10 shrink-0 flex-col items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+                    <AttachmentTypeIcon kind={stagedInfo.kind} className="size-4" />
+                    <span className="mt-0.5 text-[9px] leading-none font-bold tracking-wider uppercase">
+                      {stagedInfo.badge.slice(0, 4)}
+                    </span>
+                  </div>
+                )}
+
+                <div className="min-w-0 flex-1">
+                  <p
+                    className="truncate text-xs font-semibold text-foreground"
+                    title={selectedFile.name}
+                    data-testid="order-chat-staged-attachment-name"
+                  >
+                    {selectedFile.name}
+                  </p>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground/80">
+                      {stagedInfo.badge}
+                    </span>
+                    <span>{formatBytes(selectedFile.size)}</span>
+                    <span>·</span>
+                    <span className="text-primary">
+                      {sending ? "Uploading & sending…" : "Ready to send"}
+                    </span>
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => selectAttachmentFile(null)}
+                  disabled={sending}
+                  aria-label="Remove attachment"
+                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                  data-testid="order-chat-remove-attachment"
+                >
+                  <XIcon className="size-4" />
+                </button>
+              </div>
+            )}
+
             <div className="flex items-stretch gap-2">
               <div className="relative min-w-0 flex-1">
                 <Textarea
@@ -406,7 +682,13 @@ export function OrderChat({
                     }
                   }}
                   aria-label={viewer === "admin" ? "Reply to the customer" : "Your message"}
-                  placeholder="Write a message…"
+                  placeholder={
+                    viewer === "admin"
+                      ? selectedFile
+                        ? "Add an optional caption or press Reply to send the file…"
+                        : "Write a message or attach a file…"
+                      : "Write a message…"
+                  }
                   className="min-h-20 pb-7 pr-20"
                   data-testid="order-chat-input"
                 />
@@ -417,15 +699,30 @@ export function OrderChat({
                   {trimmed.length} / {MAX_ORDER_MESSAGE_LENGTH}
                 </span>
               </div>
-              <Button
-                type="button"
-                onPress={send}
-                isDisabled={!canSend}
-                className="self-stretch transition-transform duration-150 ease-out motion-reduce:transition-none active:scale-[0.97]"
-                data-testid="order-chat-send"
-              >
-                <SendIcon /> {viewer === "admin" ? "Reply" : "Send"}
-              </Button>
+              <div className="flex shrink-0 flex-col justify-between gap-1.5">
+                <Button
+                  type="button"
+                  onPress={send}
+                  isDisabled={!canSend}
+                  className="justify-center transition-transform duration-150 ease-out motion-reduce:transition-none active:scale-[0.97]"
+                  data-testid="order-chat-send"
+                >
+                  {sending ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
+                  {viewer === "admin" ? "Reply" : "Send"}
+                </Button>
+                {viewer === "admin" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onPress={() => fileInputRef.current?.click()}
+                    isDisabled={!turn.canSend || sending}
+                    className="justify-center"
+                    data-testid="order-chat-attach-button"
+                  >
+                    <PaperclipIcon /> Attach
+                  </Button>
+                )}
+              </div>
             </div>
 
             {error && (
@@ -438,7 +735,11 @@ export function OrderChat({
                 status on the right (✓ sent, ✓✓ delivered, ✓✓ seen). */}
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <p data-testid="order-chat-note">
-                {tooLong ? `Please shorten the message to ${MAX_ORDER_MESSAGE_LENGTH} characters.` : turn.note}
+                {tooLong
+                  ? `Please shorten the message to ${MAX_ORDER_MESSAGE_LENGTH} characters.`
+                  : viewer === "admin"
+                    ? "Admin can send multiple messages and attach any file type."
+                    : turn.note}
               </p>
               <MessageMeta
                 latest={latest}
@@ -531,12 +832,36 @@ function LocalTime({ iso, withDate = false, className, "data-testid": testId }: 
   );
 }
 
-function MessageBubble({ message, mine, status, customerName }: { message: OrderMessage; mine: boolean; status: MessageReceipt | null; customerName?: string | null }) {
+function MessageBubble({
+  orderId,
+  message,
+  mine,
+  status,
+  customerName,
+}: {
+  orderId: string;
+  message: OrderMessage;
+  mine: boolean;
+  status: MessageReceipt | null;
+  customerName?: string | null;
+}) {
   const isAdmin = message.sender_type === "admin";
   // The bubble speaks with the store's voice ("Admin" + the shield badge) – who is personally
   // behind it is shown in the thread header, not on every message.
   const name = isAdmin ? "Admin" : message.sender_name || customerName || "Customer";
   const initial = (name || "?").trim().slice(0, 1).toUpperCase();
+
+  const hasAttachment = Boolean(message.attachment_url);
+  const attachmentName = message.attachment_name || "attachment";
+  const attachmentType = message.attachment_type || "application/octet-stream";
+  const attachmentSize = message.attachment_size ?? null;
+  const attachmentInfo = hasAttachment ? classifyAttachment(attachmentName, attachmentType) : null;
+
+  const downloadUrl = message.attachment_url
+    ? `/api/orders/${orderId}/chat/attachment?messageId=${encodeURIComponent(message.id)}&url=${encodeURIComponent(message.attachment_url)}&name=${encodeURIComponent(attachmentName)}&type=${encodeURIComponent(attachmentType)}`
+    : null;
+  const inlinePreviewUrl = downloadUrl ? `${downloadUrl}&inline=1` : null;
+  const hasText = Boolean(message.message && message.message.trim().length > 0);
 
   return (
     <li
@@ -563,10 +888,75 @@ function MessageBubble({ message, mine, status, customerName }: { message: Order
           className={cn(
             "rounded-lg px-3 py-2 text-sm break-words bg-muted text-muted-foreground",
             isAdmin ? "rounded-tl-sm" : "rounded-tr-sm bg-muted",
+            hasAttachment && "space-y-2",
           )}
         >
           <p className={cn("text-xs font-bold text-primary")}>{name}</p>
-          <p className="mt-0.5 whitespace-pre-wrap">{message.message}</p>
+          {hasText && <p className="mt-0.5 whitespace-pre-wrap">{message.message}</p>}
+
+          {hasAttachment && downloadUrl && attachmentInfo && (
+            <div
+              className="mt-1.5 overflow-hidden rounded-lg border border-border/80 bg-card/90 text-card-foreground shadow-xs"
+              data-testid="order-chat-attachment"
+            >
+              {attachmentInfo.isImage && inlinePreviewUrl && (
+                <a
+                  href={downloadUrl}
+                  download={attachmentName}
+                  className="group/img relative block max-h-52 overflow-hidden border-b border-border/60 bg-background/50"
+                  title={`Download ${attachmentName}`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={inlinePreviewUrl}
+                    alt={attachmentName}
+                    className="max-h-52 w-full object-cover transition-transform duration-200 group-hover/img:scale-[1.02]"
+                    data-testid="order-chat-attachment-preview"
+                  />
+                </a>
+              )}
+              <div className="flex items-center gap-2.5 p-2.5">
+                <div className="flex size-10 shrink-0 flex-col items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+                  <AttachmentTypeIcon kind={attachmentInfo.kind} className="size-4" />
+                  <span className="mt-0.5 text-[9px] leading-none font-bold tracking-wider uppercase">
+                    {attachmentInfo.badge.slice(0, 4)}
+                  </span>
+                </div>
+
+                <div className="min-w-0 flex-1 pr-1">
+                  <p
+                    className="truncate text-xs font-semibold text-foreground"
+                    title={attachmentName}
+                    data-testid="order-chat-attachment-name"
+                  >
+                    {attachmentName}
+                  </p>
+                  <p
+                    className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                    data-testid="order-chat-attachment-meta"
+                  >
+                    <span className="font-medium uppercase">{attachmentInfo.badge}</span>
+                    {attachmentSize != null && attachmentSize > 0 && (
+                      <>
+                        <span>·</span>
+                        <span>{formatBytes(attachmentSize)}</span>
+                      </>
+                    )}
+                  </p>
+                </div>
+
+                <a
+                  href={downloadUrl}
+                  download={attachmentName}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground shadow-2xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  data-testid="order-chat-attachment-download"
+                >
+                  <DownloadIcon className="size-3.5" />
+                  <span>Download</span>
+                </a>
+              </div>
+            </div>
+          )}
         </div>
         <span
           className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-muted-foreground"
