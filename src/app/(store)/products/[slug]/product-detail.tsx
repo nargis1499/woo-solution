@@ -98,7 +98,7 @@ export function ProductShowcase({
   }, [product, selected]);
 
   return (
-    <div className="grid items-start gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-10 xl:gap-12" data-testid="product-showcase">
+    <div className="grid items-start gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:gap-10 xl:gap-12" data-testid="product-showcase">
       <ProductGallery slides={gallerySlides} product={product} />
 
       <section className="min-w-0 space-y-5" aria-labelledby="product-title">
@@ -197,10 +197,28 @@ export function ProductInformationTabs({ product }: { product: Product }) {
   return (
     <section className="mt-12 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-sm sm:mt-16 sm:p-8" aria-label="Product information" data-testid="product-information">
       <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key))} className="w-full flex-col">
-        <TabsList variant="line" className="w-full justify-start gap-2 overflow-x-auto rounded-none border-b border-slate-800 p-0 text-slate-400">
-          <TabsTrigger id="features" className="h-12 flex-none rounded-none px-3 text-sm data-[selected]:text-indigo-300 after:bg-indigo-400 sm:px-5">Key Features</TabsTrigger>
-          <TabsTrigger id="specifications" className="h-12 flex-none rounded-none px-3 text-sm data-[selected]:text-indigo-300 after:bg-indigo-400 sm:px-5">Specifications</TabsTrigger>
-          <TabsTrigger id="delivery" className="h-12 flex-none rounded-none px-3 text-sm data-[selected]:text-indigo-300 after:bg-indigo-400 sm:px-5">Delivery &amp; Payment</TabsTrigger>
+        <TabsList
+          variant="line"
+          className="h-auto w-full flex-wrap justify-start gap-2 rounded-none border-b border-slate-800 p-0 text-slate-400 group-data-horizontal/tabs:h-auto"
+        >
+          <TabsTrigger
+            id="features"
+            className="-mb-px h-11 flex-none cursor-pointer rounded-none px-3 text-sm text-slate-400 hover:text-slate-100 data-selected:text-indigo-300 dark:text-slate-400 dark:hover:text-slate-100 dark:data-selected:text-indigo-300 after:bg-indigo-400 group-data-horizontal/tabs:after:bottom-0 sm:px-5"
+          >
+            Key Features
+          </TabsTrigger>
+          <TabsTrigger
+            id="specifications"
+            className="-mb-px h-11 flex-none cursor-pointer rounded-none px-3 text-sm text-slate-400 hover:text-slate-100 data-selected:text-indigo-300 dark:text-slate-400 dark:hover:text-slate-100 dark:data-selected:text-indigo-300 after:bg-indigo-400 group-data-horizontal/tabs:after:bottom-0 sm:px-5"
+          >
+            Specifications
+          </TabsTrigger>
+          <TabsTrigger
+            id="delivery"
+            className="-mb-px h-11 flex-none cursor-pointer rounded-none px-3 text-sm text-slate-400 hover:text-slate-100 data-selected:text-indigo-300 dark:text-slate-400 dark:hover:text-slate-100 dark:data-selected:text-indigo-300 after:bg-indigo-400 group-data-horizontal/tabs:after:bottom-0 sm:px-5"
+          >
+            Delivery &amp; Payment
+          </TabsTrigger>
         </TabsList>
         <TabsContent id="features" className="pt-6">
           {features.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{features.map((feature, index) => {
