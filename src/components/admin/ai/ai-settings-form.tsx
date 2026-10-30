@@ -1,12 +1,41 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition, type ComponentType } from "react";
 import {
+  AlertCircleIcon,
+  BotIcon,
+  BrainCircuitIcon,
   CheckCircle2Icon,
+  CheckIcon,
+  CloudIcon,
+  CompassIcon,
+  CpuIcon,
   ExternalLinkIcon,
+  EyeIcon,
+  GaugeIcon,
+  GitBranchIcon,
+  GlobeIcon,
   KeyRoundIcon,
+  LanguagesIcon,
+  LaptopIcon,
+  LayersIcon,
+  LeafIcon,
+  Link2Icon,
+  MegaphoneIcon,
+  MessageSquareCodeIcon,
+  MonitorIcon,
+  NetworkIcon,
+  PenToolIcon,
   RefreshCwIcon,
+  RocketIcon,
+  SaveIcon,
+  ScaleIcon,
+  ScrollTextIcon,
+  ServerCogIcon,
+  ShieldCheckIcon,
   SparklesIcon,
+  TerminalIcon,
+  ThermometerIcon,
   Trash2Icon,
   ZapIcon,
 } from "lucide-react";
@@ -50,15 +79,65 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useNemesisAi } from "./ai-context";
 
+const PROVIDER_ICONS: Record<AiProviderId, ComponentType<{ className?: string }>> = {
+  groq: ZapIcon,
+  openai: BrainCircuitIcon,
+  anthropic: MessageSquareCodeIcon,
+  gemini: SparklesIcon,
+  openrouter: NetworkIcon,
+  deepseek: CompassIcon,
+  ollama: LaptopIcon,
+  custom: ServerCogIcon,
+};
+
+const BUDGET_OPTIONS: ReadonlyArray<{
+  id: AiTokenBudgetMode;
+  title: string;
+  desc: string;
+  icon: ComponentType<{ className?: string }>;
+  iconTone: string;
+}> = [
+  {
+    id: "economy",
+    title: "Economy (8k TPM Safe)",
+    desc: "Compact payloads & short history — ideal for free Groq / free tiers.",
+    icon: LeafIcon,
+    iconTone: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400",
+  },
+  {
+    id: "standard",
+    title: "Standard",
+    desc: "Balanced context window (up to 4 tool steps & 30 rows per query).",
+    icon: ScaleIcon,
+    iconTone: "bg-sky-500/12 text-sky-600 dark:text-sky-400",
+  },
+  {
+    id: "high",
+    title: "High-Context (Paid API)",
+    desc: "Full catalog slices & up to 6 chained agent steps for paid keys.",
+    icon: RocketIcon,
+    iconTone: "bg-violet-500/12 text-violet-600 dark:text-violet-400",
+  },
+];
+
 export function AiSettingsForm({
   initialSettings,
   migrated,
+  formId,
+  onPendingChange,
 }: {
   initialSettings: PublicAiSettings;
   migrated: boolean;
+  /** When supplied by SettingsTabs, submission is triggered from the sticky top-right bar. */
+  formId?: string;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const { setAiSettings, openWithPrompt } = useNemesisAi();
   const [saving, startSave] = useTransition();
+
+  useEffect(() => {
+    onPendingChange?.(saving);
+  }, [saving, onPendingChange]);
 
   const [settings, setLocalSettings] = useState<PublicAiSettings>(initialSettings);
   const [enabled, setEnabled] = useState(initialSettings.enabled);
@@ -262,6 +341,7 @@ export function AiSettingsForm({
     <div className="space-y-5">
       {!migrated && (
         <Alert variant="destructive">
+          <AlertCircleIcon className="size-4" />
           <AlertTitle>AI Settings table not migrated yet</AlertTitle>
           <AlertDescription>
             Run <code>supabase/migrations/20261049000000_ai_settings.sql</code> in the Supabase SQL
@@ -270,11 +350,16 @@ export function AiSettingsForm({
         </Alert>
       )}
 
-      <form onSubmit={handleSave} noValidate>
+      <form id={formId} onSubmit={handleSave} noValidate>
+        {formId && (
+          <button type="submit" className="sr-only" tabIndex={-1} aria-hidden="true">
+            Save changes
+          </button>
+        )}
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
+              <div className="space-y-1">
                 <CardTitle className="flex items-center gap-2">
                   <SparklesIcon className="size-4 text-primary" />
                   Nemesis AI &amp; Model Providers
@@ -303,12 +388,17 @@ export function AiSettingsForm({
             <FieldGroup className="gap-6">
               {/* 1. Master Enable Toggle */}
               <div className="flex items-center justify-between gap-4 rounded-xl border bg-muted/30 p-4">
-                <div>
-                  <p className="text-sm font-semibold">Enable Nemesis AI Agent</p>
-                  <p className="text-xs text-muted-foreground">
-                    Unlocks the global ⌘K command drawer across Products, Orders, Categories, and
-                    SEO.
-                  </p>
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <BotIcon className="size-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Enable Nemesis AI Agent</p>
+                    <p className="text-xs text-muted-foreground">
+                      Unlocks the global ⌘K command drawer across Products, Orders, Categories, and
+                      SEO.
+                    </p>
+                  </div>
                 </div>
                 <Switch
                   id="ai_enabled"
@@ -320,10 +410,14 @@ export function AiSettingsForm({
 
               {/* 2. Provider Grid */}
               <Field>
-                <FieldLabel>1. Choose AI Provider</FieldLabel>
+                <FieldLabel className="flex items-center gap-2 text-sm font-semibold">
+                  <CpuIcon className="size-4 text-primary" />
+                  1. Choose AI Provider
+                </FieldLabel>
                 <div className="mt-1 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
                   {AI_PROVIDER_IDS.map((id) => {
                     const p = AI_PROVIDERS[id];
+                    const ProviderIcon = PROVIDER_ICONS[id];
                     const active = provider === id;
                     const hasSavedKey = !clearedKeys[id] && settings.has_keys[id];
                     return (
@@ -338,15 +432,30 @@ export function AiSettingsForm({
                             : "hover:border-foreground/25 hover:bg-muted/40",
                         )}
                       >
-                        <div className="flex w-full items-center justify-between gap-1">
-                          <span className="text-xs font-semibold text-foreground">{p.label}</span>
+                        <div className="flex w-full items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span
+                              className={cn(
+                                "flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors",
+                                active
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted text-muted-foreground",
+                              )}
+                            >
+                              <ProviderIcon className="size-3.5" />
+                            </span>
+                            <span className="truncate text-xs font-semibold text-foreground">
+                              {p.label}
+                            </span>
+                          </div>
                           {hasSavedKey && (
-                            <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                              <CheckIcon className="size-2.5" />
                               Key set
                             </span>
                           )}
                         </div>
-                        <span className="mt-1 text-[10px] font-medium text-primary">
+                        <span className="mt-2 text-[10px] font-medium text-primary">
                           {p.tierBadge}
                         </span>
                       </button>
@@ -362,22 +471,28 @@ export function AiSettingsForm({
               {provider === "ollama" ? (
                 <div className="space-y-4 rounded-xl border bg-muted/20 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold">
+                    <p className="flex items-center gap-2 text-sm font-semibold">
+                      <LaptopIcon className="size-4 text-primary" />
                       2. Local Ollama Connection Mode (e.g. Qwen3.5 9B)
                     </p>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       {(["browser", "tunnel"] as const).map((m) => (
                         <button
                           key={m}
                           type="button"
                           onClick={() => setOllamaMode(m)}
                           className={cn(
-                            "cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                            "inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                             ollamaMode === m
                               ? "border-primary bg-primary text-primary-foreground"
                               : "bg-background hover:bg-muted",
                           )}
                         >
+                          {m === "browser" ? (
+                            <MonitorIcon className="size-3.5" />
+                          ) : (
+                            <CloudIcon className="size-3.5" />
+                          )}
                           {m === "browser"
                             ? "Browser-Direct (localhost)"
                             : "HTTPS Tunnel (Cloudflare / ngrok)"}
@@ -388,7 +503,8 @@ export function AiSettingsForm({
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field>
-                      <FieldLabel htmlFor="ollama_base_url">
+                      <FieldLabel htmlFor="ollama_base_url" className="flex items-center gap-1.5">
+                        <Link2Icon className="size-3.5 text-muted-foreground" />
                         {ollamaMode === "browser" ? "Local Ollama URL" : "Public HTTPS Tunnel URL"}
                       </FieldLabel>
                       <Input
@@ -403,7 +519,10 @@ export function AiSettingsForm({
                       />
                     </Field>
                     <Field>
-                      <FieldLabel htmlFor="ollama_num_ctx">Context Window (num_ctx)</FieldLabel>
+                      <FieldLabel htmlFor="ollama_num_ctx" className="flex items-center gap-1.5">
+                        <CpuIcon className="size-3.5 text-muted-foreground" />
+                        Context Window (num_ctx)
+                      </FieldLabel>
                       <Input
                         id="ollama_num_ctx"
                         type="number"
@@ -420,14 +539,19 @@ export function AiSettingsForm({
                   </div>
 
                   <div className="flex items-center justify-between gap-4 rounded-lg border bg-background p-3">
-                    <div>
-                      <p className="text-xs font-medium">
-                        Fast Tool-Calling Mode (Disable Qwen3/3.5 Chain-of-Thought)
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        Sends <code>think: false</code> so local Qwen3.5 9B responds 3–5× faster on
-                        your GPU.
-                      </p>
+                    <div className="flex items-start gap-2.5">
+                      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-amber-500/12 text-amber-600 dark:text-amber-400">
+                        <ZapIcon className="size-3.5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium">
+                          Fast Tool-Calling Mode (Disable Qwen3/3.5 Chain-of-Thought)
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Sends <code>think: false</code> so local Qwen3.5 9B responds 3–5× faster on
+                          your GPU.
+                        </p>
+                      </div>
                     </div>
                     <Switch
                       id="ollama_disable_thinking"
@@ -439,7 +563,8 @@ export function AiSettingsForm({
 
                   {ollamaMode === "browser" ? (
                     <div className="space-y-2 rounded-lg border bg-background p-3 text-xs text-muted-foreground">
-                      <p className="font-medium text-foreground">
+                      <p className="flex items-center gap-1.5 font-medium text-foreground">
+                        <TerminalIcon className="size-3.5 text-primary" />
                         How Browser-Direct Mode connects your live site to your PC:
                       </p>
                       <p>
@@ -464,7 +589,8 @@ export function AiSettingsForm({
                     </div>
                   ) : (
                     <Field>
-                      <FieldLabel htmlFor="ollama_tunnel_key">
+                      <FieldLabel htmlFor="ollama_tunnel_key" className="flex items-center gap-1.5">
+                        <KeyRoundIcon className="size-3.5 text-muted-foreground" />
                         Optional Tunnel Bearer Token
                       </FieldLabel>
                       <Input
@@ -485,7 +611,11 @@ export function AiSettingsForm({
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field>
                     <div className="flex items-center justify-between gap-2">
-                      <FieldLabel htmlFor="ai_api_key">
+                      <FieldLabel
+                        htmlFor="ai_api_key"
+                        className="flex items-center gap-2 text-sm font-semibold"
+                      >
+                        <KeyRoundIcon className="size-4 text-primary" />
                         2. {meta.label} API Key
                       </FieldLabel>
                       {meta.consoleUrl && (
@@ -531,18 +661,24 @@ export function AiSettingsForm({
                       )}
                     </div>
                     <FieldDescription className="flex items-center gap-1.5">
-                      <KeyRoundIcon className="size-3" />
+                      <ShieldCheckIcon className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
                       {storedMask
                         ? usingEnvKey
                           ? `Using environment variable (${storedMask}). Enter a key above to override.`
-                          : `Encrypted in admin-only table (${storedMask}). Keys are never exposed to storefront visitors.`
+                          : `Stored in admin-only RLS table (${storedMask}). Keys are never exposed to storefront visitors.`
                         : "Stored per-provider in admin-only RLS table so you can switch models anytime."}
                     </FieldDescription>
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="custom_base_url">
-                      {provider === "custom" ? "Endpoint Base URL (/v1)" : "Custom Base URL Override (Optional)"}
+                    <FieldLabel
+                      htmlFor="custom_base_url"
+                      className="flex items-center gap-1.5 text-sm font-semibold"
+                    >
+                      <GlobeIcon className="size-4 text-muted-foreground" />
+                      {provider === "custom"
+                        ? "Endpoint Base URL (/v1)"
+                        : "Custom Base URL Override (Optional)"}
                     </FieldLabel>
                     <Input
                       id="custom_base_url"
@@ -563,7 +699,10 @@ export function AiSettingsForm({
               {/* 4. Primary + Fallback Model Picker */}
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <FieldLabel>3. Model Selection &amp; Failover</FieldLabel>
+                  <FieldLabel className="flex items-center gap-2 text-sm font-semibold">
+                    <LayersIcon className="size-4 text-primary" />
+                    3. Model Selection &amp; Failover
+                  </FieldLabel>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
@@ -609,7 +748,14 @@ export function AiSettingsForm({
                             : "bg-muted/40 hover:border-primary/40 hover:bg-muted",
                         )}
                       >
+                        <BotIcon className="size-3 opacity-80" />
                         <span>{m.label}</span>
+                        {m.vision && (
+                          <EyeIcon
+                            className="size-3 opacity-80"
+                            aria-label="Supports vision"
+                          />
+                        )}
                         {m.badge && (
                           <span
                             className={cn(
@@ -629,7 +775,8 @@ export function AiSettingsForm({
 
                 {fetchedModels.length > 0 && (
                   <div className="rounded-xl border bg-muted/25 p-3">
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">
+                    <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <CpuIcon className="size-3.5" />
                       Live models returned by {meta.label} (click to select):
                     </p>
                     <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
@@ -661,14 +808,21 @@ export function AiSettingsForm({
                         : "border-destructive/40 bg-destructive/[0.08] text-destructive",
                     )}
                   >
-                    {testResult.ok && <CheckCircle2Icon className="size-4 shrink-0" />}
+                    {testResult.ok ? (
+                      <CheckCircle2Icon className="size-4 shrink-0" />
+                    ) : (
+                      <AlertCircleIcon className="size-4 shrink-0" />
+                    )}
                     <span>{testResult.message}</span>
                   </div>
                 )}
 
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field>
-                    <FieldLabel htmlFor="primary_model">Primary Agent Model ID</FieldLabel>
+                    <FieldLabel htmlFor="primary_model" className="flex items-center gap-1.5">
+                      <BotIcon className="size-3.5 text-primary" />
+                      Primary Agent Model ID
+                    </FieldLabel>
                     <Input
                       id="primary_model"
                       value={primaryModel}
@@ -682,7 +836,8 @@ export function AiSettingsForm({
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="fallback_model">
+                    <FieldLabel htmlFor="fallback_model" className="flex items-center gap-1.5">
+                      <GitBranchIcon className="size-3.5 text-muted-foreground" />
                       Fallback / Bulk Copy Worker Model (Optional)
                     </FieldLabel>
                     <Input
@@ -702,27 +857,12 @@ export function AiSettingsForm({
 
               {/* 5. Token Budget, Reasoning & Safety */}
               <div className="space-y-4">
-                <FieldLabel>4. Rate-Limit Budget, Reasoning &amp; Safety</FieldLabel>
+                <FieldLabel className="flex items-center gap-2 text-sm font-semibold">
+                  <GaugeIcon className="size-4 text-primary" />
+                  4. Rate-Limit Budget, Reasoning &amp; Safety
+                </FieldLabel>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  {(
-                    [
-                      [
-                        "economy",
-                        "Economy (8k TPM Safe)",
-                        "Compact payloads & short history — ideal for free Groq / free tiers.",
-                      ],
-                      [
-                        "standard",
-                        "Standard",
-                        "Balanced context window (up to 4 tool steps & 30 rows per query).",
-                      ],
-                      [
-                        "high",
-                        "High-Context (Paid API)",
-                        "Full catalog slices & up to 6 chained agent steps for paid keys.",
-                      ],
-                    ] as const
-                  ).map(([id, title, desc]) => (
+                  {BUDGET_OPTIONS.map(({ id, title, desc, icon: BudgetIcon, iconTone }) => (
                     <button
                       key={id}
                       type="button"
@@ -735,17 +875,32 @@ export function AiSettingsForm({
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold">{title}</span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={cn(
+                              "flex size-6 shrink-0 items-center justify-center rounded-md",
+                              iconTone,
+                            )}
+                          >
+                            <BudgetIcon className="size-3.5" />
+                          </span>
+                          <span className="text-xs font-semibold">{title}</span>
+                        </div>
                         {budgetMode === id && <Badge variant="default">Active</Badge>}
                       </div>
-                      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{desc}</p>
+                      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+                        {desc}
+                      </p>
                     </button>
                   ))}
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field>
-                    <FieldLabel>Reasoning Effort (GPT OSS / o-series)</FieldLabel>
+                    <FieldLabel className="flex items-center gap-1.5">
+                      <BrainCircuitIcon className="size-3.5 text-muted-foreground" />
+                      Reasoning Effort (GPT OSS / o-series)
+                    </FieldLabel>
                     <div className="mt-1 flex gap-2">
                       {(["low", "medium", "high"] as const).map((lvl) => (
                         <button
@@ -766,7 +921,10 @@ export function AiSettingsForm({
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="ai_temperature">Temperature (0.0 – 1.0)</FieldLabel>
+                    <FieldLabel htmlFor="ai_temperature" className="flex items-center gap-1.5">
+                      <ThermometerIcon className="size-3.5 text-muted-foreground" />
+                      Temperature (0.0 – 1.0)
+                    </FieldLabel>
                     <Input
                       id="ai_temperature"
                       type="number"
@@ -781,12 +939,17 @@ export function AiSettingsForm({
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="flex items-center justify-between gap-3 rounded-xl border p-3.5">
-                    <div>
-                      <p className="text-xs font-semibold">Require Confirmation Preview</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        Always show an interactive &ldquo;Apply All&rdquo; preview before writing to
-                        Supabase.
-                      </p>
+                    <div className="flex items-start gap-2.5">
+                      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-600 dark:text-emerald-400">
+                        <ShieldCheckIcon className="size-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold">Require Confirmation Preview</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Always show an interactive &ldquo;Apply All&rdquo; preview before writing
+                          to Supabase.
+                        </p>
+                      </div>
                     </div>
                     <Switch
                       id="require_confirmation"
@@ -797,11 +960,16 @@ export function AiSettingsForm({
                   </div>
 
                   <div className="flex items-center justify-between gap-3 rounded-xl border p-3.5">
-                    <div>
-                      <p className="text-xs font-semibold">Model Supports Vision</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        Enable when using multimodal models (GPT-4.1/4o, Claude, Gemini, Llama 4).
-                      </p>
+                    <div className="flex items-start gap-2.5">
+                      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-500/12 text-sky-600 dark:text-sky-400">
+                        <EyeIcon className="size-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold">Model Supports Vision</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Enable when using multimodal models (GPT-4.1/4o, Claude, Gemini, Llama 4).
+                        </p>
+                      </div>
                     </div>
                     <Switch
                       id="vision_enabled"
@@ -817,10 +985,16 @@ export function AiSettingsForm({
 
               {/* 6. Brand Voice & Store Instructions */}
               <div className="space-y-4">
-                <FieldLabel>5. Store Brand Voice &amp; Custom Instructions</FieldLabel>
+                <FieldLabel className="flex items-center gap-2 text-sm font-semibold">
+                  <MegaphoneIcon className="size-4 text-primary" />
+                  5. Store Brand Voice &amp; Custom Instructions
+                </FieldLabel>
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field>
-                    <FieldLabel htmlFor="brand_tone">Brand Writing Tone</FieldLabel>
+                    <FieldLabel htmlFor="brand_tone" className="flex items-center gap-1.5">
+                      <PenToolIcon className="size-3.5 text-muted-foreground" />
+                      Brand Writing Tone
+                    </FieldLabel>
                     <Input
                       id="brand_tone"
                       maxLength={60}
@@ -830,7 +1004,10 @@ export function AiSettingsForm({
                     />
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="default_language">Default Output Language</FieldLabel>
+                    <FieldLabel htmlFor="default_language" className="flex items-center gap-1.5">
+                      <LanguagesIcon className="size-3.5 text-muted-foreground" />
+                      Default Output Language
+                    </FieldLabel>
                     <Input
                       id="default_language"
                       maxLength={60}
@@ -841,7 +1018,8 @@ export function AiSettingsForm({
                   </Field>
                 </div>
                 <Field>
-                  <FieldLabel htmlFor="system_instructions">
+                  <FieldLabel htmlFor="system_instructions" className="flex items-center gap-1.5">
+                    <ScrollTextIcon className="size-3.5 text-muted-foreground" />
                     Custom Store Rules / Instructions (Optional)
                   </FieldLabel>
                   <Textarea
@@ -857,16 +1035,18 @@ export function AiSettingsForm({
             </FieldGroup>
           </CardContent>
 
-          <CardFooter className="justify-between gap-3 border-t">
-            <Button type="submit" isPending={saving} isDisabled={saving}>
-              {saving && <Spinner />}
-              {saving ? "Saving…" : "Save AI settings"}
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              Press <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono">⌘K</kbd>{" "}
-              anywhere in admin to open the agent.
-            </span>
-          </CardFooter>
+          {!formId && (
+            <CardFooter className="justify-between gap-3 border-t">
+              <Button type="submit" isPending={saving} isDisabled={saving}>
+                {saving ? <Spinner /> : <SaveIcon />}
+                {saving ? "Saving…" : "Save changes"}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Press <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono">⌘K</kbd>{" "}
+                anywhere in admin to open the agent.
+              </span>
+            </CardFooter>
+          )}
         </Card>
       </form>
     </div>
