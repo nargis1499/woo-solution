@@ -20,7 +20,17 @@ const ALL = "all";
  * A pill change keeps the scroll position (the pills stay under the pointer); a page change
  * scrolls back to the top of the section, where the new page starts.
  */
-export function HomeProductFilter({ categories, products, manageStock }: { categories: Category[]; products: Product[]; manageStock: boolean }) {
+export function HomeProductFilter({
+  categories,
+  products,
+  manageStock,
+  canEdit = false,
+}: {
+  categories: Category[];
+  products: Product[];
+  manageStock: boolean;
+  canEdit?: boolean;
+}) {
   const [active, setActive] = useState<string>(ALL);
   const [requestedPage, setRequestedPage] = useState(1);
   const top = useRef<HTMLDivElement>(null);
@@ -80,7 +90,7 @@ export function HomeProductFilter({ categories, products, manageStock }: { categ
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {visible.map((product) => (
-            <ProductCard key={product.id} product={product} manageStock={manageStock} />
+            <ProductCard key={product.id} product={product} manageStock={manageStock} canEdit={canEdit} />
           ))}
         </div>
       )}

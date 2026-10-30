@@ -3,6 +3,7 @@ import type { HomeCategoryDisplayMode, Product } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isCurrentUserAdmin } from "@/lib/admin/auth";
 import { getSiteSettings } from "@/lib/site-settings";
 import { ProductCard } from "./product-card";
 import { ProductListCard } from "./product-list-card";
@@ -32,7 +33,12 @@ export async function ProductGrid({
     );
   }
 
-  const resolvedManageStock = manageStock ?? (await getSiteSettings()).manage_stock;
+  const [resolvedManageStock, canEdit] = await Promise.all([
+    manageStock !== undefined
+      ? Promise.resolve(manageStock)
+      : getSiteSettings().then((s) => s.manage_stock),
+    isCurrentUserAdmin(),
+  ]);
 
   if (layout === "list") {
     return (
@@ -43,6 +49,7 @@ export async function ProductGrid({
             product={product}
             priority={i < 3}
             manageStock={resolvedManageStock}
+            canEdit={canEdit}
           />
         ))}
       </div>
@@ -57,6 +64,7 @@ export async function ProductGrid({
           product={product}
           priority={i < 3}
           manageStock={resolvedManageStock}
+          canEdit={canEdit}
         />
       ))}
     </div>

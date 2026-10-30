@@ -67,5 +67,5 @@ export default async function DynamicPage({ params }: { params: Params }) {
   const { slug } = await params;
   const page = await load(slug);
   if (!page) notFound();
-  return <PageArticle page={page} />;
+  return <PageArticle page={page} editHref={`/nemesis/pages/${page.id}`} editLabel="Edit page" />;
 }

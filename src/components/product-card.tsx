@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ShoppingBagIcon, ZapIcon } from "lucide-react";
+import { PencilIcon, ShoppingBagIcon, ZapIcon } from "lucide-react";
 import type { Product } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
@@ -15,11 +15,13 @@ export function ProductCard({
   priority,
   manageStock = true,
   quickCheckout,
+  canEdit = false,
 }: {
   product: Product;
   priority?: boolean;
   manageStock?: boolean;
   quickCheckout?: boolean;
+  canEdit?: boolean;
 }) {
   const isQuickCheckout = quickCheckout ?? Boolean(product.quick_checkout);
   const onSale =
@@ -127,6 +129,18 @@ export function ProductCard({
             />
 
             <div className="flex shrink-0 items-center gap-2">
+              {canEdit && (
+                <Link
+                  href={`/nemesis/products/${product.id}`}
+                  prefetch={false}
+                  aria-label={`Edit ${product.name}`}
+                  title="Edit product"
+                  data-testid="admin-edit-product-button"
+                  className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-border/80 bg-background text-muted-foreground transition-all outline-none hover:border-primary/40 hover:bg-primary/10 hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  <PencilIcon className="size-4" aria-hidden />
+                </Link>
+              )}
               <WishlistButton product={product} />
               {product.type === "variable" ? (
                 <LinkButton

@@ -7,6 +7,7 @@ import {
   HeadphonesIcon,
   MinusIcon,
   PackageIcon,
+  PencilIcon,
   PlusIcon,
   ShoppingCartIcon,
   StarIcon,
@@ -27,6 +28,8 @@ export type SimpleProductBlockCardProps = {
   editorMode?: boolean;
   /** Storefront stock management flag (`woo_manage_stock`). */
   manageStock?: boolean;
+  /** Server-verified admin flag for showing a storefront Edit product link. */
+  canEdit?: boolean;
   /** Optional callback in editor mode to focus/open the right-side product selector. */
   onRequestSelectProduct?: () => void;
   className?: string;
@@ -42,6 +45,7 @@ export function SimpleProductBlockCard({
   product = null,
   editorMode = false,
   manageStock = true,
+  canEdit = false,
   className,
 }: SimpleProductBlockCardProps) {
   const money = useMoney();
@@ -319,36 +323,51 @@ export function SimpleProductBlockCard({
               </div>
 
               {/* Add to Cart Button */}
-              <button
-                type="button"
-                disabled={outOfStock}
-                data-testid="simple-product-add-to-cart"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAddToCart();
-                }}
-                aria-live="polite"
-                className={cn(
-                  "inline-flex h-10 items-center justify-center gap-2 rounded-xl px-5 text-xs font-bold tracking-wider uppercase shadow-sm transition-all sm:px-6 sm:text-sm",
-                  outOfStock
-                    ? "cursor-not-allowed border border-border bg-muted text-muted-foreground opacity-60"
-                    : "bg-primary text-primary-foreground hover:opacity-92 active:scale-[0.99]",
+              <div className="flex flex-wrap items-center gap-2.5">
+                {!editorMode && canEdit && product && (
+                  <Link
+                    href={`/nemesis/products/${product.id}`}
+                    prefetch={false}
+                    aria-label={`Edit ${name}`}
+                    title="Edit product"
+                    data-testid="admin-edit-product-button"
+                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-border bg-background/85 px-3.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                  >
+                    <PencilIcon className="size-3.5" aria-hidden />
+                    <span>Edit</span>
+                  </Link>
                 )}
-              >
-                {outOfStock ? (
-                  <span>OUT OF STOCK</span>
-                ) : added ? (
-                  <>
-                    <CheckIcon className="size-4" />
-                    <span>ADDED TO CART</span>
-                  </>
-                ) : (
-                  <>
-                    <ShoppingCartIcon className="size-4" />
-                    <span>{buttonText}</span>
-                  </>
-                )}
-              </button>
+                <button
+                  type="button"
+                  disabled={outOfStock}
+                  data-testid="simple-product-add-to-cart"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleAddToCart();
+                  }}
+                  aria-live="polite"
+                  className={cn(
+                    "inline-flex h-10 items-center justify-center gap-2 rounded-xl px-5 text-xs font-bold tracking-wider uppercase shadow-sm transition-all sm:px-6 sm:text-sm",
+                    outOfStock
+                      ? "cursor-not-allowed border border-border bg-muted text-muted-foreground opacity-60"
+                      : "bg-primary text-primary-foreground hover:opacity-92 active:scale-[0.99]",
+                  )}
+                >
+                  {outOfStock ? (
+                    <span>OUT OF STOCK</span>
+                  ) : added ? (
+                    <>
+                      <CheckIcon className="size-4" />
+                      <span>ADDED TO CART</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingCartIcon className="size-4" />
+                      <span>{buttonText}</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

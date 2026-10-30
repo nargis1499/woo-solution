@@ -39,6 +39,6 @@ export default async function BlogPostPage({ params }: { params: Params }) {
   const structuredData = base ? { "@context": "https://schema.org", "@type": "BlogPosting", headline: post.title, description: post.excerpt ?? undefined, datePublished: post.published_at ?? post.created_at, dateModified: post.updated_at, mainEntityOfPage: `${base}/blog/${post.slug}`, image: heroImage?.src ? [heroImage.src] : undefined, author: post.author?.full_name ? { "@type": "Person", name: post.author.full_name } : { "@type": "Organization", name: settings.store_name }, publisher: { "@type": "Organization", name: settings.store_name } } : null;
   return <>
     {structuredData && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />}
-    <BlogPostArticle post={post} />
+    <BlogPostArticle post={post} editHref={`/nemesis/posts/${post.id}`} editLabel="Edit post" />
   </>;
 }

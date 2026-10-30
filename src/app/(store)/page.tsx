@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { CATEGORY_ICON_BY_ID, DEFAULT_CATEGORY_ICON } from "@/lib/category-icons";
+import { isCurrentUserAdmin } from "@/lib/admin/auth";
 import { getCategories, getProducts } from "@/lib/data/products";
 import { FREE_SHIPPING_THRESHOLD_MICROS } from "@/lib/config";
 import {
@@ -370,16 +371,18 @@ async function CategoryProductSections() {
 }
 
 async function FilteredProducts() {
-  const [categories, products, { manage_stock }] = await Promise.all([
+  const [categories, products, { manage_stock }, canEdit] = await Promise.all([
     getCategories(),
     getProducts(),
     getSiteSettings(),
+    isCurrentUserAdmin(),
   ]);
   return (
     <HomeProductFilter
       categories={categories}
       products={products}
       manageStock={manage_stock}
+      canEdit={canEdit}
     />
   );
 }

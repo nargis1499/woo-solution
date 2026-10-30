@@ -7,6 +7,7 @@ import { featuredImage } from "@/lib/pages/shared";
 import { postHref } from "@/lib/posts/shared";
 import { formatDate } from "@/lib/format";
 import { getSiteSettings, resolveSiteUrl } from "@/lib/site-settings";
+import { AdminEditButton } from "@/components/admin-edit-button";
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
@@ -44,7 +45,10 @@ export default async function BlogIndexPage() {
             </div>
             <h2 className="text-xl font-semibold leading-snug tracking-tight"><Link href={postHref(post.slug)} className="hover:text-primary">{post.title}</Link></h2>
             <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">{post.excerpt || "Read the latest from our blog."}</p>
-            <Link href={postHref(post.slug)} className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-semibold text-primary">Read article <ArrowRightIcon className="size-4 transition-transform group-hover:translate-x-1" /></Link>
+            <div className="mt-auto flex items-center justify-between gap-3 pt-5">
+              <Link href={postHref(post.slug)} className="inline-flex items-center gap-2 text-sm font-semibold text-primary">Read article <ArrowRightIcon className="size-4 transition-transform group-hover:translate-x-1" /></Link>
+              <AdminEditButton href={`/nemesis/posts/${post.id}`} label="Edit" ariaLabel={`Edit "${post.title}"`} size="xs" />
+            </div>
           </div>
         </article>;
       })}
