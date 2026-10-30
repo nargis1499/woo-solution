@@ -23,6 +23,11 @@ export type AiProductStatusMutation = {
   productId: string;
   isActive?: boolean;
   isFeatured?: boolean;
+  newStock?: number;
+  variationStockUpdates?: Array<{
+    variationId: string;
+    newStock: number;
+  }>;
 };
 
 export type AiSeoFixMutation =
@@ -86,6 +91,72 @@ export type AiActionPlan = {
   items: AiActionPlanItem[];
 };
 
+export type AiInventoryWidgetItem = {
+  id: string;
+  name: string;
+  category: string | null;
+  price: string;
+  compareAtPrice?: string | null;
+  stock: number;
+  status: "active" | "draft";
+  imageUrl?: string | null;
+};
+
+export type AiInventoryWidget = {
+  id: string;
+  kind: "inventory";
+  title: string;
+  matchedCount: number;
+  attentionCount: number;
+  items: AiInventoryWidgetItem[];
+};
+
+export type AiAnalyticsWidget = {
+  id: string;
+  kind: "analytics";
+  windowDays: number;
+  revenueWindow: string;
+  ordersInWindow: number;
+  revenue30d: string;
+  revenueAllTime: string;
+  ordersByStatus: {
+    pending: number;
+    processing: number;
+    completed: number;
+    cancelled: number;
+  };
+  catalogHealth: {
+    totalProducts: number;
+    activeProducts: number;
+    draftProducts: number;
+    activeOutOfStock: number;
+    activeLowStockUpTo3: number;
+  };
+  topProducts: Array<{
+    name: string;
+    unitsSold: number;
+    revenue: string;
+  }>;
+  pendingOrders: Array<{
+    orderNumber: string;
+    customer: string;
+    total: string;
+    paymentStatus: string;
+    createdAt: string;
+  }>;
+};
+
+export type AiSeoHealthyWidget = {
+  id: string;
+  kind: "seo_healthy";
+  scope: string;
+};
+
+export type AiUiWidget =
+  | AiInventoryWidget
+  | AiAnalyticsWidget
+  | AiSeoHealthyWidget;
+
 export type AiChatHistoryItem = {
   role: "user" | "assistant";
   content: string;
@@ -95,6 +166,7 @@ export type AiAgentTurnResponse = {
   reply: string;
   toolBadges: AiToolBadge[];
   plans: AiActionPlan[];
+  widgets?: AiUiWidget[];
   provider: AiProviderId;
   modelUsed: string;
   usedFallback: boolean;

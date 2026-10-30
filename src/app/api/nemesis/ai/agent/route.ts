@@ -18,6 +18,7 @@ import type {
   AiAgentTurnResponse,
   AiChatHistoryItem,
   AiToolBadge,
+  AiUiWidget,
 } from "@/lib/ai/types";
 
 export const maxDuration = 60;
@@ -88,6 +89,7 @@ export async function POST(request: Request) {
       const toolResults: Array<{ toolCallId: string; name: string; content: string }> = [];
       const badges: AiToolBadge[] = [];
       const plans: AiActionPlan[] = [];
+      const widgets: AiUiWidget[] = [];
 
       for (const tc of body.toolCalls ?? []) {
         const out = await executeAgentToolCall({
@@ -104,6 +106,7 @@ export async function POST(request: Request) {
         });
         badges.push(out.badge);
         if (out.plan) plans.push(out.plan);
+        if (out.widget) widgets.push(out.widget);
       }
 
       if (!aiSettings.require_confirmation && plans.length > 0) {
@@ -121,6 +124,7 @@ export async function POST(request: Request) {
         toolResults,
         badges,
         plans,
+        widgets,
       });
     }
 
@@ -162,6 +166,7 @@ export async function POST(request: Request) {
 
     const toolBadges: AiToolBadge[] = [];
     const plans: AiActionPlan[] = [];
+    const widgets: AiUiWidget[] = [];
     let totalTokensUsed = 0;
     let lastModelUsed = aiSettings.primary_model;
     let anyFallback = false;
@@ -209,6 +214,7 @@ export async function POST(request: Request) {
         });
         toolBadges.push(exec.badge);
         if (exec.plan) plans.push(exec.plan);
+        if (exec.widget) widgets.push(exec.widget);
         messages.push({
           role: "tool",
           toolCallId: tc.id,
@@ -243,6 +249,7 @@ export async function POST(request: Request) {
       reply: finalReply,
       toolBadges,
       plans,
+      widgets,
       provider: aiSettings.provider,
       modelUsed: lastModelUsed,
       usedFallback: anyFallback,

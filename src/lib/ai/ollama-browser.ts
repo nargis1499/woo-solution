@@ -4,6 +4,7 @@ import type {
   AiAgentTurnResponse,
   AiChatHistoryItem,
   AiToolBadge,
+  AiUiWidget,
 } from "@/lib/ai/types";
 
 const PROMPT_TOOLS_CACHE_KEY = "nemesis_ollama_use_prompt_tools";
@@ -352,6 +353,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
 
   const toolBadges: AiToolBadge[] = [];
   const plans: AiActionPlan[] = [];
+  const widgets: AiUiWidget[] = [];
   let totalTokens = 0;
   let finalReply = "";
 
@@ -440,6 +442,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
       toolResults: Array<{ toolCallId: string; name: string; content: string }>;
       badges: AiToolBadge[];
       plans: AiActionPlan[];
+      widgets?: AiUiWidget[];
     };
     if (!execJson.ok) {
       throw new Error(execJson.error || "Failed to execute store tool call.");
@@ -447,6 +450,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
 
     toolBadges.push(...execJson.badges);
     plans.push(...execJson.plans);
+    if (execJson.widgets) widgets.push(...execJson.widgets);
     for (const tr of execJson.toolResults) {
       if (rawNativeCalls.length > 0 && !usePromptMode) {
         wireMessages.push({
@@ -467,10 +471,11 @@ export async function runBrowserOllamaAgentTurn(opts: {
     reply:
       finalReply ||
       (plans.length > 0
-        ? "Preview ready below — review the items and click Apply All."
-        : "Completed."),
+        ? "Let me know if you'd like to adjust any selections before applying!"
+        : "Let me know if you'd like to adjust any catalog details!"),
     toolBadges,
     plans,
+    widgets,
     provider: "ollama",
     modelUsed: prepJson.model,
     usedFallback: false,

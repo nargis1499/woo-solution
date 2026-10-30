@@ -19,6 +19,7 @@ import type {
   AiActionPlan,
   AiActionPlanItem,
   AiToolBadge,
+  AiUiWidget,
 } from "@/lib/ai/types";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -106,7 +107,7 @@ export const AGENT_TOOLS: AiToolSpec[] = [
   {
     name: "preview_product_status_update",
     description:
-      "Prepare a confirmation preview to move matching products (e.g. out-of-stock items in a category) into draft (hidden) or active (published) state, or toggle featured status.",
+      "Prepare a confirmation preview to move matching products (e.g. out-of-stock items in a category) into draft (hidden) or active (published) state, toggle featured status, or restock/set stock quantity.",
     parameters: {
       type: "object",
       properties: {
@@ -134,6 +135,10 @@ export const AGENT_TOOLS: AiToolSpec[] = [
         isFeatured: {
           type: "boolean",
           description: "Optional flag to mark/unmark matched products as featured.",
+        },
+        newStock: {
+          type: "number",
+          description: "Optional stock quantity to set/restock on matched products (e.g. 50).",
         },
       },
     },
@@ -229,10 +234,10 @@ export function buildAgentSystemPrompt(
     `Available categories (Name (slug)): ${catList}.`,
     `Brand tone: ${aiSettings.brand_tone}. Respond in ${aiSettings.default_language}.`,
     `Rules:`,
-    `1. Always use the provided tools for live store numbers, inventory checks, discounts, status updates, order updates, and SEO audits. Never guess IDs or prices.`,
+    `1. Always use the provided tools for live store numbers, inventory checks, discounts, status/stock updates, order updates, and SEO audits. Never guess IDs or prices.`,
     `2. Map user category mentions (e.g. "mobile", "headphones", "accessories") to the closest slug from Available categories above.`,
-    `3. Write tools create a safe Confirmation Preview Card automatically—tell the admin clearly that the preview is ready below and they can click "Apply All" to commit changes.`,
-    `4. Keep responses concise, scannable, and helpful (use short bullet points when listing items).${customNote}`,
+    `3. Write tools automatically render an interactive Confirmation Preview table, and read tools (query_inventory, get_store_analytics) automatically render rich dashboard UI cards in the chat.`,
+    `4. Because those structured UI cards are already shown to the admin, do NOT repeat item-by-item markdown lists or raw tables—instead write a brief, natural 1–2 sentence summary or insight and offer the next step.${customNote}`,
   ].join("\n");
 }
 
@@ -341,6 +346,7 @@ export async function executeAgentToolCall(opts: {
   toolOutputJson: string;
   badge: AiToolBadge;
   plan?: AiActionPlan;
+  widget?: AiUiWidget;
 }> {
   await assertAdmin();
   const { call, aiSettings, store, money } = opts;
@@ -453,6 +459,11 @@ export async function executeAgentToolCall(opts: {
         name: call.name,
         summary: `get_store_analytics(${days}d)`,
       },
+      widget: {
+        id: `w_analytics_${call.id}`,
+        kind: "analytics",
+        ...payload,
+      },
     };
   }
 
@@ -498,8 +509,38 @@ export async function executeAgentToolCall(opts: {
         ? formatMoney(p.compare_at_price_micros, money)
         : null,
       stock: effectiveProductStock(p),
-      status: p.is_active ? "active" : "draft",
+      status: p.is_active ? ("active" as const) : ("draft" as const),
     }));
+
+    const widgetItems = matched.slice(0, Math.min(maxRows, 16)).map((p) => ({
+      id: p.id,
+      name: p.name,
+      category: p.category?.name ?? null,
+      price: formatMoney(p.price_micros, money),
+      compareAtPrice: p.compare_at_price_micros
+        ? formatMoney(p.compare_at_price_micros, money)
+        : null,
+      stock: effectiveProductStock(p),
+      status: p.is_active ? ("active" as const) : ("draft" as const),
+      imageUrl: p.image_media?.path ? mediaUrl(p.image_media.path) : p.image_url,
+    }));
+
+    const attentionCount = matched.filter((p) => effectiveProductStock(p) <= 3).length;
+    const statusPrefix =
+      statusFilter === "active"
+        ? "Active Products"
+        : statusFilter === "draft"
+          ? "Draft Products"
+          : "Products";
+    const widgetTitle = outOfStockOnly
+      ? `${statusPrefix} Out of Stock (0)`
+      : maxStock !== null
+        ? `${statusPrefix} with Low/Zero Stock (≤ ${maxStock})`
+        : cat
+          ? `${statusPrefix} in ${cat.name}`
+          : search
+            ? `${statusPrefix} Matching "${search}"`
+            : `${statusPrefix} Inventory Snapshot`;
 
     const parts = [
       cat ? cat.slug : "all",
@@ -517,6 +558,14 @@ export async function executeAgentToolCall(opts: {
         id: call.id,
         name: call.name,
         summary: `query_inventory(${parts.join(", ")})`,
+      },
+      widget: {
+        id: `w_inv_${call.id}`,
+        kind: "inventory",
+        title: widgetTitle,
+        matchedCount: matched.length,
+        attentionCount,
+        items: widgetItems,
       },
     };
   }
@@ -647,7 +696,7 @@ export async function executeAgentToolCall(opts: {
     };
   }
 
-  /* 4. Preview Product Status / Draft / Featured Update */
+  /* 4. Preview Product Status / Draft / Featured / Stock Update */
   if (call.name === "preview_product_status_update") {
     const cat = resolveCategoryMatch(store.categories, call.arguments.categorySlug);
     const outOfStockOnly = call.arguments.outOfStockOnly === true;
@@ -663,6 +712,10 @@ export async function executeAgentToolCall(opts: {
         : undefined;
     const isFeatured =
       typeof call.arguments.isFeatured === "boolean" ? call.arguments.isFeatured : undefined;
+    const newStock =
+      typeof call.arguments.newStock === "number" && Number.isFinite(call.arguments.newStock)
+        ? Math.max(0, Math.min(100_000, Math.round(call.arguments.newStock)))
+        : undefined;
 
     const products = await fetchAdminProductsForTools();
     const matched = products.filter((p) => {
@@ -678,9 +731,25 @@ export async function executeAgentToolCall(opts: {
       ) {
         return false;
       }
-      if (targetStatus === "draft" && !p.is_active && isFeatured === undefined) return false;
-      if (targetStatus === "active" && p.is_active && isFeatured === undefined) return false;
-      return Boolean(cat || outOfStockOnly || maxStock !== null || search);
+      if (
+        targetStatus === "draft" &&
+        !p.is_active &&
+        isFeatured === undefined &&
+        newStock === undefined
+      ) {
+        return false;
+      }
+      if (
+        targetStatus === "active" &&
+        p.is_active &&
+        isFeatured === undefined &&
+        newStock === undefined
+      ) {
+        return false;
+      }
+      return Boolean(
+        cat || outOfStockOnly || maxStock !== null || search || newStock !== undefined,
+      );
     });
 
     const items: AiActionPlanItem[] = matched.map((p) => {
@@ -688,15 +757,28 @@ export async function executeAgentToolCall(opts: {
       const thumbUrl = p.image_media?.path ? mediaUrl(p.image_media.path) : p.image_url;
       const nextActive =
         targetStatus === "draft" ? false : targetStatus === "active" ? true : undefined;
-      const oldLabel = p.is_active ? "Active" : "Draft";
+      const oldLabel =
+        newStock !== undefined && nextActive === undefined
+          ? `${stock} in stock`
+          : p.is_active
+            ? "Active"
+            : "Draft";
       const newLabel =
-        nextActive !== undefined
-          ? nextActive
-            ? "Active (Published)"
-            : "Draft (Hidden)"
-          : isFeatured
-            ? "Featured"
-            : "Unfeatured";
+        newStock !== undefined && nextActive === undefined
+          ? `${newStock} in stock`
+          : nextActive !== undefined
+            ? `${nextActive ? "Active (Published)" : "Draft (Hidden)"}${newStock !== undefined ? ` · ${newStock} stock` : ""}`
+            : isFeatured
+              ? "Featured"
+              : "Unfeatured";
+
+      const variationStockUpdates =
+        newStock !== undefined && p.type === "variable" && p.variations?.length
+          ? p.variations.map((v) => ({
+              variationId: v.id,
+              newStock,
+            }))
+          : undefined;
 
       return {
         id: `status_${p.id}`,
@@ -711,26 +793,50 @@ export async function executeAgentToolCall(opts: {
           productId: p.id,
           ...(nextActive !== undefined ? { isActive: nextActive } : {}),
           ...(isFeatured !== undefined ? { isFeatured } : {}),
+          ...(newStock !== undefined ? { newStock } : {}),
+          ...(variationStockUpdates ? { variationStockUpdates } : {}),
         },
       };
     });
+
+    const actionHeading =
+      newStock !== undefined && targetStatus === undefined
+        ? `Restock ${items.length} ${items.length === 1 ? "Product" : "Products"} → ${newStock} Units`
+        : targetStatus === "draft"
+          ? `Draft Update Pending Approval`
+          : targetStatus === "active"
+            ? `Publish ${items.length} ${items.length === 1 ? "Product" : "Products"} → Active`
+            : `Update ${items.length} ${items.length === 1 ? "Product" : "Products"}`;
+
+    const actionDesc =
+      newStock !== undefined && targetStatus === undefined
+        ? `${items.length} ${items.length === 1 ? "item" : "items"} will have stock updated to ${newStock} units.`
+        : targetStatus === "draft"
+          ? `${items.length} matched ${items.length === 1 ? "item" : "items"} will be moved to hidden draft status.`
+          : "Review the matched products below and click Apply All Changes to commit.";
 
     const plan: AiActionPlan | undefined =
       items.length > 0
         ? {
             id: `plan_status_${Date.now()}`,
-            title: `Update ${items.length} ${items.length === 1 ? "Product" : "Products"} → ${targetStatus === "draft" ? "Draft" : targetStatus === "active" ? "Active" : "Updated"}`,
-            description: "Review the matched products below and click Apply All to update catalog visibility.",
-            applyLabel: `Apply All (${items.length})`,
+            title: actionHeading,
+            description: actionDesc,
+            applyLabel: `Apply All Changes`,
             items,
           }
         : undefined;
+
+    const summaryArgs = [
+      cat?.slug ?? "catalog",
+      targetStatus ?? (newStock !== undefined ? `stock=${newStock}` : "featured"),
+    ].join(", ");
 
     return {
       toolOutputJson: JSON.stringify({
         status: items.length > 0 ? "preview_ready" : "no_matching_products",
         matchedCount: items.length,
         targetStatus: targetStatus ?? null,
+        newStock: newStock ?? null,
         items: items.slice(0, 12).map((i) => ({
           name: i.title,
           change: `${i.oldValueLabel} -> ${i.newValueLabel}`,
@@ -740,7 +846,7 @@ export async function executeAgentToolCall(opts: {
       badge: {
         id: call.id,
         name: call.name,
-        summary: `preview_product_status_update(${cat?.slug ?? "catalog"}, ${targetStatus ?? "featured"})`,
+        summary: `preview_product_status_update(${summaryArgs})`,
       },
       plan,
     };
@@ -1058,6 +1164,14 @@ export async function executeAgentToolCall(opts: {
         summary: `audit_and_fix_seo(${scope}, ${totalIssues} found)`,
       },
       plan,
+      widget:
+        items.length === 0
+          ? {
+              id: `w_seo_${call.id}`,
+              kind: "seo_healthy",
+              scope,
+            }
+          : undefined,
     };
   }
 
@@ -1190,8 +1304,17 @@ export async function executeApprovedPlan(opts: {
         };
         if (typeof m.isActive === "boolean") patch.is_active = m.isActive;
         if (typeof m.isFeatured === "boolean") patch.is_featured = m.isFeatured;
+        if (typeof m.newStock === "number") patch.stock = Math.max(0, Math.round(m.newStock));
         const { error } = await supabase.from("products").update(patch).eq("id", m.productId);
         if (error) throw new Error(error.message);
+
+        for (const vu of m.variationStockUpdates ?? []) {
+          if (!UUID_RE.test(vu.variationId)) continue;
+          await supabase
+            .from("product_variations")
+            .update({ stock: Math.max(0, Math.round(vu.newStock)) })
+            .eq("id", vu.variationId);
+        }
         appliedCount++;
       } else if (m.kind === "seo_product") {
         if (!UUID_RE.test(m.productId)) continue;
