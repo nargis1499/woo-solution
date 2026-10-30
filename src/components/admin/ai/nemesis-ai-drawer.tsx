@@ -23,6 +23,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { needsContentPreviewRepair } from "@/lib/ai/content-fields";
 import { AI_PROVIDERS } from "@/lib/ai/providers";
 import { runBrowserOllamaAgentTurn } from "@/lib/ai/ollama-browser";
 import type {
@@ -60,6 +61,7 @@ type ChatEntry =
       modelUsed: string;
       usedFallback: boolean;
       tokensUsed: number;
+      needsApprovalPreview?: boolean;
     };
 
 type QuickPromptAction = {
@@ -246,6 +248,13 @@ export function NemesisAiDrawer() {
         modelUsed: data.modelUsed,
         usedFallback: data.usedFallback,
         tokensUsed: data.rateLimit.usedTokensThisTurn,
+        // Recovery is only relevant to a content draft, never ordinary chat,
+        // read-only results, existing approval cards, or completed write tools.
+        needsApprovalPreview:
+          needsContentPreviewRepair(prompt, data.reply) &&
+          data.plans.length === 0 &&
+          (data.widgets?.length ?? 0) === 0 &&
+          data.toolBadges.every((badge) => badge.name === "query_content"),
       };
       setEntries((prev) => [...prev, assistantEntry]);
 
@@ -500,9 +509,9 @@ export function NemesisAiDrawer() {
                 )}
 
                 {/* Recovery when a model replies with copy instead of invoking a write tool. */}
-                {entry.id === lastAssistantId && !running && entry.content && entry.plans.length === 0 && entry.widgets.length === 0 && (
+                {entry.id === lastAssistantId && !running && entry.needsApprovalPreview && (
                   <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-xs">
-                    <p className="mb-2 text-muted-foreground">No pending changes to apply. If this response contains copy you want to save, prepare an approval preview first.</p>
+                    <p className="mb-2 text-muted-foreground">This draft hasn’t been saved. Prepare an approval preview to review and apply it.</p>
                     <button
                       type="button"
                       onClick={() => void submitPrompt(`Prepare an approval preview for the store content proposed in your last response. Use query_content to identify and read the exact target, then preview_content_update with the proposed copy. Do not save yet or only repeat the copy. If the target or field is unclear, ask me to choose. Use other preview tools for non-content edits.`)}
@@ -783,66 +792,6 @@ function ActionPlanPreviewCard({
         )}
       />
 
-      {/* Card Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-2.5">
-          <div
-            className={cn(
-              "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border",
-              status === "applied"
-                ? "border-emerald-500/25 bg-emerald-500/12 text-emerald-600 dark:text-emerald-400"
-                : "border-amber-500/25 bg-amber-500/12 text-amber-600 dark:text-amber-400",
-            )}
-          >
-            <FileTextIcon className="size-4" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">{plan.description}</p>
-          </div>
-        </div>
-
-        {/* Top-Right Approval Action */}
-        {status === "applied" ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2Icon className="size-3.5" />
-            Applied ({appliedCount})
-          </span>
-        ) : status === "cancelled" ? (
-          <span className="rounded-lg border bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-            Dismissed
-          </span>
-        ) : (
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              disabled={status === "applying"}
-              onClick={() => setStatus("cancelled")}
-              className="cursor-pointer rounded-lg border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={selectedIds.size === 0 || status === "applying"}
-              onClick={() => void handleApply()}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-950 shadow-xs transition-all hover:bg-amber-400 disabled:pointer-events-none disabled:opacity-50"
-            >
-              {status === "applying" ? (
-                <Spinner className="size-3.5 text-slate-950" />
-              ) : (
-                <CheckIcon className="size-3.5 stroke-[2.5]" />
-              )}
-              {status === "applying"
-                ? "Applying…"
-                : selectedIds.size === plan.items.length
-                  ? plan.applyLabel || "Apply All Changes"
-                  : `Apply (${selectedIds.size})`}
-            </button>
-          </div>
-        )}
-      </div>
-
       {/* Structured 12-Column Table of Changes */}
       <div className="overflow-hidden rounded-lg border bg-muted/15 text-xs">
         <div className="grid grid-cols-12 items-center border-b bg-muted/45 px-3 py-2 text-[11px] font-medium text-muted-foreground">
@@ -938,6 +887,73 @@ function ActionPlanPreviewCard({
           })}
         </div>
       </div>
+
+      {/* Review summary and approval controls follow the copy, aligned bottom-right. */}
+      <div className="flex flex-col items-end gap-3 border-t pt-3.5 text-right">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <div
+            className={cn(
+              "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border",
+              status === "applied"
+                ? "border-emerald-500/25 bg-emerald-500/12 text-emerald-600 dark:text-emerald-400"
+                : "border-amber-500/25 bg-amber-500/12 text-amber-600 dark:text-amber-400",
+            )}
+          >
+            <FileTextIcon className="size-4" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {status === "applied"
+                ? "Your selected changes have been saved."
+                : status === "cancelled"
+                  ? "This preview was dismissed. No changes were saved from it."
+                  : plan.description}
+            </p>
+          </div>
+        </div>
+
+        {/* Bottom-right approval action / result */}
+        {status === "applied" ? (
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2Icon className="size-3.5" />
+            Applied ({appliedCount})
+          </span>
+        ) : status === "cancelled" ? (
+          <span className="rounded-lg border bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+            Dismissed
+          </span>
+        ) : (
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              disabled={status === "applying"}
+              onClick={() => setStatus("cancelled")}
+              className="cursor-pointer rounded-lg border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={selectedIds.size === 0 || status === "applying"}
+              onClick={() => void handleApply()}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-950 shadow-xs transition-all hover:bg-amber-400 disabled:pointer-events-none disabled:opacity-50"
+            >
+              {status === "applying" ? (
+                <Spinner className="size-3.5 text-slate-950" />
+              ) : (
+                <CheckIcon className="size-3.5 stroke-[2.5]" />
+              )}
+              {status === "applying"
+                ? "Applying…"
+                : selectedIds.size === plan.items.length
+                  ? plan.applyLabel || "Apply All Changes"
+                  : `Apply (${selectedIds.size})`}
+            </button>
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
