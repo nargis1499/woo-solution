@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ComponentType } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowRightIcon,
   ArrowUpIcon,
@@ -159,6 +159,7 @@ function getFollowUpActions(entry: Extract<ChatEntry, { role: "assistant" }>): Q
 
 export function NemesisAiDrawer() {
   const router = useRouter();
+  const currentPath = usePathname();
   const { open, setOpen, promptInput: input, setPromptInput: setInput, aiSettings } = useNemesisAi();
 
   const [entries, setEntries] = useState<ChatEntry[]>([]);
@@ -210,12 +211,12 @@ export function NemesisAiDrawer() {
     try {
       let data: AiAgentTurnResponse;
       if (isBrowserOllama) {
-        data = await runBrowserOllamaAgentTurn({ prompt, history });
+        data = await runBrowserOllamaAgentTurn({ prompt, history, currentPath });
       } else {
         const res = await fetch("/api/nemesis/ai/agent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phase: "run", prompt, history }),
+          body: JSON.stringify({ phase: "run", prompt, history, currentPath }),
         });
         const json = (await res.json()) as {
           ok: boolean;
@@ -498,6 +499,20 @@ export function NemesisAiDrawer() {
                   />
                 )}
 
+                {/* Recovery when a model replies with copy instead of invoking a write tool. */}
+                {entry.id === lastAssistantId && !running && entry.content && entry.plans.length === 0 && entry.widgets.length === 0 && (
+                  <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-xs">
+                    <p className="mb-2 text-muted-foreground">No pending changes to apply. If this response contains copy you want to save, prepare an approval preview first.</p>
+                    <button
+                      type="button"
+                      onClick={() => void submitPrompt(`Prepare an approval preview for the store content proposed in your last response. Use query_content to identify and read the exact target, then preview_content_update with the proposed copy. Do not save yet or only repeat the copy. If the target or field is unclear, ask me to choose. Use other preview tools for non-content edits.`)}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 font-medium text-foreground hover:bg-muted"
+                    >
+                      <FileTextIcon className="size-3.5" /> Prepare changes for approval
+                    </button>
+                  </div>
+                )}
+
                 {/* 5. Contextual Follow-Up Quick Actions on Latest Turn */}
                 {entry.id === lastAssistantId && !running && entry.toolBadges.length > 0 && (
                   <div className="flex flex-wrap gap-2 pt-0.5">
@@ -725,6 +740,9 @@ function ActionPlanPreviewCard({
         throw new Error(json.error || "Failed to apply changes.");
       }
       const count = json.appliedCount ?? 0;
+      if (count === 0) {
+        throw new Error(json.errors?.[0] || "No changes were applied. Generate a fresh preview and try again.");
+      }
       setAppliedCount(count);
       setStatus("applied");
       toast.success(`Applied ${count} ${count === 1 ? "change" : "changes"} to your store.`);
@@ -818,7 +836,7 @@ function ActionPlanPreviewCard({
               {status === "applying"
                 ? "Applying…"
                 : selectedIds.size === plan.items.length
-                  ? "Apply All Changes"
+                  ? plan.applyLabel || "Apply All Changes"
                   : `Apply (${selectedIds.size})`}
             </button>
           </div>
@@ -899,7 +917,18 @@ function ActionPlanPreviewCard({
                   </div>
                 </div>
 
-                {item.detailText && (
+                {item.mutation.kind === "content_update" ? (
+                  <div className="mt-3 space-y-2 text-xs">
+                    <details className="rounded-lg border bg-muted/30 p-2.5">
+                      <summary className="cursor-pointer font-medium text-muted-foreground">Current copy</summary>
+                      <p className="mt-2 whitespace-pre-wrap break-words text-foreground/80">{item.mutation.previousValue || "(empty)"}</p>
+                    </details>
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+                      <p className="mb-2 font-semibold text-primary">Proposed replacement</p>
+                      <p className="whitespace-pre-wrap break-words leading-relaxed text-foreground">{item.mutation.value}</p>
+                    </div>
+                  </div>
+                ) : item.detailText && (
                   <p className="mt-2 rounded-md border bg-muted/40 px-2.5 py-1.5 text-[11px] leading-relaxed text-foreground/90">
                     {item.detailText}
                   </p>

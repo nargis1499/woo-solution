@@ -1,3 +1,4 @@
+import { CONTENT_PREVIEW_REPAIR, needsContentPreviewRepair } from "@/lib/ai/content-fields";
 import type { AiToolCall, AiToolSpec } from "@/lib/ai/client";
 import type {
   AiActionPlan,
@@ -307,12 +308,13 @@ export async function testBrowserOllamaConnection(opts: {
 
 export async function runBrowserOllamaAgentTurn(opts: {
   prompt: string;
+  currentPath?: string;
   history: AiChatHistoryItem[];
 }): Promise<AiAgentTurnResponse> {
   const prepRes = await fetch("/api/nemesis/ai/agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phase: "ollama_prepare" }),
+    body: JSON.stringify({ phase: "ollama_prepare", currentPath: opts.currentPath }),
   });
   const prepJson = (await prepRes.json()) as {
     ok: boolean;
@@ -356,6 +358,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
   const widgets: AiUiWidget[] = [];
   let totalTokens = 0;
   let finalReply = "";
+  let repairedContentPreview = false;
 
   for (let round = 0; round <= 3; round++) {
     let turnResult: Awaited<ReturnType<typeof postOllamaChatWithRecovery>>;
@@ -406,6 +409,14 @@ export async function runBrowserOllamaAgentTurn(opts: {
 
     if (parsedCalls.length === 0 && round < 3) {
       parsedCalls = parsePromptToolCalls(content, round);
+    }
+
+    if (parsedCalls.length === 0 && round < 3 && plans.length === 0 && !repairedContentPreview && needsContentPreviewRepair(opts.prompt, content)) {
+      repairedContentPreview = true;
+      wireMessages.push({ role: "assistant", content });
+      wireMessages.push({ role: "user", content: CONTENT_PREVIEW_REPAIR });
+      round--;
+      continue;
     }
 
     if (parsedCalls.length === 0 || round === 3) {
