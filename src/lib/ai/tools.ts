@@ -1,7 +1,6 @@
 import "server-only";
-import { updateTag } from "next/cache";
 import { assertAdmin } from "@/lib/admin/auth";
-import { revalidateStore, UUID_RE } from "@/lib/admin/form";
+import { expireTag, revalidateStore, UUID_RE } from "@/lib/admin/form";
 import { PAGES_TAG, pageTag } from "@/lib/data/pages";
 import { POSTS_TAG, postTag } from "@/lib/data/posts";
 import { formatOrderNumber } from "@/lib/format";
@@ -1270,12 +1269,12 @@ export async function executeApprovedPlan(opts: {
   }
 
   if (touchedPages) {
-    updateTag(PAGES_TAG);
-    for (const s of pageSlugs) updateTag(pageTag(s));
+    expireTag(PAGES_TAG);
+    for (const s of pageSlugs) expireTag(pageTag(s));
   }
   if (touchedPosts) {
-    updateTag(POSTS_TAG);
-    for (const s of postSlugs) updateTag(postTag(s));
+    expireTag(POSTS_TAG);
+    for (const s of postSlugs) expireTag(postTag(s));
   }
   if (appliedCount > 0) {
     revalidateStore();
