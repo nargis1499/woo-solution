@@ -10,6 +10,7 @@ import {
   GaugeIcon,
   LayoutTemplateIcon,
   LogOutIcon,
+  NewspaperIcon,
   PackageIcon,
   SettingsIcon,
   ShoppingBagIcon,
@@ -41,6 +42,7 @@ import {
 export const ADMIN_NAV = [
   { href: "/nemesis", label: "Dashboard", icon: GaugeIcon, exact: true },
   { href: "/nemesis/pages", label: "Pages", icon: FileTextIcon },
+  { href: "/nemesis/posts", label: "Blog posts", icon: NewspaperIcon },
   { href: "/nemesis/products", label: "Products", icon: PackageIcon },
   { href: "/nemesis/categories", label: "Categories", icon: TagsIcon },
   { href: "/nemesis/orders", label: "Orders", icon: ShoppingCartIcon },

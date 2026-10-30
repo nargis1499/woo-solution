@@ -13,13 +13,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
  * control shows the new value optimistically and is disabled until the server
  * answered, so what you see is what is stored.
  */
-export function PageStatusSelect({ id, status, title, returnTo }: { id: string; status: PageStatus; title: string; returnTo: string }) {
+export function PageStatusSelect({ id, status, title, returnTo, setStatusAction = setPageStatus, noun = "page" }: { id: string; status: PageStatus; title: string; returnTo: string; setStatusAction?: (formData: FormData) => Promise<void>; noun?: string }) {
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(status);
 
   return (
     <Select
-      aria-label={`Status of "${title}"`}
+      aria-label={`${noun === "page" ? "Status of" : `${noun} status for`} "${title}"`}
       selectedKey={optimistic}
       isDisabled={pending}
       onSelectionChange={(key) => {
@@ -31,7 +31,7 @@ export function PageStatusSelect({ id, status, title, returnTo }: { id: string; 
           formData.set("id", id);
           formData.set("status", next);
           formData.set("return_to", returnTo);
-          await setPageStatus(formData);
+          await setStatusAction(formData);
         });
       }}
       data-testid="page-status-select"

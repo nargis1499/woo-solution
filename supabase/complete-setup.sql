@@ -15,7 +15,7 @@
 --      Everything (dashboard, order chat, notifications, media, pages …) works from there.
 --
 --  WHAT IS IN HERE
---   • All 25 migrations in order — schema, RLS, triggers, functions, storage bucket.
+--   • All 38 migrations in order — schema, RLS, triggers, functions, storage bucket.
 --   • API role grants (Supabase normally sets these up; stated here so the file is
 --     self-contained).
 --   • OPTIONAL demo catalog at the very end (categories + products + header menu).
@@ -3293,6 +3293,57 @@ alter table public.categories
 comment on column public.categories.icon is 'Icon id picked in the admin (see src/lib/category-icons.ts); null = the default shopping bag.';
 
 -- =============================================================================
+-- 20261036000000_shipping_settings.sql
+-- (migration 20261036000000_shipping_settings.sql)
+-- =============================================================================
+
+-- =============================================================================
+--  Migration 26 – Configurable shipping options & flat shipping rate
+--
+--  Adds `shipping_enabled` and `shipping_rate_micros` to `public.site_settings`
+--  so the admin can enable/disable shipping calculation and set the checkout
+--  shipping rate under Settings → WooCommerce.
+-- =============================================================================
+
+alter table public.site_settings
+  add column if not exists shipping_enabled     boolean not null default true,
+  add column if not exists shipping_rate_micros bigint  not null default 5000000
+    constraint site_settings_shipping_rate_micros_check check (shipping_rate_micros >= 0);
+
+comment on column public.site_settings.shipping_enabled     is 'Whether shipping calculation is enabled at checkout';
+comment on column public.site_settings.shipping_rate_micros is 'Flat checkout shipping rate in USD micro-dollars (1 USD = 1,000,000)';
+
+create or replace function public.calculate_shipping(p_subtotal_micros bigint)
+returns bigint
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_enabled boolean := true;
+  v_rate    bigint  := 5000000;
+begin
+  if coalesce(p_subtotal_micros, 0) <= 0 then
+    return 0;
+  end if;
+
+  select coalesce(shipping_enabled, true),
+         coalesce(shipping_rate_micros, 5000000)
+    into v_enabled, v_rate
+    from public.site_settings
+   where id = 1;
+
+  if not coalesce(v_enabled, true) then
+    return 0;
+  end if;
+
+  return greatest(coalesce(v_rate, 0), 0);
+end $$;
+
+comment on function public.calculate_shipping(bigint) is 'Checkout shipping in USD micro-dollars from site_settings (0 when shipping_enabled is false)';
+
+-- =============================================================================
 -- 24. Category icon colour — the fill behind that icon
 -- (migration 20261037000000_category_icon_color.sql)
 -- =============================================================================
@@ -3322,6 +3373,24 @@ $$;
 comment on column public.categories.icon_color is 'Icon fill (#rrggbb) picked in the admin; null = the theme primary colour.';
 
 -- =============================================================================
+-- 20261037000000_footer_text.sql
+-- (migration 20261037000000_footer_text.sql)
+-- =============================================================================
+
+-- ════════════════════════════════════════════════════════════════════════════
+--  Settings → General: Footer Text
+--
+--  Adds `footer_text` to `public.site_settings` so the secondary copyright
+--  text in the storefront footer ("Built with Next.js, Supabase and shadcn/ui.")
+--  can be edited from Settings → General.
+-- ════════════════════════════════════════════════════════════════════════════
+
+alter table public.site_settings
+  add column if not exists footer_text text default 'Built with Next.js, Supabase and shadcn/ui.';
+
+comment on column public.site_settings.footer_text is 'Footer copyright secondary text shown after "© {year} {store_name}."';
+
+-- =============================================================================
 -- 25. Category "Remove icon" — picture-only tiles
 -- (migration 20261038000000_category_no_icon.sql)
 -- =============================================================================
@@ -3340,6 +3409,654 @@ alter table public.categories
   add column if not exists icon_disabled boolean not null default false;
 
 comment on column public.categories.icon_disabled is 'True when the admin removed the icon of a category that has a picture – the tile shows the image alone. Ignored without an image.';
+
+-- =============================================================================
+-- 20261038000000_home_hero.sql
+-- (migration 20261038000000_home_hero.sql)
+-- =============================================================================
+
+-- Migration: dynamic Home page Hero section settings (UI → Home page)
+alter table public.site_settings
+  add column if not exists home_show_hero boolean not null default true,
+  add column if not exists home_hero_badge text default 'New season',
+  add column if not exists home_hero_title text,
+  add column if not exists home_hero_subtitle text,
+  add column if not exists home_hero_primary_cta_text text default 'Shop now',
+  add column if not exists home_hero_primary_cta_href text default '/shop',
+  add column if not exists home_hero_secondary_cta_text text default 'Explore electronics',
+  add column if not exists home_hero_secondary_cta_href text default '/shop?category=electronics';
+
+-- =============================================================================
+-- 20261039000000_product_brand.sql
+-- (migration 20261039000000_product_brand.sql)
+-- =============================================================================
+
+-- Migration: add `brand` & `features` columns to `products`, and homepage category showcase columns to `site_settings`
+alter table public.products
+  add column if not exists brand text,
+  add column if not exists features text;
+
+alter table public.site_settings
+  add column if not exists home_show_category_sections boolean not null default true,
+  add column if not exists home_category_default_layout text not null default 'grid',
+  add column if not exists home_category_banner_style text not null default 'soft',
+  add column if not exists home_category_sections jsonb not null default '[]'::jsonb;
+
+-- =============================================================================
+-- 20261040000000_menu_dropdown.sql
+-- (migration 20261040000000_menu_dropdown.sql)
+-- =============================================================================
+
+-- =============================================================================
+--  HEADER DROPDOWN MENUS (admin dashboard → UI → Menu → Header menu)
+--  Idempotent – safe to run more than once.
+-- =============================================================================
+
+alter table public.menu_items
+  add column if not exists parent_id uuid references public.menu_items (id) on delete set null;
+
+create index if not exists menu_items_parent_idx on public.menu_items (parent_id);
+
+comment on column public.menu_items.parent_id is 'Optional parent menu item id (header menu dropdown items). Null for top-level items and footer menu items.';
+
+-- =============================================================================
+-- 20261041000000_product_quick_checkout.sql
+-- (migration 20261041000000_product_quick_checkout.sql)
+-- =============================================================================
+
+-- ============================================================================
+-- Woo Solution — Migration 27: Product-level Quick Checkout & Quantity Attribute
+-- ============================================================================
+
+alter table public.products
+  add column if not exists quick_checkout boolean not null default false;
+
+comment on column public.products.quick_checkout is
+  'Whether the product displays the Quick Checkout button on the storefront (disabled by default).';
+
+alter table public.product_attributes
+  add column if not exists is_quantity boolean not null default false;
+
+comment on column public.product_attributes.is_quantity is
+  'Marks this attribute as the Quantity tier axis for Quick Checkout.';
+
+-- =============================================================================
+-- 20261042000000_payment_settings.sql
+-- (migration 20261042000000_payment_settings.sql)
+-- =============================================================================
+
+-- ──────────────────────────────────────────────────────────────────────────
+-- Migration: WooCommerce Payment Settings (Cryptocurrency Gateway & Cash on Delivery)
+-- ──────────────────────────────────────────────────────────────────────────
+
+alter table public.site_settings
+  add column if not exists payment_cod_enabled boolean not null default true,
+  add column if not exists payment_crypto_enabled boolean not null default true,
+  add column if not exists payment_crypto_protocols jsonb not null default '[]'::jsonb;
+
+comment on column public.site_settings.payment_cod_enabled is
+  'Whether Cash on Delivery (COD) is enabled as a checkout payment option.';
+
+comment on column public.site_settings.payment_crypto_enabled is
+  'Whether the Cryptocurrency payment gateway is enabled.';
+
+comment on column public.site_settings.payment_crypto_protocols is
+  'Configured cryptocurrency deposit wallet protocols (code, name, network, address, badge, enabled).';
+
+-- =============================================================================
+-- 20261043000000_order_payment_details.sql
+-- (migration 20261043000000_order_payment_details.sql)
+-- =============================================================================
+
+-- =============================================================================
+--  Migration: Order Crypto Payment Details
+--  Adds optional crypto payment columns to `public.orders` so Admin can inspect
+--  the selected protocol, network, deposit address, and customer Transaction ID (TXID).
+-- =============================================================================
+
+alter table public.orders
+  add column if not exists payment_protocol text,
+  add column if not exists payment_network  text,
+  add column if not exists payment_address  text,
+  add column if not exists payment_tx_id    text;
+
+comment on column public.orders.payment_protocol is 'Selected crypto wallet protocol name/code (e.g. Tether USDT (USDT))';
+comment on column public.orders.payment_network  is 'Selected blockchain network (e.g. TRON TRC20, Bitcoin Mainnet)';
+comment on column public.orders.payment_address  is 'Store deposit address shown to customer at checkout';
+comment on column public.orders.payment_tx_id    is 'Customer-submitted Transaction ID / Hash (TXID) for Admin verification';
+
+-- =============================================================================
+-- 20261044000000_fix_order_notification_item_count.sql
+-- (migration 20261044000000_fix_order_notification_item_count.sql)
+-- =============================================================================
+
+-- =============================================================================
+--  Migration: Fix `new_order` Notification Item Count
+--  Because `place_order` inserts `public.orders` before inserting `public.order_items`,
+--  an `after insert on public.orders` trigger saw 0 items. This migration:
+--    1. Allows internal updates to `notifications.body` when syncing item counts.
+--    2. Adds an `after insert on public.order_items` trigger that updates the
+--       `new_order` notification body with the total quantity (`sum(quantity)`).
+--    3. Backfills any existing `new_order` notifications that say "0 items".
+-- =============================================================================
+
+create or replace function public.notifications_read_only()
+returns trigger
+language plpgsql
+as $$
+begin
+  if (new.id, new.recipient_id, new.kind, new.title, new.href, new.order_id, new.actor_name, new.created_at)
+     is distinct from
+     (old.id, old.recipient_id, old.kind, old.title, old.href, old.order_id, old.actor_name, old.created_at)
+  then
+    raise exception 'Only the read state of a notification can change.';
+  end if;
+
+  if new.body is distinct from old.body and old.kind <> 'new_order' then
+    raise exception 'Only the read state of a notification can change.';
+  end if;
+
+  return new;
+end $$;
+
+create or replace function public.orders_notify_new()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_items integer;
+  v_ref text;
+begin
+  select coalesce(sum(quantity), 0)::integer
+    into v_items
+    from public.order_items
+   where order_id = new.id;
+
+  v_ref := '#' || lpad(new.order_number::text, 4, '0');
+
+  insert into public.notifications (recipient_id, kind, title, body, href, order_id, actor_name)
+  select
+    a.id,
+    'new_order',
+    'New order ' || v_ref,
+    coalesce(new.shipping_name, 'A customer') || ' placed an order · ' || v_items
+      || case when v_items = 1 then ' item' else ' items' end,
+    '/nemesis/orders/' || new.id,
+    new.id,
+    coalesce(new.shipping_name, 'Customer')
+  from public.notification_admins(auth.uid()) as a(id);
+
+  return new;
+end $$;
+
+create or replace function public.order_items_sync_new_order_notification()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_items integer;
+  v_name  text;
+begin
+  select coalesce(sum(quantity), 0)::integer
+    into v_items
+    from public.order_items
+   where order_id = new.order_id;
+
+  select coalesce(shipping_name, 'A customer')
+    into v_name
+    from public.orders
+   where id = new.order_id;
+
+  update public.notifications
+     set body = coalesce(v_name, 'A customer') || ' placed an order · ' || v_items
+       || case when v_items = 1 then ' item' else ' items' end
+   where order_id = new.order_id
+     and kind = 'new_order';
+
+  return new;
+end $$;
+
+drop trigger if exists order_items_sync_notification on public.order_items;
+create trigger order_items_sync_notification
+  after insert on public.order_items
+  for each row execute function public.order_items_sync_new_order_notification();
+
+-- Backfill existing `new_order` notifications that say "0 items"
+update public.notifications n
+   set body = regexp_replace(
+     n.body,
+     '\m0 items\M',
+     sub.total_qty::text || case when sub.total_qty = 1 then ' item' else ' items' end
+   )
+  from (
+    select order_id, coalesce(sum(quantity), 0)::integer as total_qty
+      from public.order_items
+     group by order_id
+  ) sub
+ where n.kind = 'new_order'
+   and n.order_id = sub.order_id
+   and sub.total_qty > 0
+   and n.body ~ '\m0 items\M';
+
+-- =============================================================================
+-- 20261045000000_auto_read_active_chat_notifications.sql
+-- (migration 20261045000000_auto_read_active_chat_notifications.sql)
+-- =============================================================================
+
+-- =============================================================================
+--  Migration: Auto-Read Active Order Chat Notifications
+--  Prevents unread notification buildup when a customer or admin is actively
+--  viewing or replying in an order's chat thread, while keeping notifications
+--  for all other orders untouched:
+--    1. Replying to an order thread marks the sender's unread `order_message`
+--       notifications for that order as read.
+--    2. Seeing a message (`seen_at` stamped on `order_messages`) marks the
+--       recipient's unread `order_message` notifications for that order as read.
+-- =============================================================================
+
+create or replace function public.order_messages_auto_read_notifications()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- 1. On INSERT: the person sending a reply has read the conversation for this order
+  if tg_op = 'INSERT' and new.sender_id is not null then
+    update public.notifications
+       set read_at = coalesce(new.created_at, now())
+     where order_id = new.order_id
+       and kind = 'order_message'
+       and recipient_id = new.sender_id
+       and read_at is null;
+    return new;
+  end if;
+
+  -- 2. On UPDATE of seen_at: the recipient side actively viewed this order's chat
+  if tg_op = 'UPDATE' and new.seen_at is not null and old.seen_at is null then
+    if new.sender_type = 'customer' then
+      -- An admin saw the customer's message on this order
+      update public.notifications n
+         set read_at = new.seen_at
+        from public.profiles p
+       where n.order_id = new.order_id
+         and n.kind = 'order_message'
+         and n.recipient_id = p.id
+         and p.is_admin = true
+         and n.read_at is null;
+    elsif new.sender_type = 'admin' then
+      -- The customer saw the admin's message on this order
+      update public.notifications n
+         set read_at = new.seen_at
+        from public.orders o
+       where o.id = new.order_id
+         and n.order_id = new.order_id
+         and n.kind = 'order_message'
+         and n.recipient_id = o.user_id
+         and n.read_at is null;
+    end if;
+  end if;
+
+  return new;
+end $$;
+
+drop trigger if exists order_messages_auto_read_notifications_insert on public.order_messages;
+create trigger order_messages_auto_read_notifications_insert
+  after insert on public.order_messages
+  for each row execute function public.order_messages_auto_read_notifications();
+
+drop trigger if exists order_messages_auto_read_notifications_seen on public.order_messages;
+create trigger order_messages_auto_read_notifications_seen
+  after update of seen_at on public.order_messages
+  for each row execute function public.order_messages_auto_read_notifications();
+
+-- =============================================================================
+-- 20261046000000_plisio_payment.sql
+-- (migration 20261046000000_plisio_payment.sql)
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- 29. Plisio Automated Cryptocurrency Payment Gateway
+--     Adds `payment_plisio_enabled` and `payment_plisio_secret_key` to
+--     `public.site_settings`, plus SECURITY DEFINER helpers so Plisio invoice
+--     creation and webhook/auto-verification can atomically update orders to
+--     `payment_status = 'paid'` and `status = 'processing'`.
+-- -----------------------------------------------------------------------------
+
+alter table public.site_settings
+  add column if not exists payment_plisio_enabled boolean not null default false,
+  add column if not exists payment_plisio_test_mode boolean not null default false,
+  add column if not exists payment_plisio_secret_key text,
+  add column if not exists payment_plisio_currencies jsonb not null default '[]'::jsonb;
+
+create or replace function public.get_plisio_order_state(p_order_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_row record;
+begin
+  select id, user_id, order_number, status, payment_status, total_micros, customer_email, notes
+    into v_row
+    from public.orders
+   where id = p_order_id;
+
+  if not found then
+    return null;
+  end if;
+
+  return jsonb_build_object(
+    'id', v_row.id,
+    'user_id', v_row.user_id,
+    'order_number', v_row.order_number,
+    'status', v_row.status,
+    'payment_status', v_row.payment_status,
+    'total_micros', v_row.total_micros,
+    'customer_email', v_row.customer_email,
+    'notes', v_row.notes
+  );
+end;
+$$;
+
+create or replace function public.sync_plisio_order_invoice(
+  p_order_id uuid,
+  p_notes text,
+  p_payment_method text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.orders
+     set notes = coalesce(p_notes, notes),
+         updated_at = now()
+   where id = p_order_id;
+
+  return public.get_plisio_order_state(p_order_id);
+end;
+$$;
+
+create or replace function public.confirm_plisio_order_payment(
+  p_order_id uuid,
+  p_notes text default null,
+  p_payment_method text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.orders
+     set payment_status = 'paid',
+         status = case when status = 'pending' then 'processing' else status end,
+         notes = coalesce(p_notes, notes),
+         updated_at = now()
+   where id = p_order_id;
+
+  return public.get_plisio_order_state(p_order_id);
+end;
+$$;
+
+grant execute on function public.get_plisio_order_state(uuid) to anon, authenticated;
+grant execute on function public.sync_plisio_order_invoice(uuid, text, text) to anon, authenticated;
+grant execute on function public.confirm_plisio_order_payment(uuid, text, text) to anon, authenticated;
+
+-- =============================================================================
+-- 20261047000000_order_chat_attachments.sql
+-- (migration 20261047000000_order_chat_attachments.sql)
+-- =============================================================================
+
+-- =============================================================================
+--  Migration: Order Chat File Attachments (Admin → Customer)
+--  Allows store admins to send any type of file attachment in the per-order
+--  inquiry chat (`public.order_messages`), and allows customers to view and
+--  download those attachments from their order page.
+-- =============================================================================
+
+-- 1. Attachment columns on `public.order_messages` ----------------------------
+alter table public.order_messages
+  add column if not exists attachment_url  text,
+  add column if not exists attachment_name text,
+  add column if not exists attachment_type text,
+  add column if not exists attachment_size bigint check (attachment_size is null or attachment_size >= 0);
+
+-- 2. Allow empty text caption when an admin sends an attachment, and enforce
+--    that only admins can attach files. ---------------------------------------
+alter table public.order_messages
+  drop constraint if exists order_messages_message_check;
+
+alter table public.order_messages
+  add constraint order_messages_message_check
+  check (
+    char_length(btrim(message)) <= 200
+    and (
+      char_length(btrim(message)) >= 1
+      or (sender_type = 'admin' and attachment_url is not null)
+    )
+  );
+
+alter table public.order_messages
+  drop constraint if exists order_messages_attachment_admin_only_check;
+
+alter table public.order_messages
+  add constraint order_messages_attachment_admin_only_check
+  check (attachment_url is null or sender_type = 'admin');
+
+-- 3. Keep attachment fields immutable in the read-receipt UPDATE trigger ------
+create or replace function public.order_messages_receipts_only()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.order_id is distinct from old.order_id
+     or new.sender_type is distinct from old.sender_type
+     or new.sender_id is distinct from old.sender_id
+     or new.sender_name is distinct from old.sender_name
+     or new.sender_avatar_url is distinct from old.sender_avatar_url
+     or new.message is distinct from old.message
+     or new.attachment_url is distinct from old.attachment_url
+     or new.attachment_name is distinct from old.attachment_name
+     or new.attachment_type is distinct from old.attachment_type
+     or new.attachment_size is distinct from old.attachment_size
+     or new.created_at is distinct from old.created_at
+  then
+    raise exception 'Order messages are immutable – only the delivered / seen receipts can be set';
+  end if;
+
+  if old.delivered_at is not null and new.delivered_at is distinct from old.delivered_at then
+    raise exception 'The delivered receipt cannot be rewritten';
+  end if;
+  if old.seen_at is not null and new.seen_at is distinct from old.seen_at then
+    raise exception 'The seen receipt cannot be rewritten';
+  end if;
+  if new.delivered_at is null and old.delivered_at is not null then
+    raise exception 'The delivered receipt cannot be cleared';
+  end if;
+  if new.seen_at is null and old.seen_at is not null then
+    raise exception 'The seen receipt cannot be cleared';
+  end if;
+
+  return new;
+end;
+$$;
+
+-- 4. Include attachment filenames in customer notifications -------------------
+create or replace function public.order_messages_notify()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_number integer;
+  v_customer uuid;
+  v_ref text;
+  v_body text;
+begin
+  select o.order_number, o.user_id into v_number, v_customer from public.orders o where o.id = new.order_id;
+  v_ref := '#' || lpad(coalesce(v_number, 0)::text, 4, '0');
+
+  if new.attachment_name is not null and btrim(new.message) <> '' then
+    v_body := left('📎 ' || new.attachment_name || ' · ' || btrim(new.message), 140);
+  elsif new.attachment_name is not null then
+    v_body := left('📎 Sent an attachment: ' || new.attachment_name, 140);
+  else
+    v_body := left(new.message, 140);
+  end if;
+
+  if new.sender_type = 'customer' then
+    insert into public.notifications (recipient_id, kind, title, body, href, order_id, actor_name)
+    select a.id, 'order_message', 'New inquiry · Order ' || v_ref,
+      v_body, '/nemesis/orders/' || new.order_id, new.order_id,
+      coalesce(new.sender_name, 'A customer')
+    from public.notification_admins(new.sender_id) as a(id);
+  elsif v_customer is not null and v_customer <> coalesce(new.sender_id, '00000000-0000-0000-0000-000000000000'::uuid) then
+    insert into public.notifications (recipient_id, kind, title, body, href, order_id, actor_name)
+    values (v_customer, 'order_message', 'Admin replied · Order ' || v_ref,
+      v_body, '/orders/' || new.order_id, new.order_id, 'Admin');
+  end if;
+
+  return new;
+end $$;
+
+-- 5. Ensure "media" bucket accepts any file type up to 50 MB for attachments --
+do $$
+begin
+  if exists (select 1 from pg_namespace where nspname = 'storage') then
+    execute $sql$
+      insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+      values ('media', 'media', true, 52428800, null)
+      on conflict (id) do update
+        set public             = excluded.public,
+            file_size_limit    = greatest(coalesce(storage.buckets.file_size_limit, 0), excluded.file_size_limit),
+            allowed_mime_types = null
+    $sql$;
+  end if;
+end
+$$;
+
+-- =============================================================================
+-- 26. Blog posts — independent editorial posts, shared tags, SEO, media tracking and RLS
+-- (migration 20261048000000_blog_posts.sql)
+-- =============================================================================
+
+-- =============================================================================
+-- BLOG POSTS — separate editorial posts with the same block content + SEO model
+-- as CMS pages. Tags are shared; relations and content-media tracking are not.
+-- =============================================================================
+
+create table if not exists public.blog_posts (
+  id                 uuid primary key default gen_random_uuid(),
+  title              text not null check (char_length(title) between 1 and 200),
+  slug               text not null unique check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and char_length(slug) <= 120),
+  content            text not null default '',
+  excerpt            text,
+  featured_image_id  uuid references public.media (id) on delete set null,
+  featured_image_url text check (char_length(featured_image_url) <= 2000),
+  status             text not null default 'draft' check (status in ('draft', 'published')),
+  seo_title          text check (char_length(seo_title) <= 120),
+  seo_description    text check (char_length(seo_description) <= 320),
+  canonical_url      text check (char_length(canonical_url) <= 500),
+  robots_index       boolean not null default true,
+  robots_follow      boolean not null default true,
+  og_title           text check (char_length(og_title) <= 120),
+  og_description     text check (char_length(og_description) <= 320),
+  og_image_id        uuid references public.media (id) on delete set null,
+  og_image_url       text check (char_length(og_image_url) <= 2000),
+  author_id          uuid references public.profiles (id) on delete set null,
+  published_at       timestamptz,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+create index if not exists blog_posts_status_idx on public.blog_posts (status, published_at desc);
+create index if not exists blog_posts_updated_idx on public.blog_posts (updated_at desc);
+create index if not exists blog_posts_title_idx on public.blog_posts (lower(title));
+create index if not exists blog_posts_featured_idx on public.blog_posts (featured_image_id);
+create index if not exists blog_posts_og_image_idx on public.blog_posts (og_image_id);
+
+drop trigger if exists blog_posts_set_updated_at on public.blog_posts;
+create trigger blog_posts_set_updated_at before update on public.blog_posts
+  for each row execute function public.set_updated_at();
+
+create table if not exists public.blog_post_tags (
+  post_id uuid not null references public.blog_posts (id) on delete cascade,
+  tag_id uuid not null references public.tags (id) on delete cascade,
+  position integer not null default 0,
+  primary key (post_id, tag_id)
+);
+create index if not exists blog_post_tags_tag_idx on public.blog_post_tags (tag_id);
+
+create table if not exists public.blog_post_media (
+  post_id uuid not null references public.blog_posts (id) on delete cascade,
+  media_id uuid not null references public.media (id) on delete cascade,
+  primary key (post_id, media_id)
+);
+create index if not exists blog_post_media_media_idx on public.blog_post_media (media_id);
+
+alter table public.blog_posts enable row level security;
+alter table public.blog_post_tags enable row level security;
+alter table public.blog_post_media enable row level security;
+
+drop policy if exists "Published blog posts are viewable by everyone" on public.blog_posts;
+create policy "Published blog posts are viewable by everyone" on public.blog_posts
+  for select using (status = 'published' or public.is_admin());
+drop policy if exists "Admins can manage blog posts" on public.blog_posts;
+create policy "Admins can manage blog posts" on public.blog_posts
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "Blog post tags are viewable by everyone" on public.blog_post_tags;
+create policy "Blog post tags are viewable by everyone" on public.blog_post_tags
+  for select using (true);
+drop policy if exists "Admins can manage blog post tags" on public.blog_post_tags;
+create policy "Admins can manage blog post tags" on public.blog_post_tags
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "Admins can manage blog post media" on public.blog_post_media;
+create policy "Admins can manage blog post media" on public.blog_post_media
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+-- Preserve existing product, site-setting, page, and variation usage tracking;
+-- add featured/share/content references for blog posts.
+create or replace function public.media_usage(p_ids uuid[])
+returns table (media_id uuid, product_id uuid, product_name text, product_slug text, role text)
+language sql stable set search_path = public as $$
+  select p.image_media_id, p.id, p.name, p.slug, 'image'::text from public.products p where p.image_media_id = any (p_ids)
+  union all
+  select pm.media_id, p.id, p.name, p.slug, 'gallery'::text from public.product_media pm join public.products p on p.id = pm.product_id where pm.media_id = any (p_ids)
+  union all
+  select v.image_media_id, p.id, p.name, p.slug, 'variation'::text from public.product_variations v join public.products p on p.id = v.product_id where v.image_media_id = any (p_ids)
+  union all
+  select s.favicon_media_id, null::uuid, null::text, null::text, 'favicon'::text from public.site_settings s where s.favicon_media_id = any (p_ids)
+  union all
+  select s.seo_og_image_media_id, null::uuid, null::text, null::text, 'share_image'::text from public.site_settings s where s.seo_og_image_media_id = any (p_ids)
+  union all
+  select pg.featured_image_id, pg.id, pg.title, pg.slug, 'page_image'::text from public.pages pg where pg.featured_image_id = any (p_ids)
+  union all
+  select pg.og_image_id, pg.id, pg.title, pg.slug, 'page_share_image'::text from public.pages pg where pg.og_image_id = any (p_ids)
+  union all
+  select pm.media_id, pg.id, pg.title, pg.slug, 'page_content'::text from public.page_media pm join public.pages pg on pg.id = pm.page_id where pm.media_id = any (p_ids)
+  union all
+  select bp.featured_image_id, bp.id, bp.title, bp.slug, 'post_image'::text from public.blog_posts bp where bp.featured_image_id = any (p_ids)
+  union all
+  select bp.og_image_id, bp.id, bp.title, bp.slug, 'post_share_image'::text from public.blog_posts bp where bp.og_image_id = any (p_ids)
+  union all
+  select bpm.media_id, bp.id, bp.title, bp.slug, 'post_content'::text from public.blog_post_media bpm join public.blog_posts bp on bp.id = bpm.post_id where bpm.media_id = any (p_ids);
+$$;
+grant execute on function public.media_usage(uuid[]) to authenticated;
+
+-- Make the new blog discoverable in the storefront navigation, without
+-- duplicating links if this migration is re-applied.
+insert into public.menu_items (location, kind, title, url, sort_order)
+select location, 'custom', 'Blog', '/blog', coalesce((select max(sort_order) + 1 from public.menu_items m where m.location = links.location), 0)
+from (values ('header'::text), ('footer'::text)) as links(location)
+where not exists (select 1 from public.menu_items m where m.location = links.location and m.url = '/blog');
 
 
 -- =============================================================================
@@ -3361,97 +4078,242 @@ grant usage on schema auth to anon, authenticated, service_role;
 -- =============================================================================
 
 -- =============================================================================
---  Woo Solution — demo catalog
---  Run AFTER the migrations. Safe to re-run (upserts by slug).
+--  Woo Solution — Tech Catalog Seed (4 Categories, 20 Products with Popular Brands & Features)
+--  Run AFTER migrations (including 20261039000000_product_brand.sql).
 --
---  Prices are base amounts in micro-dollars (1 USD = 1,000,000, the unit every money
---  column uses – see src/lib/money.ts), so they are written as `<US dollars> * 1000000`.
---  They are displayed as dollars or taka according to Settings → WooCommerce → Currency.
+--  Prices are base amounts in micro-dollars (1 USD = 1,000,000::bigint).
 -- =============================================================================
 
-insert into public.categories (name, slug, sort_order) values
-  ('Apparel',     'apparel',     1),
-  ('Accessories', 'accessories', 2),
-  ('Home',        'home',        3),
-  ('Electronics', 'electronics', 4)
-on conflict (slug) do update set name = excluded.name, sort_order = excluded.sort_order;
+-- Ensure the `brand`, `features`, and homepage category showcase columns exist
+alter table public.products
+  add column if not exists brand text,
+  add column if not exists features text;
 
--- Demo header menu: the seeded categories after "Shop" (menus are managed under UI → Menu).
+alter table public.site_settings
+  add column if not exists home_show_category_sections boolean not null default true,
+  add column if not exists home_category_default_layout text not null default 'grid',
+  add column if not exists home_category_banner_style text not null default 'soft',
+  add column if not exists home_category_sections jsonb not null default '[]'::jsonb;
+
+-- Remove legacy non-tech demo products & categories if present
+delete from public.products
+where slug in (
+  'classic-cotton-tee',
+  'everyday-hoodie',
+  'slim-chino-pants',
+  'leather-card-wallet',
+  'canvas-tote-bag',
+  'minimal-steel-watch',
+  'ceramic-pour-over-set',
+  'linen-throw-blanket',
+  'soy-wax-candle',
+  'wireless-earbuds',
+  'mechanical-keyboard',
+  'usb-c-charging-hub'
+);
+
+delete from public.menu_items
+where kind = 'category'
+  and category_id in (
+    select id from public.categories where slug in ('apparel', 'accessories', 'home')
+  );
+
+delete from public.categories
+where slug in ('apparel', 'accessories', 'home');
+
+insert into public.categories (name, slug, icon, sort_order) values
+  ('Electronics',          'electronics',        'headphones', 1),
+  ('Laptops',              'laptops',            'laptop',     2),
+  ('Mobiles',              'mobiles',            'smartphone', 3),
+  ('Gaming & Accessories', 'gaming-accessories', 'gamepad-2',  4)
+on conflict (slug) do update set
+  name       = excluded.name,
+  icon       = excluded.icon,
+  sort_order = excluded.sort_order;
+
+-- Demo header menu: add the seeded categories after "Shop"
 insert into public.menu_items (location, kind, title, category_id, sort_order)
 select 'header', 'category', c.name, c.id,
        (select coalesce(max(sort_order), -1) from public.menu_items where location = 'header') + c.sort_order
 from public.categories c
-where c.slug in ('apparel', 'accessories', 'home', 'electronics')
+where c.slug in ('electronics', 'laptops', 'mobiles', 'gaming-accessories')
   and not exists (select 1 from public.menu_items m where m.location = 'header' and m.category_id = c.id);
 
 insert into public.products
-  (category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, stock, is_featured)
+  (category_id, name, slug, brand, description, features, price_micros, compare_at_price_micros, image_url, stock, is_featured, created_at)
 values
-  ((select id from public.categories where slug = 'apparel'),
-   'Classic Cotton Tee', 'classic-cotton-tee',
-   'A soft, breathable 100% organic cotton t-shirt with a relaxed fit. Pre-shrunk and made to last.',
-   19.99 * 1000000, 24.99 * 1000000, 'https://picsum.photos/seed/classic-cotton-tee/800/800', 50, true),
-
-  ((select id from public.categories where slug = 'apparel'),
-   'Everyday Hoodie', 'everyday-hoodie',
-   'Mid-weight fleece hoodie with a brushed interior, kangaroo pocket and ribbed cuffs.',
-   49.99 * 1000000, null, 'https://picsum.photos/seed/everyday-hoodie/800/800', 30, true),
-
-  ((select id from public.categories where slug = 'apparel'),
-   'Slim Chino Pants', 'slim-chino-pants',
-   'Stretch-cotton chinos in a modern slim cut. Available in a flattering mid-rise.',
-   54.99 * 1000000, 69.99 * 1000000, 'https://picsum.photos/seed/slim-chino-pants/800/800', 25, false),
-
-  ((select id from public.categories where slug = 'accessories'),
-   'Leather Card Wallet', 'leather-card-wallet',
-   'Full-grain leather wallet with four card slots and a centre pocket for folded notes.',
-   29.99 * 1000000, null, 'https://picsum.photos/seed/leather-card-wallet/800/800', 40, true),
-
-  ((select id from public.categories where slug = 'accessories'),
-   'Canvas Tote Bag', 'canvas-tote-bag',
-   'Heavy-duty 16oz canvas tote with reinforced handles. Perfect for groceries or the beach.',
-   18.99 * 1000000, null, 'https://picsum.photos/seed/canvas-tote-bag/800/800', 60, false),
-
-  ((select id from public.categories where slug = 'accessories'),
-   'Minimal Steel Watch', 'minimal-steel-watch',
-   'Brushed stainless steel case, sapphire glass and a Japanese quartz movement. 5 ATM water resistant.',
-   129 * 1000000, 159 * 1000000, 'https://picsum.photos/seed/minimal-steel-watch/800/800', 12, true),
-
-  ((select id from public.categories where slug = 'home'),
-   'Ceramic Pour-Over Set', 'ceramic-pour-over-set',
-   'Hand-glazed ceramic dripper and carafe for a cleaner, brighter cup of coffee.',
-   38.99 * 1000000, null, 'https://picsum.photos/seed/ceramic-pour-over-set/800/800', 20, false),
-
-  ((select id from public.categories where slug = 'home'),
-   'Linen Throw Blanket', 'linen-throw-blanket',
-   'Stone-washed European linen throw. Gets softer with every wash.',
-   74.99 * 1000000, 89.99 * 1000000, 'https://picsum.photos/seed/linen-throw-blanket/800/800', 15, true),
-
-  ((select id from public.categories where slug = 'home'),
-   'Soy Wax Candle', 'soy-wax-candle',
-   'Hand-poured soy candle with notes of cedar, bergamot and amber. 45-hour burn time.',
-   24 * 1000000, null, 'https://picsum.photos/seed/soy-wax-candle/800/800', 80, false),
+  -- ── SECTION 01: Electronics (6 products) ──────────────────────────────────
+  ((select id from public.categories where slug = 'electronics'),
+   'Wireless Noise-Canceling Headphones', 'wireless-noise-canceling-headphones', 'SONY',
+   'Industry-leading noise cancellation headphone with adaptive sound control and extreme acoustic depth.',
+   'Custom Active Noise Cancellation, 30 Hours Battery, Speak-to-Chat Ambient Sensor',
+   349 * 1000000::bigint, 399 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=900&q=80',
+   45, true, now() - interval '1 minute'),
 
   ((select id from public.categories where slug = 'electronics'),
-   'Wireless Earbuds', 'wireless-earbuds',
-   'Active noise cancelling earbuds with 30 hours of total battery life and wireless charging.',
-   89.99 * 1000000, 119.99 * 1000000, 'https://picsum.photos/seed/wireless-earbuds/800/800', 35, true),
+   'Smart Watch Pro Edition', 'smart-watch-pro-edition', 'APPLE',
+   'Advanced health metrics, fitness tracking, and seamless connectivity on a durable titanium body.',
+   'Always-On OLED Display, ECG & Blood Oxygen Sensor, Dual-Frequency GPS',
+   429 * 1000000::bigint, 499 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80',
+   30, true, now() - interval '2 minutes'),
 
   ((select id from public.categories where slug = 'electronics'),
-   'Mechanical Keyboard', 'mechanical-keyboard',
-   'Compact 75% layout with hot-swappable switches, PBT keycaps and south-facing RGB.',
-   109 * 1000000, null, 'https://picsum.photos/seed/mechanical-keyboard/800/800', 18, false),
+   'Portable Bluetooth Boom Speaker', 'portable-bluetooth-boom-speaker', 'JBL',
+   'Bold sound and punchy bass for indoor listening or outdoor rugged adventures.',
+   'IP67 Waterproof & Dustproof, 24 Hours Playtime, PartyBoost Stereo Pairing',
+   149 * 1000000::bigint, 179 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?auto=format&fit=crop&w=900&q=80',
+   60, false, now() - interval '3 minutes'),
 
   ((select id from public.categories where slug = 'electronics'),
-   'USB-C Charging Hub', 'usb-c-charging-hub',
-   '100W GaN charger with two USB-C and one USB-A port. Charges a laptop, phone and earbuds at once.',
-   45.99 * 1000000, null, 'https://picsum.photos/seed/usb-c-charging-hub/800/800', 0, false)
+   'QuietComfort Ultra Wireless Earbuds', 'quietcomfort-ultra-wireless-earbuds', 'BOSE',
+   'Spatial audio earbuds with world-class noise cancellation and custom-tuned acoustic architecture.',
+   'CustomTune Spatial Audio, World-Class ANC, Snapdragon Sound AptX',
+   249 * 1000000::bigint, 299 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?auto=format&fit=crop&w=900&q=80',
+   50, false, now() - interval '4 minutes'),
+
+  ((select id from public.categories where slug = 'electronics'),
+   'Alpha Mirrorless 4K Vlog Camera', 'alpha-mirrorless-4k-vlog-camera', 'SONY',
+   'Compact APS-C mirrorless camera with real-time eye autofocus, 4K 60p video, and directional 3-capsule mic.',
+   '24.2MP APS-C Exmor Sensor, Real-Time Eye AF, 4K HDR 60p Recording',
+   799 * 1000000::bigint, 899 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=900&q=80',
+   18, false, now() - interval '5 minutes'),
+
+  ((select id from public.categories where slug = 'electronics'),
+   'iPad Air M2 11-Inch Wi-Fi', 'ipad-air-m2-11-inch', 'APPLE',
+   'Liquid Retina display powered by the Apple M2 chip with Apple Pencil Pro support and all-day battery.',
+   'Apple M2 8-Core Chip, 11" Liquid Retina Display, Wi-Fi 6E & Touch ID',
+   549 * 1000000::bigint, 599 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=900&q=80',
+   25, false, now() - interval '6 minutes'),
+
+  -- ── SECTION 02: Laptops (6 products) ──────────────────────────────────────
+  ((select id from public.categories where slug = 'laptops'),
+   'UltraSlim Pro 14 Laptop', 'ultraslim-pro-14-laptop', 'APPLE',
+   'Ultra-thin sleek design engineered for power efficiency, vivid graphics, and all-day battery.',
+   'Liquid Retina XDR 120Hz, 18-Hour Battery Life, MagSafe 3 & Thunderbolt 4',
+   1299 * 1000000::bigint, 1449 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=900&q=80',
+   20, true, now() - interval '7 minutes'),
+
+  ((select id from public.categories where slug = 'laptops'),
+   'Gaming Beast RTX 4070 Laptop', 'gaming-beast-rtx-4070-laptop', 'ASUS',
+   'Uncompromised frame rates and liquid cooling tech designed for competitive AAA gaming.',
+   'NVIDIA GeForce RTX 4070, 240Hz ROG Nebula Display, Tri-Fan Liquid Metal Cooling',
+   1799 * 1000000::bigint, 1999 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1603302576837-37561b2e2302?auto=format&fit=crop&w=900&q=80',
+   15, true, now() - interval '8 minutes'),
+
+  ((select id from public.categories where slug = 'laptops'),
+   'Creator Studio Book 16', 'creator-studio-book-16', 'DELL',
+   'Tailor-made for video editors, 3D artists, and photographers requiring 100% color accuracy.',
+   '4K+ InfinityEdge Touch OLED, 100% DCI-P3 Color Gamut, 32GB LPDDR5x RAM',
+   1999 * 1000000::bigint, 2199 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=900&q=80',
+   12, false, now() - interval '9 minutes'),
+
+  ((select id from public.categories where slug = 'laptops'),
+   'ThinkPad X1 Carbon Gen 12', 'thinkpad-x1-carbon-gen-12', 'LENOVO',
+   'Featherlight carbon-fiber business ultrabook with Intel Core Ultra processor and legendary keyboard.',
+   'Intel Core Ultra 7 vPro, 1.09 kg Carbon Chassis, MIL-STD-810H Tested',
+   1599 * 1000000::bigint, 1799 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?auto=format&fit=crop&w=900&q=80',
+   22, false, now() - interval '10 minutes'),
+
+  ((select id from public.categories where slug = 'laptops'),
+   'Spectre x360 14 2-in-1 OLED', 'spectre-x360-14-oled', 'HP',
+   'Convertible 2.8K OLED touchscreen laptop with 360-degree hinge, stylus support, and quad speakers.',
+   '2.8K 120Hz IMAX OLED Touch, 360° Convertible Hinge, Poly Studio Quad Audio',
+   1399 * 1000000::bigint, 1549 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1525547719571-a2d4ac8945e2?auto=format&fit=crop&w=900&q=80',
+   16, false, now() - interval '11 minutes'),
+
+  ((select id from public.categories where slug = 'laptops'),
+   'Blade 16 Dual-Mode Mini-LED', 'blade-16-dual-mode-mini-led', 'RAZER',
+   'CNC-milled aluminum gaming laptop featuring a dual-mode UHD+ 120Hz / FHD+ 240Hz Mini-LED display.',
+   'Dual-Mode Mini-LED Display, CNC Anodized Aluminum, Vapor Chamber Cooling',
+   2499 * 1000000::bigint, 2799 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1593642632823-8f785ba67e45?auto=format&fit=crop&w=900&q=80',
+   9, false, now() - interval '12 minutes'),
+
+  -- ── SECTION 03: Mobiles (4 products) ──────────────────────────────────────
+  ((select id from public.categories where slug = 'mobiles'),
+   'Galaxy S25 Ultra 5G 512GB', 'galaxy-s25-ultra-5g', 'SAMSUNG',
+   '200MP pro-grade quad camera system, built-in S Pen, and anti-reflective Gorilla Armor titanium frame.',
+   '200MP Quad Telephoto Camera, Built-In S Pen Stylus, Snapdragon 8 Elite',
+   1199 * 1000000::bigint, 1349 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?auto=format&fit=crop&w=900&q=80',
+   35, true, now() - interval '13 minutes'),
+
+  ((select id from public.categories where slug = 'mobiles'),
+   'iPhone 16 Pro Max 256GB', 'iphone-16-pro-max-256gb', 'APPLE',
+   'Grade 5 titanium design with 120Hz ProMotion display, A18 Pro chip, and 4K 120fps Dolby Vision.',
+   'A18 Pro 3nm Silicon, 5x Tetraprism Telephoto, Camera Control Button',
+   1099 * 1000000::bigint, 1199 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?auto=format&fit=crop&w=900&q=80',
+   40, true, now() - interval '14 minutes'),
+
+  ((select id from public.categories where slug = 'mobiles'),
+   'Pixel 9 Pro XL 5G', 'pixel-9-pro-xl-5g', 'GOOGLE',
+   'Super Actua LTPO display powered by Google Tensor G4 with pro triple rear camera and Gemini AI.',
+   'Google Tensor G4 + Gemini, 6.8" Super Actua Display, 7 Years OS Updates',
+   949 * 1000000::bigint, 1099 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1598327105666-5b89351aff97?auto=format&fit=crop&w=900&q=80',
+   28, false, now() - interval '15 minutes'),
+
+  ((select id from public.categories where slug = 'mobiles'),
+   'OnePlus 13 5G Snapdragon Elite', 'oneplus-13-5g-snapdragon-elite', 'ONEPLUS',
+   'Hasselblad camera for mobile, 100W SuperVOOC ultra-fast charging, and 2K 120Hz ProXDR display.',
+   'Hasselblad Triple 50MP Camera, 100W SuperVOOC Flash Charge, 6000mAh Silicon Battery',
+   849 * 1000000::bigint, 949 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=900&q=80',
+   32, false, now() - interval '16 minutes'),
+
+  -- ── SECTION 04: Gaming & Accessories (4 products) ─────────────────────────
+  ((select id from public.categories where slug = 'gaming-accessories'),
+   'G Pro X Superlight 2 Wireless Mouse', 'g-pro-x-superlight-2-mouse', 'LOGITECH',
+   '60g ultra-lightweight esports mouse with HERO 2 32K sensor and LIGHTFORCE hybrid optical switches.',
+   '60g Ultra-Lightweight Design, HERO 2 32,000 DPI Sensor, 4000Hz Wireless Polling',
+   139 * 1000000::bigint, 159 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1527814050087-3793815479db?auto=format&fit=crop&w=900&q=80',
+   55, false, now() - interval '17 minutes'),
+
+  ((select id from public.categories where slug = 'gaming-accessories'),
+   'BlackWidow V4 Pro Mechanical Keyboard', 'blackwidow-v4-pro-keyboard', 'RAZER',
+   'Full-blown battlestation mechanical keyboard with command dial, dedicated macro keys, and Chroma RGB.',
+   'Razer Command Dial & 8 Macro Keys, Per-Key Chroma RGB Underglow, Magnetic Plush Wrist Rest',
+   199 * 1000000::bigint, 229 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&w=900&q=80',
+   26, false, now() - interval '18 minutes'),
+
+  ((select id from public.categories where slug = 'gaming-accessories'),
+   'UltraGear 27" 4K OLED 240Hz Monitor', 'ultragear-27-4k-oled-monitor', 'LG',
+   '0.03ms response time OLED gaming monitor with DisplayHDR True Black 400 and NVIDIA G-SYNC.',
+   '27" 4K OLED 240Hz Panel, 0.03ms GtG Response Time, NVIDIA G-SYNC & FreeSync Pro',
+   899 * 1000000::bigint, 1049 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=900&q=80',
+   14, false, now() - interval '19 minutes'),
+
+  ((select id from public.categories where slug = 'gaming-accessories'),
+   'Prime 250W GaN Desktop Charging Station', 'prime-250w-gan-charging-station', 'ANKER',
+   '6-port ultra-fast GaNPrime power station with smart LCD power dial and four USB-C PD 3.1 ports.',
+   '250W Total GaNPrime Output, 4x USB-C + 2x USB-A Ports, Smart Real-Time Power Display',
+   129 * 1000000::bigint, 159 * 1000000::bigint,
+   'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?auto=format&fit=crop&w=900&q=80',
+   48, false, now() - interval '20 minutes')
 on conflict (slug) do update set
-  category_id            = excluded.category_id,
-  name                   = excluded.name,
-  description            = excluded.description,
+  category_id             = excluded.category_id,
+  name                    = excluded.name,
+  brand                   = excluded.brand,
+  description             = excluded.description,
+  features                = excluded.features,
   price_micros            = excluded.price_micros,
   compare_at_price_micros = excluded.compare_at_price_micros,
-  image_url              = excluded.image_url,
-  stock                  = excluded.stock,
-  is_featured            = excluded.is_featured;
+  image_url               = excluded.image_url,
+  stock                   = excluded.stock,
+  is_featured             = excluded.is_featured,
+  created_at              = excluded.created_at;

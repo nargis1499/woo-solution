@@ -60,6 +60,8 @@ export function friendlyError(e: unknown): string {
     return "The variable-product tables are missing – run supabase/migrations/20261027000000_variations.sql in the Supabase SQL Editor, then try again.";
   if (code === "42P01" || code === "PGRST205" || code === "PGRST204" || /relation "?(public\.)?(media|product_media)"? does not exist|image_media_id|product_media.*schema cache|media.*schema cache/i.test(message))
     return "The Media Library tables are missing – run supabase/migrations/20261019000000_media_library.sql in the Supabase SQL Editor, then try again.";
+  if (/relation "?(public\.)?(blog_posts|blog_post_tags|blog_post_media)"? does not exist|(blog_posts|blog_post_tags|blog_post_media).*schema cache/i.test(message))
+    return "The Blog Posts tables are missing – run supabase/migrations/20261048000000_blog_posts.sql in the Supabase SQL Editor, then try again.";
   if (/relation "?(public\.)?(pages|tags|page_tags|page_media)"? does not exist|(pages|page_tags|page_media|tags).*schema cache/i.test(message))
     return "The Pages tables are missing – run supabase/migrations/20261021000000_pages.sql in the Supabase SQL Editor, then try again.";
   if (/menu_items/i.test(message) && /does not exist|schema cache|Could not find/i.test(message))

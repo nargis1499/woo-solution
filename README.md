@@ -8,6 +8,7 @@ A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Comp
 | --- | --- |
 | Catalog | Home page with categories, featured products and an optional filtered product list (sections switchable under **UI → Home page**), `/shop` with category filter + search, product detail pages with related products. Both product lists show **12 products per page** with a pager once a category has more – `/shop` through shareable `?page=` links, the home-page filter in place |
 | Cart | Guest-friendly cart persisted in `localStorage` (Zustand), quantity controls, stock limits, shipping preview |
+| Blog | `/blog` publishing area with the same modular block editor as Pages, featured images, shared tags, excerpts, SEO/canonical/robots/Open Graph fields, social cards, article metadata and sitemap entries |
 | Auth | E-mail + password **and "Continue with Google"** (Supabase Auth, PKCE flow), sign out, protected routes, open-redirect-safe `?next=` handling |
 | Checkout | Shipping form → atomic `place_order()` Postgres function (prices re-read from DB, stock locked & decremented, order number generated) |
 | Orders | `/orders` history and `/orders/[id]` confirmation page, protected by Row Level Security |
@@ -64,6 +65,7 @@ cp .env.example .env.local
    23. [`supabase/migrations/20261036000000_category_icons.sql`](supabase/migrations/20261036000000_category_icons.sql) – **Category icons**: `categories.icon` – the id of one of the 48 bundled Lucide icons an admin picks under **Categories → Category image & icons**. `null` means the default shopping bag. Safe to run on an existing project
    24. [`supabase/migrations/20261037000000_category_icon_color.sql`](supabase/migrations/20261037000000_category_icon_color.sql) – **Category icon colour**: `categories.icon_color` (`#rrggbb`, checked) – the fill behind that icon; `null` uses the theme's primary colour. Safe to run on an existing project
    25. [`supabase/migrations/20261038000000_category_no_icon.sql`](supabase/migrations/20261038000000_category_no_icon.sql) – **Category "Remove icon"**: `categories.icon_disabled` – the admin's switch to drop the icon from a category that has a picture, so the *Shop by category* tile shows the image alone. Safe to run on an existing project (default `false`, so every tile looks exactly as before)
+   After the existing migrations, apply [`supabase/migrations/20261048000000_blog_posts.sql`](supabase/migrations/20261048000000_blog_posts.sql) – **Blog posts**: separate editorial posts with the same block editor model, SEO fields, tags, media tracking, publish state and admin/public RLS. Adds `/blog` navigation links; safe to apply to an existing database.
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 

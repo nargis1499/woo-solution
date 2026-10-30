@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { getPublishedPagesForSitemap } from "@/lib/data/pages";
+import { getPublishedPostsForSitemap } from "@/lib/data/posts";
 import { getSiteSettings, resolveSiteUrl, telegramHref, whatsappHref } from "@/lib/site-settings";
 import type { SiteSettings } from "@/lib/types";
 
@@ -89,14 +90,16 @@ const getCachedSitemapEntries = unstable_cache(
     const entries: SitemapEntry[] = [
       { path: "/", changeFrequency: "daily", priority: 1 },
       { path: "/shop", changeFrequency: "daily", priority: 0.9 },
+      { path: "/blog", changeFrequency: "daily", priority: 0.7 },
     ];
 
     try {
       const supabase = createPublicClient();
-      const [categories, products, pages] = await Promise.all([
+      const [categories, products, pages, posts] = await Promise.all([
         supabase.from("categories").select("slug").order("sort_order", { ascending: true }),
         supabase.from("products").select("slug, updated_at").eq("is_active", true).order("created_at", { ascending: false }).limit(5000),
         getPublishedPagesForSitemap(),
+        getPublishedPostsForSitemap(),
       ]);
       for (const c of categories.data ?? []) {
         entries.push({ path: `/shop?category=${encodeURIComponent(c.slug)}`, changeFrequency: "weekly", priority: 0.7 });
@@ -106,6 +109,9 @@ const getCachedSitemapEntries = unstable_cache(
       }
       for (const page of pages) {
         entries.push({ path: `/${encodeURIComponent(page.slug)}`, lastModified: page.updated_at, changeFrequency: "monthly", priority: 0.6 });
+      }
+      for (const post of posts) {
+        entries.push({ path: `/blog/${encodeURIComponent(post.slug)}`, lastModified: post.updated_at, changeFrequency: "monthly", priority: 0.6 });
       }
     } catch {
       // keep the static pages – a flaky database should not blank the sitemap

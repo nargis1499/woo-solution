@@ -167,10 +167,12 @@ export function dimensionsOf(item: Pick<MediaItem, "width" | "height">): string 
 export function usageLabel(rows: MediaUsage[] | undefined): string | null {
   if (!rows?.length) return null;
   const parts: string[] = [];
-  const products = new Set(rows.filter((r) => !isPageUsage(r)).map((r) => r.product_id).filter(Boolean)).size;
+  const products = new Set(rows.filter((r) => !isPageUsage(r) && !isPostUsage(r) && !["favicon", "share_image"].includes(r.role)).map((r) => r.product_id).filter(Boolean)).size;
   const pages = new Set(rows.filter(isPageUsage).map((r) => r.product_id).filter(Boolean)).size;
+  const posts = new Set(rows.filter(isPostUsage).map((r) => r.product_id).filter(Boolean)).size;
   if (products) parts.push(`${products} product${products === 1 ? "" : "s"}`);
   if (pages) parts.push(`${pages} page${pages === 1 ? "" : "s"}`);
+  if (posts) parts.push(`${posts} post${posts === 1 ? "" : "s"}`);
   if (rows.some((r) => r.role === "favicon")) parts.push("site favicon");
   if (rows.some((r) => r.role === "share_image")) parts.push("social share image");
   return `Used in ${parts.join(" · ")}`;
@@ -178,12 +180,15 @@ export function usageLabel(rows: MediaUsage[] | undefined): string | null {
 
 /** `page_*` rows carry the page id / title in the `product_*` columns. */
 export const isPageUsage = (u: MediaUsage) => u.role.startsWith("page_");
+export const isPostUsage = (u: MediaUsage) => u.role.startsWith("post_");
 
-/** Admin link for a usage row (product form, page editor or the settings tab). */
+/** Admin link for a usage row (product, page, post editor or settings tab). */
 export function usageHref(u: MediaUsage): string {
   if (u.role === "favicon") return "/nemesis/settings";
   if (u.role === "share_image") return "/nemesis/settings?tab=seo";
-  return isPageUsage(u) ? `/nemesis/pages/${u.product_id}` : `/nemesis/products/${u.product_id}`;
+  if (isPageUsage(u)) return `/nemesis/pages/${u.product_id}`;
+  if (isPostUsage(u)) return `/nemesis/posts/${u.product_id}`;
+  return `/nemesis/products/${u.product_id}`;
 }
 
 export const USAGE_ROLE_LABEL: Record<MediaUsage["role"], string> = {
@@ -195,6 +200,9 @@ export const USAGE_ROLE_LABEL: Record<MediaUsage["role"], string> = {
   page_image: "featured image",
   page_share_image: "share image",
   page_content: "in the content",
+  post_image: "featured image",
+  post_share_image: "share image",
+  post_content: "in the content",
 };
 
 /* ─── confirm button (AlertDialog) ─────────────────────────────────────────── */

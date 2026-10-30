@@ -42,6 +42,7 @@ TITLES = {
     "20261036000000_category_icons.sql": "23. Category icons — the icon an admin picks for a category",
     "20261037000000_category_icon_color.sql": "24. Category icon colour — the fill behind that icon",
     "20261038000000_category_no_icon.sql": "25. Category \"Remove icon\" — picture-only tiles",
+    "20261048000000_blog_posts.sql": "26. Blog posts — independent editorial posts, shared tags, SEO, media tracking and RLS",
 }
 
 HEADER = """-- =============================================================================

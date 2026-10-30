@@ -25,7 +25,7 @@ import { SimpleProductBlockCard } from "@/components/simple-product-block-card";
  * Any `simple_product` or `layout` blocks are hydrated into interactive
  * storefront components with live product data.
  */
-export async function PageArticle({ page, className }: { page: Page; className?: string }) {
+export async function PageArticle({ page, className, breadcrumbItems }: { page: Page; className?: string; breadcrumbItems?: { label: string; href?: string }[] }) {
   // Media Library file (with responsive renditions) or a pasted external URL.
   const image = featuredImage(page);
   const media = image?.media ?? null;
@@ -71,7 +71,7 @@ export async function PageArticle({ page, className }: { page: Page; className?:
 
   return (
     <article className={cn("container-page py-10", className)} data-testid="page-article">
-      <PageBreadcrumbs className="mb-6" items={[{ label: "Home", href: "/" }, { label: page.title }]} />
+      <PageBreadcrumbs className="mb-6" items={breadcrumbItems ?? [{ label: "Home", href: "/" }, { label: page.title }]} />
 
       <header className="mx-auto">
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">{page.title}</h1>

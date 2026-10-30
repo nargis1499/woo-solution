@@ -168,15 +168,15 @@ export type MediaItem = {
 /**
  * One row per place a file is used: a product (main image / gallery), the site
  * settings (favicon / share image) or a page (featured image / share image /
- * inside the content). For the `page_*` roles the `product_*` columns carry the
- * page id / title / slug.
+ * inside the content) or a blog post (featured image / share image / content).
+ * For page/post roles the `product_*` columns carry the document id / title / slug.
  */
 export type MediaUsage = {
   media_id: string;
   product_id: string | null;
   product_name: string | null;
   product_slug: string | null;
-  role: "image" | "gallery" | "variation" | "favicon" | "share_image" | "page_image" | "page_share_image" | "page_content";
+  role: "image" | "gallery" | "variation" | "favicon" | "share_image" | "page_image" | "page_share_image" | "page_content" | "post_image" | "post_share_image" | "post_content";
 };
 
 /* ─── Pages (CMS) ─────────────────────────────────────────────────────────── */
@@ -219,6 +219,9 @@ export type Page = {
   author?: PageAuthor | null;
   tags?: Tag[];
 };
+
+/** Blog post row; it intentionally shares the page editor/SEO data shape. */
+export type BlogPost = Page;
 
 export type OrderStatus = "pending" | "processing" | "completed" | "cancelled";
 
