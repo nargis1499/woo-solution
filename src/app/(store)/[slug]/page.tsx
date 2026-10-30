@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublishedPage } from "@/lib/data/pages";
-import { isReservedSlug, PAGE_SLUG_RE, pageSeo } from "@/lib/pages/shared";
+import { isReservedSlug, PAGE_SLUG_RE, pageHref, pageSeo } from "@/lib/pages/shared";
+import {
+  breadcrumbJsonLd,
+  NOINDEX,
+  pageJsonLd,
+  robotsFor,
+  serializeJsonLd,
+} from "@/lib/seo";
 import { getSiteSettings, resolveSiteUrl } from "@/lib/site-settings";
 import { PageArticle } from "@/components/page-article";
 
@@ -34,7 +41,7 @@ async function load(slug: string) {
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { slug } = await params;
   const [page, settings] = await Promise.all([load(slug), getSiteSettings()]);
-  if (!page) return { title: "Page not found", robots: { index: false, follow: false } };
+  if (!page) return { title: "Page not found", robots: NOINDEX };
 
   const seo = pageSeo(page, resolveSiteUrl(settings), settings.seo_indexing);
   const image = seo.ogImage ?? settings.seo_og_image_url ?? undefined;
@@ -42,7 +49,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
     title: seo.title,
     description: seo.description ?? undefined,
     alternates: seo.canonical ? { canonical: seo.canonical } : undefined,
-    robots: { index: seo.robots.index, follow: seo.robots.follow },
+    robots: robotsFor(seo.robots),
     openGraph: {
       type: "article",
       title: seo.ogTitle,
@@ -56,6 +63,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
     },
     twitter: {
       card: image ? "summary_large_image" : "summary",
+      site: settings.seo_twitter ? `@${settings.seo_twitter}` : undefined,
       title: seo.ogTitle,
       description: seo.ogDescription ?? undefined,
       images: image ? [image] : undefined,
@@ -65,7 +73,29 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 
 export default async function DynamicPage({ params }: { params: Params }) {
   const { slug } = await params;
-  const page = await load(slug);
+  const [page, settings] = await Promise.all([load(slug), getSiteSettings()]);
   if (!page) notFound();
-  return <PageArticle page={page} editHref={`/nemesis/pages/${page.id}`} editLabel="Edit page" />;
+
+  const base = resolveSiteUrl(settings);
+  const path = pageHref(page.slug);
+  const breadcrumbItems = [{ label: "Home", href: "/" }, { label: page.title }];
+  const structuredData = [
+    pageJsonLd(page, settings),
+    breadcrumbJsonLd(base, breadcrumbItems, path),
+  ].filter(Boolean);
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
+      />
+      <PageArticle
+        page={page}
+        breadcrumbItems={breadcrumbItems}
+        editHref={`/nemesis/pages/${page.id}`}
+        editLabel="Edit page"
+      />
+    </>
+  );
 }

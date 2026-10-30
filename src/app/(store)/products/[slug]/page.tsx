@@ -3,13 +3,22 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, cache } from "react";
 import { getProductBySlug, getProducts } from "@/lib/data/products";
-import { canonicalFor } from "@/lib/seo";
-import { getSiteSettings } from "@/lib/site-settings";
+import { slidesFor } from "@/lib/media/shared";
+import {
+  breadcrumbJsonLd,
+  NOINDEX,
+  productJsonLd,
+  productSeoDescription,
+  robotsFor,
+  serializeJsonLd,
+} from "@/lib/seo";
+import { getSiteSettings, resolveSiteUrl } from "@/lib/site-settings";
 import { ProductGrid } from "@/components/product-grid";
 import { AdminEditButton } from "@/components/admin-edit-button";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ProductInformationTabs, ProductShowcase } from "./product-detail";
+
+export const dynamic = "force-dynamic";
 
 type Params = Promise<{ slug: string }>;
 
@@ -18,65 +27,98 @@ const loadProduct = cache(getProductBySlug);
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { slug } = await params;
-  const product = await loadProduct(slug);
-  if (!product) return { title: "Product not found", robots: { index: false } };
+  const [product, settings] = await Promise.all([loadProduct(slug), getSiteSettings()]);
+  if (!product) return { title: "Product not found", robots: NOINDEX };
+
+  const base = resolveSiteUrl(settings);
+  const path = `/products/${encodeURIComponent(product.slug)}`;
+  const canonical = base ? `${base}${path}` : undefined;
+  const description = productSeoDescription(product, settings.store_name);
+  const slides = slidesFor(product);
+  const ogImages =
+    slides.length > 0
+      ? slides.map((s) => ({ url: s.src, alt: s.alt || product.name }))
+      : settings.seo_og_image_url
+        ? [{ url: settings.seo_og_image_url, alt: product.name }]
+        : undefined;
+
   return {
     title: product.name,
-    description: product.description ?? undefined,
-    alternates: await canonicalFor(`/products/${encodeURIComponent(product.slug)}`),
-    openGraph: { type: "website", title: product.name, description: product.description ?? undefined, images: product.image_url ? [{ url: product.image_url }] : undefined },
+    description,
+    alternates: canonical ? { canonical } : undefined,
+    robots: robotsFor({ index: settings.seo_indexing, follow: settings.seo_indexing }),
+    openGraph: {
+      type: "website",
+      siteName: settings.store_name,
+      title: product.name,
+      description,
+      url: canonical,
+      images: ogImages,
+    },
+    twitter: {
+      card: ogImages ? "summary_large_image" : "summary",
+      site: settings.seo_twitter ? `@${settings.seo_twitter}` : undefined,
+      title: product.name,
+      description,
+      images: ogImages?.map((img) => img.url),
+    },
   };
 }
 
-export default function ProductPage({ params }: { params: Params }) {
-  return (
-    <main className="dark min-h-screen bg-[#070b18] text-slate-100">
-      <div className="container-page py-6 sm:py-9">
-        <Suspense fallback={<ProductSkeleton />}>
-          <ProductDetails params={params} />
-        </Suspense>
-      </div>
-    </main>
-  );
-}
-
-async function ProductDetails({ params }: { params: Params }) {
+export default async function ProductPage({ params }: { params: Params }) {
   const { slug } = await params;
-  // The stock switch comes from Settings and is read dynamically on navigation.
+  // Loaded at the top level (not hidden behind a skeleton Suspense boundary) so unknown
+  // slugs return a real HTTP 404 and Googlebot receives the full product markup immediately.
   const [product, settings] = await Promise.all([loadProduct(slug), getSiteSettings()]);
   if (!product) notFound();
 
+  const base = resolveSiteUrl(settings);
+  const path = `/products/${encodeURIComponent(product.slug)}`;
+  const breadcrumbItems = [
+    { label: "Home", href: "/" },
+    { label: "Shop", href: "/shop" },
+    ...(product.category
+      ? [{ label: product.category.name, href: `/shop?category=${encodeURIComponent(product.category.slug)}` }]
+      : []),
+    { label: product.name },
+  ];
+  const structuredData = [
+    productJsonLd(product, settings),
+    breadcrumbJsonLd(base, breadcrumbItems, path),
+  ].filter(Boolean);
+
   return (
-    <>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <PageBreadcrumbs
-          className="text-slate-400 [&_a]:text-slate-400 [&_a:hover]:text-white [&_[aria-current=page]]:text-slate-200"
-          items={[
-            { label: "Home", href: "/" },
-            { label: "Shop", href: "/shop" },
-            ...(product.category ? [{ label: product.category.name, href: `/shop?category=${product.category.slug}` }] : []),
-            { label: product.name },
-          ]}
-        />
-        <AdminEditButton
-          href={`/nemesis/products/${product.id}`}
-          label="Edit product"
-          className="border-slate-700 bg-slate-900/90 text-slate-100 hover:border-indigo-400/70 hover:bg-slate-800 hover:text-white dark:border-slate-700 dark:bg-slate-900/90 dark:hover:border-indigo-400/70 dark:hover:bg-slate-800"
-        />
-      </div>
-
-      <ProductShowcase
-        product={product}
-        manageStock={settings.manage_stock}
-        shippingEnabled={settings.shipping_enabled}
-        shippingRateMicros={settings.shipping_rate_micros}
+    <div className="dark min-h-screen bg-[#070b18] text-slate-100">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
       />
-      <ProductInformationTabs product={product} />
+      <div className="container-page py-6 sm:py-9">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <PageBreadcrumbs
+            className="text-slate-400 [&_a]:text-slate-400 [&_a:hover]:text-white [&_[aria-current=page]]:text-slate-200"
+            items={breadcrumbItems}
+          />
+          <AdminEditButton
+            href={`/nemesis/products/${product.id}`}
+            label="Edit product"
+            className="border-slate-700 bg-slate-900/90 text-slate-100 hover:border-indigo-400/70 hover:bg-slate-800 hover:text-white dark:border-slate-700 dark:bg-slate-900/90 dark:hover:border-indigo-400/70 dark:hover:bg-slate-800"
+          />
+        </div>
 
-      <Suspense fallback={null}>
-        <RelatedProducts product={product} />
-      </Suspense>
-    </>
+        <ProductShowcase
+          product={product}
+          manageStock={settings.manage_stock}
+          shippingEnabled={settings.shipping_enabled}
+          shippingRateMicros={settings.shipping_rate_micros}
+        />
+        <ProductInformationTabs product={product} />
+
+        <Suspense fallback={null}>
+          <RelatedProducts product={product} />
+        </Suspense>
+      </div>
+    </div>
   );
 }
 
@@ -88,18 +130,9 @@ async function RelatedProducts({ product }: { product: NonNullable<Awaited<Retur
     <section className="mt-12 border-t border-slate-800 pt-10 sm:mt-16 sm:pt-12">
       <div className="mb-5 flex items-end justify-between gap-4">
         <div><p className="mb-1 text-xs font-bold tracking-[0.18em] text-indigo-300 uppercase">Discover more</p><h2 className="text-2xl font-bold tracking-tight text-white">Related products</h2></div>
-        <Link href={`/shop?category=${product.category.slug}`} className="text-sm font-semibold text-indigo-300 hover:text-indigo-200">View all</Link>
+        <Link href={`/shop?category=${encodeURIComponent(product.category.slug)}`} className="text-sm font-semibold text-indigo-300 hover:text-indigo-200">View all</Link>
       </div>
       <ProductGrid products={related} />
     </section>
-  );
-}
-
-function ProductSkeleton() {
-  return (
-    <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:gap-10 xl:gap-12" aria-hidden>
-      <Skeleton className="aspect-[16/10] max-h-[21rem] w-full rounded-2xl sm:max-h-[23rem] lg:max-h-[24rem]" />
-      <div className="space-y-4"><Skeleton className="h-5 w-36" /><Skeleton className="h-10 w-3/4" /><Skeleton className="h-7 w-36" /><Skeleton className="h-24 w-full" /><Skeleton className="h-12 w-full" /></div>
-    </div>
   );
 }
