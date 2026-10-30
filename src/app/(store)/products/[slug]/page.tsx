@@ -89,8 +89,8 @@ async function RelatedProducts({ product }: { product: NonNullable<Awaited<Retur
 
 function ProductSkeleton() {
   return (
-    <div className="grid gap-8 lg:grid-cols-2" aria-hidden>
-      <Skeleton className="aspect-square rounded-3xl" />
+    <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:gap-10 xl:gap-12" aria-hidden>
+      <Skeleton className="aspect-[16/10] max-h-[21rem] w-full rounded-2xl sm:max-h-[23rem] lg:max-h-[24rem]" />
       <div className="space-y-4"><Skeleton className="h-5 w-36" /><Skeleton className="h-10 w-3/4" /><Skeleton className="h-7 w-36" /><Skeleton className="h-24 w-full" /><Skeleton className="h-12 w-full" /></div>
     </div>
   );
