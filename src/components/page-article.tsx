@@ -1,4 +1,5 @@
 import { CalendarIcon } from "lucide-react";
+import { isCurrentUserAdmin } from "@/lib/admin/auth";
 import { getSimpleProductsByIds } from "@/lib/data/products";
 import { formatDate } from "@/lib/format";
 import { mediaUrl } from "@/lib/media/shared";
@@ -14,6 +15,7 @@ import { featuredImage } from "@/lib/pages/shared";
 import { getSiteSettings } from "@/lib/site-settings";
 import type { Page, Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { AdminEditButton } from "@/components/admin-edit-button";
 import { Badge } from "@/components/ui/badge";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { SimpleProductBlockCard } from "@/components/simple-product-block-card";
@@ -25,7 +27,19 @@ import { SimpleProductBlockCard } from "@/components/simple-product-block-card";
  * Any `simple_product` or `layout` blocks are hydrated into interactive
  * storefront components with live product data.
  */
-export async function PageArticle({ page, className, breadcrumbItems }: { page: Page; className?: string; breadcrumbItems?: { label: string; href?: string }[] }) {
+export async function PageArticle({
+  page,
+  className,
+  breadcrumbItems,
+  editHref,
+  editLabel = "Edit page",
+}: {
+  page: Page;
+  className?: string;
+  breadcrumbItems?: { label: string; href?: string }[];
+  editHref?: string;
+  editLabel?: string;
+}) {
   // Media Library file (with responsive renditions) or a pasted external URL.
   const image = featuredImage(page);
   const media = image?.media ?? null;
@@ -42,6 +56,7 @@ export async function PageArticle({ page, className, breadcrumbItems }: { page: 
 
   const productsById = new Map<string, Product>();
   let manageStock = true;
+  let canEditProducts = false;
   if (hasInteractiveBlocks) {
     const productIds = new Set<string>();
     for (const seg of segments) {
@@ -58,12 +73,14 @@ export async function PageArticle({ page, className, breadcrumbItems }: { page: 
       }
     }
     const ids = [...productIds];
-    const [liveProducts, settings] = await Promise.all([
+    const [liveProducts, settings, isAdmin] = await Promise.all([
       ids.length > 0 ? getSimpleProductsByIds(ids) : Promise.resolve([]),
       getSiteSettings(),
+      isCurrentUserAdmin(),
     ]);
     for (const p of liveProducts) productsById.set(p.id, p);
     manageStock = settings.manage_stock;
+    canEditProducts = isAdmin;
   }
 
   const shownDate =
@@ -71,7 +88,10 @@ export async function PageArticle({ page, className, breadcrumbItems }: { page: 
 
   return (
     <article className={cn("container-page py-10", className)} data-testid="page-article">
-      <PageBreadcrumbs className="mb-6" items={breadcrumbItems ?? [{ label: "Home", href: "/" }, { label: page.title }]} />
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <PageBreadcrumbs items={breadcrumbItems ?? [{ label: "Home", href: "/" }, { label: page.title }]} />
+        {editHref && <AdminEditButton href={editHref} label={editLabel} />}
+      </div>
 
       <header className="mx-auto">
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">{page.title}</h1>
@@ -144,6 +164,7 @@ export async function PageArticle({ page, className, breadcrumbItems }: { page: 
                           : null
                       }
                       manageStock={manageStock}
+                      canEdit={canEditProducts}
                     />
                   </div>
                 );
@@ -154,6 +175,7 @@ export async function PageArticle({ page, className, breadcrumbItems }: { page: 
                   block={seg.block}
                   productsById={productsById}
                   manageStock={manageStock}
+                  canEdit={canEditProducts}
                 />
               );
             })}
@@ -172,10 +194,12 @@ function StorefrontLayoutBlock({
   block,
   productsById,
   manageStock,
+  canEdit,
 }: {
   block: PageBlock;
   productsById: Map<string, Product>;
   manageStock: boolean;
+  canEdit: boolean;
 }) {
   const rows = Math.max(1, Math.min(12, block.layoutRows ?? 1));
   const cols = Math.max(1, Math.min(6, block.layoutCols ?? 2));
@@ -221,6 +245,7 @@ function StorefrontLayoutBlock({
                     child.productId ? (productsById.get(child.productId) ?? null) : null
                   }
                   manageStock={manageStock}
+                  canEdit={canEdit}
                 />
               ) : (
                 <div

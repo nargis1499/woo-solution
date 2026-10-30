@@ -6,6 +6,7 @@ import { getProductBySlug, getProducts } from "@/lib/data/products";
 import { canonicalFor } from "@/lib/seo";
 import { getSiteSettings } from "@/lib/site-settings";
 import { ProductGrid } from "@/components/product-grid";
+import { AdminEditButton } from "@/components/admin-edit-button";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProductInformationTabs, ProductShowcase } from "./product-detail";
@@ -47,15 +48,22 @@ async function ProductDetails({ params }: { params: Params }) {
 
   return (
     <>
-      <PageBreadcrumbs
-        className="mb-6 text-slate-400 [&_a]:text-slate-400 [&_a:hover]:text-white [&_[aria-current=page]]:text-slate-200"
-        items={[
-          { label: "Home", href: "/" },
-          { label: "Shop", href: "/shop" },
-          ...(product.category ? [{ label: product.category.name, href: `/shop?category=${product.category.slug}` }] : []),
-          { label: product.name },
-        ]}
-      />
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <PageBreadcrumbs
+          className="text-slate-400 [&_a]:text-slate-400 [&_a:hover]:text-white [&_[aria-current=page]]:text-slate-200"
+          items={[
+            { label: "Home", href: "/" },
+            { label: "Shop", href: "/shop" },
+            ...(product.category ? [{ label: product.category.name, href: `/shop?category=${product.category.slug}` }] : []),
+            { label: product.name },
+          ]}
+        />
+        <AdminEditButton
+          href={`/nemesis/products/${product.id}`}
+          label="Edit product"
+          className="border-slate-700 bg-slate-900/90 text-slate-100 hover:border-indigo-400/70 hover:bg-slate-800 hover:text-white dark:border-slate-700 dark:bg-slate-900/90 dark:hover:border-indigo-400/70 dark:hover:bg-slate-800"
+        />
+      </div>
 
       <ProductShowcase
         product={product}
