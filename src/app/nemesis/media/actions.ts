@@ -4,6 +4,8 @@ import { revalidatePath, updateTag } from "next/cache";
 import { cookies } from "next/headers";
 import { AdminAuthError, assertAdmin } from "@/lib/admin/auth";
 import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
+import { runModelCompletion } from "@/lib/ai/client";
+import { loadAiSettingsForAction, resolveProviderApiKey } from "@/lib/ai/settings";
 import { createClient } from "@/lib/supabase/server";
 import type { MediaFolder, MediaItem, MediaUsage } from "@/lib/types";
 import {
@@ -661,29 +663,78 @@ export async function deleteMediaFolder(id: string): Promise<MediaResult<null>> 
 
 export async function suggestAltText(id: string): Promise<MediaResult<string>> {
   if (!isUuid(id)) return fail("Invalid file.");
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return fail("Set OPENAI_API_KEY on the server to enable AI alt text.");
   try {
-    const { supabase } = await adminClient();
+    const [{ supabase }, { server: aiSettings, client: aiClient }] = await Promise.all([
+      adminClient(),
+      loadAiSettingsForAction(),
+    ]);
     const item = await loadItem(supabase, id);
     if (!item || item.kind !== "image") return fail("Alt text can only be generated for images.");
-    const { buffer, contentType } = await downloadObject(item.variants.medium?.path ?? item.variants.large?.path ?? item.path);
-    const dataUrl = `data:${contentType.startsWith("image/") ? contentType : item.mime_type};base64,${buffer.toString("base64")}`;
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: process.env.OPENAI_ALT_TEXT_MODEL || "gpt-4o-mini",
-        max_tokens: 80,
-        messages: [
-          { role: "system", content: "You write concise, descriptive alt text for e-commerce images. Reply with the alt text only – one sentence, no quotes, under 125 characters." },
-          { role: "user", content: [{ type: "text", text: `File name: ${sanitizeFilename(item.name)}` }, { type: "image_url", image_url: { url: dataUrl, detail: "low" } }] },
-        ],
-      }),
+
+    const openAiKey = resolveProviderApiKey(aiSettings, "openai");
+    const useOpenAiVision =
+      Boolean(openAiKey) &&
+      (aiSettings.provider === "openai" || !aiClient.is_ready || aiSettings.vision_enabled);
+
+    if (useOpenAiVision && openAiKey) {
+      const { buffer, contentType } = await downloadObject(
+        item.variants.medium?.path ?? item.variants.large?.path ?? item.path,
+      );
+      const dataUrl = `data:${contentType.startsWith("image/") ? contentType : item.mime_type};base64,${buffer.toString("base64")}`;
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${openAiKey}` },
+        body: JSON.stringify({
+          model:
+            aiSettings.provider === "openai" && aiSettings.primary_model
+              ? aiSettings.primary_model
+              : process.env.OPENAI_ALT_TEXT_MODEL || "gpt-4o-mini",
+          max_tokens: 80,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You write concise, descriptive alt text for e-commerce images. Reply with the alt text only – one sentence, no quotes, under 125 characters.",
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: `File name: ${sanitizeFilename(item.name)}` },
+                { type: "image_url", image_url: { url: dataUrl, detail: "low" } },
+              ],
+            },
+          ],
+        }),
+      });
+      if (!res.ok) return fail(`The AI service answered ${res.status}. Check your OpenAI API key.`);
+      const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      const text = json.choices?.[0]?.message?.content?.trim().replace(/^["']|["']$/g, "").slice(0, 300);
+      if (!text) return fail("The AI service returned no text.");
+      return okay(text);
+    }
+
+    if (!aiClient.is_ready || (aiSettings.provider === "ollama" && aiSettings.ollama_mode === "browser")) {
+      return fail("Configure an AI provider in Settings → AI to generate alt text.");
+    }
+
+    const usageMap = await getMediaUsage([item.id]);
+    const linked = (usageMap[item.id] ?? [])
+      .map((u) => u.product_name)
+      .filter((n): n is string => Boolean(n));
+
+    const completion = await runModelCompletion({
+      settings: aiSettings,
+      preferWorkerModel: true,
+      systemPrompt:
+        "You write concise, descriptive SEO alt text for e-commerce and blog images. Reply with the alt text ONLY – one natural phrase or sentence, no quotes, under 120 characters.",
+      messages: [
+        {
+          role: "user",
+          content: `Image filename: ${sanitizeFilename(item.name)}${linked.length ? `\nUsed on: ${linked.join(", ")}` : ""}`,
+        },
+      ],
     });
-    if (!res.ok) return fail(`The AI service answered ${res.status}. Check OPENAI_API_KEY.`);
-    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const text = json.choices?.[0]?.message?.content?.trim().replace(/^["']|["']$/g, "").slice(0, 300);
+    const text = completion.text.trim().replace(/^["']|["']$/g, "").slice(0, 200);
     if (!text) return fail("The AI service returned no text.");
     return okay(text);
   } catch (e) {

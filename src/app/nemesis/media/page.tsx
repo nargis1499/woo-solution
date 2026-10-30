@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LegacyImportCard } from "@/components/admin/media/legacy-import-card";
 import { MediaLibrary } from "@/components/admin/media/media-library";
 import { PageHeader } from "@/components/admin/ui";
+import { adminGetAiSettings } from "@/lib/ai/settings";
 import { getMediaTotals, getMediaUsage, listMedia, listMediaFolders } from "@/lib/media/server";
 import { MEDIA_PER_PAGE_COOKIE, MEDIA_VIEW_COOKIE, formatBytes, mediaHref, parseMediaParams, parseMediaPerPage, type MediaView } from "@/lib/media/shared";
 
@@ -43,6 +44,11 @@ export default async function AdminMediaPage({ searchParams }: { searchParams: S
   }
 
   const { page, folders, totals, usage } = data;
+  const ai = await adminGetAiSettings();
+  const hasServerAiAlt =
+    Boolean(process.env.OPENAI_API_KEY) ||
+    Boolean(ai.server.api_keys.openai) ||
+    (ai.client.is_ready && !(ai.client.provider === "ollama" && ai.client.ollama_mode === "browser"));
   // keep the URL honest when the requested page no longer exists
   if (page.page !== params.page) redirect(mediaHref({ ...params, page: page.page }));
 
@@ -61,7 +67,7 @@ export default async function AdminMediaPage({ searchParams }: { searchParams: S
       />
       {/* only renders while the pre-library buckets (product-images / site-media) still exist */}
       {!params.trash && <LegacyImportCard />}
-      <MediaLibrary params={params} page={page} folders={folders} totals={totals} usage={usage} aiAlt={Boolean(process.env.OPENAI_API_KEY)} />
+      <MediaLibrary params={params} page={page} folders={folders} totals={totals} usage={usage} aiAlt={hasServerAiAlt} />
     </>
   );
 }

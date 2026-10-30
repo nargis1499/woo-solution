@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { adminGetSiteSettings } from "@/lib/admin/data";
 import { getAdminStatus } from "@/lib/admin/auth";
+import { adminGetAiSettings } from "@/lib/ai/settings";
 import { getPresenceVisibility } from "@/lib/presence.server";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/admin/ui";
@@ -22,14 +23,22 @@ export default async function AdminSettingsPage({
     redirect("/nemesis/ecommerce");
   }
 
-  const [settings, { user }] = await Promise.all([adminGetSiteSettings(), getAdminStatus()]);
+  const [settings, ai, { user }] = await Promise.all([
+    adminGetSiteSettings(),
+    adminGetAiSettings(),
+    getAdminStatus(),
+  ]);
   const presenceVisibility = user ? await getPresenceVisibility(user.id) : "online";
 
   return (
     <>
       <PageHeader
         title="Settings"
-        description={settings?.updated_at ? `Last saved ${formatDate(settings.updated_at)}.` : "Branding and SEO options – changes go live immediately."}
+        description={
+          settings?.updated_at
+            ? `Last saved ${formatDate(settings.updated_at)}.`
+            : "Branding, SEO and AI options – changes go live immediately."
+        }
       />
       {settings ? (
         <div className="space-y-5">
@@ -41,12 +50,20 @@ export default async function AdminSettingsPage({
               </AlertDescription>
             </Alert>
           )}
-          <SettingsTabs settings={settings} media={settings.media} presenceVisibility={presenceVisibility} />
+          <SettingsTabs
+            settings={settings}
+            media={settings.media}
+            presenceVisibility={presenceVisibility}
+            aiSettings={ai.client}
+            aiMigrated={ai.migrated}
+          />
         </div>
       ) : (
         <Alert variant="destructive">
           <AlertTitle>Settings table missing</AlertTitle>
-          <AlertDescription>The site_settings row is missing. Run supabase/migrations/20261016000000_admin.sql in the Supabase SQL Editor.</AlertDescription>
+          <AlertDescription>
+            The site_settings row is missing. Run supabase/migrations/20261016000000_admin.sql in the Supabase SQL Editor.
+          </AlertDescription>
         </Alert>
       )}
     </>

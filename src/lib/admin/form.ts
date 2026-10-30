@@ -66,6 +66,8 @@ export function friendlyError(e: unknown): string {
     return "The Pages tables are missing – run supabase/migrations/20261021000000_pages.sql in the Supabase SQL Editor, then try again.";
   if (/menu_items/i.test(message) && /does not exist|schema cache|Could not find/i.test(message))
     return "The menu table is missing – run supabase/migrations/20261023000000_menus.sql in the Supabase SQL Editor, then try again.";
+  if (/ai_settings/i.test(message) && /does not exist|schema cache|Could not find/i.test(message))
+    return "The AI settings table is missing – run supabase/migrations/20261049000000_ai_settings.sql in the Supabase SQL Editor, then try again.";
   return message || "Something went wrong. Please try again.";
 }
 

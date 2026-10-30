@@ -4,21 +4,27 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { Key } from "react-aria-components";
 import { isSettingsTab, SETTINGS_TABS, type SettingsTabId } from "@/lib/admin/settings-tabs";
+import type { PublicAiSettings } from "@/lib/ai/providers";
 import type { SettingsMedia, SiteSettings } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GeneralSettingsForm, SeoSettingsForm } from "./settings-forms";
 import { PresenceVisibilityCard } from "./presence-visibility";
+import { AiSettingsForm } from "./ai/ai-settings-form";
 import type { PresenceVisibility } from "@/lib/presence";
 
 export function SettingsTabs({
   settings,
   media,
   presenceVisibility,
+  aiSettings,
+  aiMigrated,
 }: {
   settings: SiteSettings;
   media: SettingsMedia;
   /** The global fallback of the admin's online visibility (Presence card). */
   presenceVisibility: PresenceVisibility;
+  aiSettings: PublicAiSettings;
+  aiMigrated: boolean;
 }) {
   // The URL is the source of truth (?tab=seo …): it is shareable, survives a reload, and when Next.js
   // restores this page after navigating away the tabs follow the link that was clicked.
@@ -58,6 +64,9 @@ export function SettingsTabs({
       </TabsContent>
       <TabsContent id="seo" shouldForceMount className="data-inert:hidden">
         <SeoSettingsForm settings={settings} shareImage={media.share_image} />
+      </TabsContent>
+      <TabsContent id="ai" shouldForceMount className="data-inert:hidden">
+        <AiSettingsForm initialSettings={aiSettings} migrated={aiMigrated} />
       </TabsContent>
     </Tabs>
   );
