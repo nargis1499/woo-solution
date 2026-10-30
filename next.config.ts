@@ -22,6 +22,7 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
+    agentUpgrade: "security",
     serverActions: {
       // product image uploads go through a Server Action (bucket limit is 5 MB)
       bodySizeLimit: "6mb",
