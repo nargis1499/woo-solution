@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { Suspense, type ReactNode } from "react";
 import { requireAdmin } from "@/lib/admin/auth";
+import { adminGetAiSettings } from "@/lib/ai/settings";
 import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { moneyFromSettings } from "@/lib/money";
 import { MoneyProvider } from "@/components/money-provider";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { NemesisAiProvider } from "@/components/admin/ai/ai-context";
+import { NemesisAiDrawer } from "@/components/admin/ai/nemesis-ai-drawer";
 import { NotificationBellGate, NotificationBellSkeleton } from "@/components/notifications/notification-bell-gate";
 import { PresenceHeartbeat } from "@/components/presence-heartbeat";
 import { AdminSidebar } from "@/components/admin/app-sidebar";
@@ -47,7 +50,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 }
 
 async function AdminGate({ children }: { children: ReactNode }) {
-  const [user, cookieStore, settings] = await Promise.all([requireAdmin(), cookies(), getSiteSettingsFresh()]);
+  const [user, cookieStore, settings, ai] = await Promise.all([
+    requireAdmin(),
+    cookies(),
+    getSiteSettingsFresh(),
+    adminGetAiSettings(),
+  ]);
   const { store_name } = settings;
   const money = moneyFromSettings(settings);
   // The sidebar component persists its open/collapsed state in this cookie.
@@ -57,18 +65,23 @@ async function AdminGate({ children }: { children: ReactNode }) {
     // Fresh per-request currency for the client components below (the admin price fields read it),
     // overriding the cached value the root layout provides for the storefront.
     <MoneyProvider money={money}>
-      <SidebarProvider defaultOpen={defaultOpen}>
-        <AdminSidebar user={user} storeName={store_name} />
-        <SidebarInset>
-          {/* the bell is a server island: unread count rendered here, streamed into the header */}
-          <AdminHeader bell={
-            <Suspense fallback={<NotificationBellSkeleton />}>
-              <NotificationBellGate basePath="/nemesis/notifications" />
-            </Suspense>
-          } />
-          <div className="w-full flex-1 px-3 py-4 md:px-5 md:py-5">{children}</div>
-        </SidebarInset>
-      </SidebarProvider>
+      <NemesisAiProvider initialSettings={ai.client}>
+        <SidebarProvider defaultOpen={defaultOpen}>
+          <AdminSidebar user={user} storeName={store_name} />
+          <SidebarInset>
+            {/* the bell is a server island: unread count rendered here, streamed into the header */}
+            <AdminHeader
+              bell={
+                <Suspense fallback={<NotificationBellSkeleton />}>
+                  <NotificationBellGate basePath="/nemesis/notifications" />
+                </Suspense>
+              }
+            />
+            <div className="w-full flex-1 px-3 py-4 md:px-5 md:py-5">{children}</div>
+          </SidebarInset>
+        </SidebarProvider>
+        <NemesisAiDrawer />
+      </NemesisAiProvider>
     </MoneyProvider>
   );
 }

@@ -15,6 +15,7 @@ import {
   SettingsIcon,
   ShoppingBagIcon,
   ShoppingCartIcon,
+  SparklesIcon,
   StoreIcon,
   TagsIcon,
   UsersIcon,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import { signOut } from "@/app/auth/actions";
 import type { CurrentUser } from "@/lib/types";
+import { useNemesisAi } from "./ai/ai-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
@@ -60,6 +62,7 @@ export const ADMIN_NAV = [
 export function AdminSidebar({ user, storeName }: { user: CurrentUser; storeName: string }) {
   const pathname = usePathname();
   const { isMobile, setOpenMobile } = useSidebar();
+  const { setOpen: setAiOpen } = useNemesisAi();
   const [signingOut, startTransition] = useTransition();
   const initial = (user.name || user.email || "A").trim().slice(0, 1).toUpperCase();
 
@@ -111,7 +114,29 @@ export function AdminSidebar({ user, storeName }: { user: CurrentUser; storeName
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="px-4 py-2 group-data-[collapsible=icon]:p-2">
+      <SidebarFooter className="gap-2 px-4 py-2 group-data-[collapsible=icon]:p-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip="Nemesis AI (⌘K)"
+              onPress={() => {
+                if (isMobile) setOpenMobile(false);
+                setAiOpen(true);
+              }}
+              className="h-10 justify-between bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 hover:text-primary-foreground data-[active=true]:bg-primary group-data-[collapsible=icon]:justify-center"
+              data-testid="sidebar-nemesis-ai-trigger"
+            >
+              <span className="flex items-center gap-2 font-medium">
+                <SparklesIcon className="size-4 shrink-0" />
+                <span className="group-data-[collapsible=icon]:hidden">Nemesis AI</span>
+              </span>
+              <kbd className="rounded bg-white/20 px-1.5 py-0.5 font-mono text-[10px] text-primary-foreground group-data-[collapsible=icon]:hidden">
+                ⌘K
+              </kbd>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenuTrigger>
