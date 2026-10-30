@@ -1,6 +1,5 @@
 "use server";
 
-import { updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
@@ -42,6 +41,7 @@ import {
   bool,
   count,
   echo,
+  expireTag,
   failure,
   friendlyError,
   idsFrom,
@@ -712,7 +712,7 @@ export async function saveCategory(_prev: AdminFormState, formData: FormData): P
     }
     if (result.error) throw result.error;
 
-    updateTag(MENU_TAG); // menu items that link to this category follow its slug
+    expireTag(MENU_TAG); // menu items that link to this category follow its slug
     revalidateStore();
     // The quick-add form on the list page stays where it is (the list refreshes in place);
     // the edit page goes back to the list.
@@ -765,7 +765,7 @@ export async function quickCreateCategory(input: {
       .single();
     if (error) throw error;
 
-    updateTag(MENU_TAG);
+    expireTag(MENU_TAG);
     revalidateStore();
     return {
       ok: true,
@@ -790,7 +790,7 @@ export async function deleteCategories(formData: FormData): Promise<void> {
     const deleted = data ?? [];
     if (deleted.length === 0) redirect(failure(back, "Those categories no longer exist."));
 
-    updateTag(MENU_TAG); // menu items that link to a deleted category go with it
+    expireTag(MENU_TAG); // menu items that link to a deleted category go with it
     revalidateStore();
     redirect(notice(back, `${count(deleted.length, "category", "categories")} deleted. Their products are now uncategorised.`));
   } catch (e) {
@@ -809,7 +809,7 @@ export async function deleteAllCategories(formData: FormData): Promise<void> {
     const deleted = data ?? [];
     if (deleted.length === 0) redirect(failure(back, "There are no categories to delete."));
 
-    updateTag(MENU_TAG); // every menu item that linked to a category is gone with it
+    expireTag(MENU_TAG); // every menu item that linked to a category is gone with it
     revalidateStore();
     redirect(notice(back, `${count(deleted.length, "category", "categories")} deleted. Their products are now uncategorised.`));
   } catch (e) {
@@ -871,7 +871,7 @@ export async function deleteCategory(formData: FormData): Promise<AdminFormState
     const { error: delError } = await supabase.from("categories").delete().eq("id", id);
     if (delError) throw delError;
 
-    updateTag(MENU_TAG);
+    expireTag(MENU_TAG);
     revalidateStore();
     const message = `"${category.name}" deleted. Its products are now uncategorised.`;
     if (back) redirect(notice(back, message));
@@ -1223,7 +1223,7 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
     }
   }
   if (!data) return "Settings row is missing – run the admin migration (20261016000000_admin.sql).";
-  updateTag(SITE_SETTINGS_TAG); // header, footer, <title>, robots & sitemap pick the change up immediately
+  expireTag(SITE_SETTINGS_TAG); // header, footer, <title>, robots & sitemap pick the change up immediately
   revalidateStore();
   return null;
 }

@@ -1,5 +1,5 @@
 import "server-only";
-import { revalidatePath, updateTag } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { AdminAuthError, assertAdmin } from "@/lib/admin/auth";
 import { safeListReturn } from "@/lib/admin/pagination";
 import { SITEMAP_TAG } from "@/lib/seo";
@@ -78,10 +78,20 @@ export async function adminClient() {
   return { user, supabase };
 }
 
+/**
+ * Immediately expires a cache tag in both Server Actions and Route Handlers.
+ * Next.js 16 throws if `updateTag()` is invoked inside a `/route` handler, whereas
+ * `revalidateTag(tag, { expire: 0 })` immediately expires the tag in both contexts
+ * (and is also required by `@opennextjs/cloudflare` regional cache).
+ */
+export function expireTag(tag: string) {
+  revalidateTag(tag, { expire: 0 });
+}
+
 /** Admin writes touch data that the storefront renders dynamically – purge the router cache for everything. */
 export function revalidateStore() {
   revalidatePath("/", "layout");
-  updateTag(SITEMAP_TAG); // product / category / settings / page changes all show up in sitemap.xml
+  expireTag(SITEMAP_TAG); // product / category / settings / page changes all show up in sitemap.xml
 }
 
 const withFlash = (path: string, key: "notice" | "error", message: string) =>
