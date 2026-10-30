@@ -12,12 +12,14 @@ export function ProductImage({
   sizes = "(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw",
   priority,
   className,
+  imageClassName,
 }: {
   src: string | null;
   alt: string;
   sizes?: string;
   priority?: boolean;
   className?: string;
+  imageClassName?: string;
 }) {
   const trimmedSrc = src?.trim() || null;
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export function ProductImage({
           fill
           sizes={sizes}
           priority={priority}
-          className="object-cover"
+          className={cn("object-cover", imageClassName)}
           onError={() => setFailedSrc(trimmedSrc)}
           // Custom image URLs from the admin dashboard can point anywhere – serve
           // those as-is instead of failing the optimizer's host allow-list.

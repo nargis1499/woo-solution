@@ -2,22 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, cache } from "react";
-import { BanknoteIcon, PackageCheckIcon, TruckIcon } from "lucide-react";
 import { getProductBySlug, getProducts } from "@/lib/data/products";
 import { canonicalFor } from "@/lib/seo";
 import { getSiteSettings } from "@/lib/site-settings";
-import { FREE_SHIPPING_THRESHOLD_MICROS } from "@/lib/config";
-import { formatMoney, moneyFromSettings } from "@/lib/money";
-import { Price } from "@/components/price";
-import { ProductGallery } from "@/components/product-gallery";
-import { slidesFor } from "@/lib/media/shared";
 import { ProductGrid } from "@/components/product-grid";
-import { Badge } from "@/components/ui/badge";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
-import { WishlistButton } from "@/components/wishlist-button";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ProductPurchasePanel } from "./product-detail";
+import { ProductInformationTabs, ProductShowcase } from "./product-detail";
 
 type Params = Promise<{ slug: string }>;
 
@@ -38,29 +29,26 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 
 export default function ProductPage({ params }: { params: Params }) {
   return (
-    <div className="container-page py-10">
-      <Suspense fallback={<ProductSkeleton />}>
-        <ProductDetails params={params} />
-      </Suspense>
-    </div>
+    <main className="dark min-h-screen bg-[#070b18] text-slate-100">
+      <div className="container-page py-6 sm:py-9">
+        <Suspense fallback={<ProductSkeleton />}>
+          <ProductDetails params={params} />
+        </Suspense>
+      </div>
+    </main>
   );
 }
 
 async function ProductDetails({ params }: { params: Params }) {
   const { slug } = await params;
-  // Both read here, in the dynamic part of the page (loadProduct() is uncached), so the
-  // stock switch from Settings → WooCommerce is fresh on every navigation.
+  // The stock switch comes from Settings and is read dynamically on navigation.
   const [product, settings] = await Promise.all([loadProduct(slug), getSiteSettings()]);
-  const { manage_stock } = settings;
-  const money = moneyFromSettings(settings);
   if (!product) notFound();
-  // Variable products show "From …" at the top; the panel below shows the chosen combination.
-  const isVariable = (product.type ?? "simple") === "variable" && (product.attributes?.length ?? 0) > 0;
 
   return (
     <>
       <PageBreadcrumbs
-        className="mb-6"
+        className="mb-6 text-slate-400 [&_a]:text-slate-400 [&_a:hover]:text-white [&_[aria-current=page]]:text-slate-200"
         items={[
           { label: "Home", href: "/" },
           { label: "Shop", href: "/shop" },
@@ -69,53 +57,13 @@ async function ProductDetails({ params }: { params: Params }) {
         ]}
       />
 
-      <div className="grid gap-10 lg:grid-cols-2">
-        <ProductGallery slides={slidesFor(product)} />
-        <div className="space-y-6">
-          <div>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              {product.brand && (
-                <Badge className="rounded-full bg-zinc-900 px-3 py-0.5 text-[11px] font-bold tracking-wider text-white uppercase dark:bg-zinc-100 dark:text-zinc-900">
-                  {product.brand}
-                </Badge>
-              )}
-              {product.category && (
-                <Link href={`/shop?category=${product.category.slug}`}>
-                  <Badge variant="secondary">
-                    {product.category.name}
-                  </Badge>
-                </Link>
-              )}
-            </div>
-            <div className="flex items-start justify-between gap-3">
-              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{product.name}</h1>
-              <WishlistButton product={product} />
-            </div>
-            <Price micros={product.price_micros} regularMicros={product.compare_at_price_micros} from={isVariable} className="mt-3 text-2xl" />
-          </div>
-          {product.description && <p className="leading-relaxed text-muted-foreground">{product.description}</p>}
-          <ProductPurchasePanel product={product} manageStock={manage_stock} />
-          <Separator />
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            {settings.shipping_enabled && (
-              <li className="flex items-center gap-2">
-                <TruckIcon className="size-4" aria-hidden />{" "}
-                {settings.shipping_rate_micros === 0
-                  ? "Free shipping on all orders."
-                  : `Shipping: ${formatMoney(settings.shipping_rate_micros, money)} (free on orders over ${formatMoney(FREE_SHIPPING_THRESHOLD_MICROS, money)}).`}
-              </li>
-            )}
-            <li className="flex items-center gap-2">
-              <BanknoteIcon className="size-4" aria-hidden /> Cash on delivery available.
-            </li>
-            {(product.sku || !isVariable) && (
-              <li className="flex items-center gap-2">
-                <PackageCheckIcon className="size-4" aria-hidden /> SKU: {product.sku ?? product.id.slice(0, 8).toUpperCase()}
-              </li>
-            )}
-          </ul>
-        </div>
-      </div>
+      <ProductShowcase
+        product={product}
+        manageStock={settings.manage_stock}
+        shippingEnabled={settings.shipping_enabled}
+        shippingRateMicros={settings.shipping_rate_micros}
+      />
+      <ProductInformationTabs product={product} />
 
       <Suspense fallback={null}>
         <RelatedProducts product={product} />
@@ -124,13 +72,16 @@ async function ProductDetails({ params }: { params: Params }) {
   );
 }
 
-async function RelatedProducts({ product }: { product: Awaited<ReturnType<typeof getProductBySlug>> }) {
-  if (!product?.category) return null;
-  const related = (await getProducts({ categorySlug: product.category.slug, limit: 5 })).filter((p) => p.id !== product.id).slice(0, 4);
+async function RelatedProducts({ product }: { product: NonNullable<Awaited<ReturnType<typeof getProductBySlug>>> }) {
+  if (!product.category) return null;
+  const related = (await getProducts({ categorySlug: product.category.slug, limit: 5 })).filter((item) => item.id !== product.id).slice(0, 4);
   if (related.length === 0) return null;
   return (
-    <section className="mt-16">
-      <h2 className="mb-5 text-2xl font-bold tracking-tight">Related products</h2>
+    <section className="mt-12 border-t border-slate-800 pt-10 sm:mt-16 sm:pt-12">
+      <div className="mb-5 flex items-end justify-between gap-4">
+        <div><p className="mb-1 text-xs font-bold tracking-[0.18em] text-indigo-300 uppercase">Discover more</p><h2 className="text-2xl font-bold tracking-tight text-white">Related products</h2></div>
+        <Link href={`/shop?category=${product.category.slug}`} className="text-sm font-semibold text-indigo-300 hover:text-indigo-200">View all</Link>
+      </div>
       <ProductGrid products={related} />
     </section>
   );
@@ -138,15 +89,9 @@ async function RelatedProducts({ product }: { product: Awaited<ReturnType<typeof
 
 function ProductSkeleton() {
   return (
-    <div className="grid gap-10 lg:grid-cols-2" aria-hidden>
-      <Skeleton className="aspect-square rounded-2xl" />
-      <div className="space-y-4">
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-9 w-3/4" />
-        <Skeleton className="h-7 w-28" />
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-12 w-64" />
-      </div>
+    <div className="grid gap-8 lg:grid-cols-2" aria-hidden>
+      <Skeleton className="aspect-square rounded-3xl" />
+      <div className="space-y-4"><Skeleton className="h-5 w-36" /><Skeleton className="h-10 w-3/4" /><Skeleton className="h-7 w-36" /><Skeleton className="h-24 w-full" /><Skeleton className="h-12 w-full" /></div>
     </div>
   );
 }
