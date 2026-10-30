@@ -5,6 +5,7 @@ import {
   type AiToolCall,
   type AiTurnMessage,
 } from "@/lib/ai/client";
+import { CONTENT_PREVIEW_REPAIR, needsContentPreviewRepair } from "@/lib/ai/content-fields";
 import { loadAiSettingsForAction } from "@/lib/ai/settings";
 import {
   AGENT_TOOLS,
@@ -30,10 +31,12 @@ export async function POST(request: Request) {
       | {
           phase: "run";
           prompt: string;
+          currentPath?: string;
           history?: AiChatHistoryItem[];
         }
       | {
           phase: "ollama_prepare";
+          currentPath?: string;
         }
       | {
           phase: "ollama_execute_tools";
@@ -70,7 +73,7 @@ export async function POST(request: Request) {
     /* Phase B: Browser-Direct Local Ollama Step 1 — prepare context & tool schemas */
     if (body.phase === "ollama_prepare") {
       const { context } = await loadStoreContextSummary();
-      const systemPrompt = buildAgentSystemPrompt(aiSettings, context);
+      const systemPrompt = buildAgentSystemPrompt(aiSettings, context, body.currentPath);
       return NextResponse.json({
         ok: true,
         systemPrompt,
@@ -110,13 +113,14 @@ export async function POST(request: Request) {
       }
 
       if (!aiSettings.require_confirmation && plans.length > 0) {
-        for (const p of plans) {
+        for (const p of plans.filter((p) => !p.items.some((i) => i.mutation.kind === "content_update"))) {
           await executeApprovedPlan({
             plan: p,
             selectedItemIds: p.items.map((i) => i.id),
           });
         }
-        plans.length = 0;
+        const pendingContent = plans.filter((p) => p.items.some((i) => i.mutation.kind === "content_update"));
+        plans.splice(0, plans.length, ...pendingContent);
       }
 
       return NextResponse.json({
@@ -135,7 +139,7 @@ export async function POST(request: Request) {
     }
 
     const { context, money } = await loadStoreContextSummary();
-    const systemPrompt = buildAgentSystemPrompt(aiSettings, context);
+    const systemPrompt = buildAgentSystemPrompt(aiSettings, context, body.currentPath);
 
     const historyLimit =
       aiSettings.token_budget_mode === "economy"
@@ -173,6 +177,7 @@ export async function POST(request: Request) {
     let limitTokensPerMin: number | null | undefined = null;
     let remainingTokensPerMin: number | null | undefined = null;
     let finalReply = "";
+    let repairedContentPreview = false;
 
     for (let round = 0; round <= maxRounds; round++) {
       const isLastAllowedRound = round === maxRounds;
@@ -191,6 +196,14 @@ export async function POST(request: Request) {
       }
       if (completion.rateLimit.remainingTokensPerMin != null) {
         remainingTokensPerMin = completion.rateLimit.remainingTokensPerMin;
+      }
+
+      if (completion.toolCalls.length === 0 && !isLastAllowedRound && plans.length === 0 && !repairedContentPreview && needsContentPreviewRepair(prompt, completion.text)) {
+        repairedContentPreview = true;
+        messages.push({ role: "assistant", content: completion.text });
+        messages.push({ role: "user", content: CONTENT_PREVIEW_REPAIR });
+        round--; // Preserve the normal read -> preview -> summary tool budget; retry only once.
+        continue;
       }
 
       if (completion.toolCalls.length === 0 || isLastAllowedRound) {
@@ -226,14 +239,15 @@ export async function POST(request: Request) {
 
     let autoAppliedTotal = 0;
     if (!aiSettings.require_confirmation && plans.length > 0) {
-      for (const p of plans) {
+      for (const p of plans.filter((p) => !p.items.some((i) => i.mutation.kind === "content_update"))) {
         const applied = await executeApprovedPlan({
           plan: p,
           selectedItemIds: p.items.map((i) => i.id),
         });
         autoAppliedTotal += applied.appliedCount;
       }
-      plans.length = 0;
+      const pendingContent = plans.filter((p) => p.items.some((i) => i.mutation.kind === "content_update"));
+      plans.splice(0, plans.length, ...pendingContent);
     }
 
     if (!finalReply) {

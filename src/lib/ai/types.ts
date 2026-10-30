@@ -1,3 +1,4 @@
+import type { AiContentEntity } from "@/lib/ai/content-fields";
 import type { AiProviderId } from "@/lib/ai/providers";
 
 export type AiToolBadge = {
@@ -62,7 +63,18 @@ export type AiOrderStatusMutation = {
   newStatus: "pending" | "processing" | "completed" | "cancelled";
 };
 
+export type AiContentMutation = {
+  kind: "content_update";
+  entity: AiContentEntity;
+  entityId: string;
+  field: string;
+  value: string;
+  previousValue: string | null;
+  previousUpdatedAt: string;
+};
+
 export type AiPlanMutation =
+  | AiContentMutation
   | AiDiscountMutation
   | AiProductStatusMutation
   | AiSeoFixMutation
