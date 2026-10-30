@@ -83,7 +83,7 @@ function TabsContent({
   return (
     <TabPanelPrimitive
       data-slot="tabs-content"
-      className={cn("flex-1 text-sm outline-none", className)}
+      className={cn("flex-1 text-sm outline-none data-inert:hidden", className)}
       {...props}
     />
   )

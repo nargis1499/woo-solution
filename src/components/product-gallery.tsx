@@ -17,7 +17,7 @@ export function ProductGallery({ slides, className, product }: { slides: Gallery
       <div className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl shadow-black/20">
         <ProductImage
           src={current?.src ?? null}
-          alt={current?.alt ?? ""}
+          alt={current?.alt || product?.name || "Product image"}
           sizes="(min-width: 1024px) 48vw, 100vw"
           priority
           className="aspect-[16/10] max-h-[21rem] bg-slate-900 sm:max-h-[23rem] lg:max-h-[24rem]"
@@ -48,7 +48,13 @@ export function ProductGallery({ slides, className, product }: { slides: Gallery
                 )}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={slide.thumb} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
+                <img
+                  src={slide.thumb}
+                  alt={slide.alt || (product?.name ? `${product.name} – image ${i + 1}` : "")}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                />
               </button>
             </li>
           ))}

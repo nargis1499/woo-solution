@@ -143,6 +143,8 @@ export default async function HomePage() {
 
   return (
     <div className="container-page space-y-14 py-10">
+      {/* Ensure a primary <h1> heading is always present for crawlers even when the hero banner is disabled */}
+      {!settings.home_show_hero && <h1 className="sr-only">{heroTitle}</h1>}
       {/* Dynamic Hero section – configured under UI → Home page */}
       {settings.home_show_hero && (
         <section

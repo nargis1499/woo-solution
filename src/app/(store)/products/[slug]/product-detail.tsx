@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   BanknoteIcon,
   BatteryFullIcon,
@@ -104,7 +105,13 @@ export function ProductShowcase({
       <section className="min-w-0 space-y-5" aria-labelledby="product-title">
         <div className="flex flex-wrap items-center gap-2">
           {product.brand && <Badge className="border border-indigo-400/30 bg-indigo-500/15 px-3 py-1 text-[11px] font-bold tracking-widest text-indigo-200 uppercase">{product.brand}</Badge>}
-          {product.category && <Badge className="border border-slate-600 bg-slate-800/80 px-3 py-1 text-[11px] font-semibold tracking-wider text-slate-200 uppercase">{product.category.name}</Badge>}
+          {product.category && (
+            <Link href={`/shop?category=${encodeURIComponent(product.category.slug)}`}>
+              <Badge className="border border-slate-600 bg-slate-800/80 px-3 py-1 text-[11px] font-semibold tracking-wider text-slate-200 uppercase transition-colors hover:border-indigo-400/60 hover:text-white">
+                {product.category.name}
+              </Badge>
+            </Link>
+          )}
           <Badge className={inStock ? "border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300" : "border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold text-rose-300"}>
             <span className={inStock ? "mr-1.5 size-1.5 rounded-full bg-emerald-400" : "mr-1.5 size-1.5 rounded-full bg-rose-400"} />
             {inStock ? "In stock" : "Out of stock"}
@@ -187,11 +194,22 @@ export function ProductShowcase({
 export function ProductInformationTabs({ product }: { product: Product }) {
   const [tab, setTab] = useState("features");
   const features = parseProductFeatures(product.features, 3);
-  const specs = [
-    ...(product.brand ? [["Brand", product.brand] as const] : []),
-    ...(product.category ? [["Category", product.category.name] as const] : []),
-    ...(product.sku ? [["SKU", product.sku] as const] : []),
-    ...((product.attributes ?? []).map((attribute) => [attribute.name, attribute.options.join(", ")] as const)),
+  const specs: { label: string; value: string; href?: string }[] = [
+    ...(product.brand ? [{ label: "Brand", value: product.brand }] : []),
+    ...(product.category
+      ? [
+          {
+            label: "Category",
+            value: product.category.name,
+            href: `/shop?category=${encodeURIComponent(product.category.slug)}`,
+          },
+        ]
+      : []),
+    ...(product.sku ? [{ label: "SKU", value: product.sku }] : []),
+    ...((product.attributes ?? []).map((attribute) => ({
+      label: attribute.name,
+      value: attribute.options.join(", "),
+    }))),
   ];
 
   return (
@@ -220,17 +238,80 @@ export function ProductInformationTabs({ product }: { product: Product }) {
             Delivery &amp; Payment
           </TabsTrigger>
         </TabsList>
-        <TabsContent id="features" className="pt-6">
-          {features.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{features.map((feature, index) => {
-            const Icon = [CpuIcon, BatteryFullIcon, MonitorIcon][index % 3];
-            return <article key={`${feature}-${index}`} className="rounded-xl border border-slate-800 bg-slate-950/60 p-5"><span className="mb-4 inline-flex size-10 items-center justify-center rounded-xl bg-indigo-500/15 text-indigo-300"><Icon className="size-5" /></span><h2 className="font-semibold leading-6 text-white">{feature}</h2></article>;
-          })}</div> : <p className="rounded-xl border border-dashed border-slate-700 p-6 text-sm text-slate-400">Product highlights will appear here when added to the catalog.</p>}
+        {/* shouldForceMount keeps every tab panel in the SSR HTML DOM so Googlebot crawls
+            Key Features, Specifications and Delivery & Payment without needing JS clicks. */}
+        <TabsContent id="features" shouldForceMount className="pt-6 data-inert:hidden">
+          <h2 className="sr-only">Key Features</h2>
+          {features.length ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {features.map((feature, index) => {
+                const Icon = [CpuIcon, BatteryFullIcon, MonitorIcon][index % 3];
+                return (
+                  <article key={`${feature}-${index}`} className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+                    <span className="mb-4 inline-flex size-10 items-center justify-center rounded-xl bg-indigo-500/15 text-indigo-300">
+                      <Icon className="size-5" aria-hidden />
+                    </span>
+                    <h3 className="font-semibold leading-6 text-white">{feature}</h3>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-dashed border-slate-700 p-6 text-sm text-slate-400">
+              Product highlights will appear here when added to the catalog.
+            </p>
+          )}
         </TabsContent>
-        <TabsContent id="specifications" className="pt-6">
-          {specs.length ? <dl className="grid overflow-hidden rounded-xl border border-slate-800 sm:grid-cols-2">{specs.map(([label, value], index) => <div key={label} className={`grid grid-cols-[minmax(8rem,0.7fr)_1fr] gap-4 border-slate-800 px-4 py-3 text-sm ${index > 0 ? "border-t" : ""} sm:even:border-l sm:even:pl-5`}><dt className="text-slate-400">{label}</dt><dd className="font-medium text-slate-100">{value}</dd></div>)}</dl> : <p className="rounded-xl border border-dashed border-slate-700 p-6 text-sm text-slate-400">No extra specifications have been provided for this product.</p>}
+        <TabsContent id="specifications" shouldForceMount className="pt-6 data-inert:hidden">
+          <h2 className="sr-only">Specifications</h2>
+          {specs.length ? (
+            <dl className="grid overflow-hidden rounded-xl border border-slate-800 sm:grid-cols-2">
+              {specs.map(({ label, value, href }, index) => (
+                <div
+                  key={label}
+                  className={`grid grid-cols-[minmax(8rem,0.7fr)_1fr] gap-4 border-slate-800 px-4 py-3 text-sm ${index > 0 ? "border-t" : ""} sm:even:border-l sm:even:pl-5`}
+                >
+                  <dt className="text-slate-400">{label}</dt>
+                  <dd className="font-medium text-slate-100">
+                    {href ? (
+                      <Link href={href} className="underline-offset-4 hover:text-indigo-300 hover:underline">
+                        {value}
+                      </Link>
+                    ) : (
+                      value
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="rounded-xl border border-dashed border-slate-700 p-6 text-sm text-slate-400">
+              No extra specifications have been provided for this product.
+            </p>
+          )}
         </TabsContent>
-        <TabsContent id="delivery" className="pt-6">
-          <div className="grid gap-4 md:grid-cols-2"><article className="flex gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-5"><TruckIcon className="mt-0.5 size-5 shrink-0 text-indigo-300" /><div><h2 className="font-semibold text-white">Shipping</h2><p className="mt-1 text-sm leading-6 text-slate-400">Shipping options and any applicable charges are shown during checkout.</p></div></article><article className="flex gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-5"><BanknoteIcon className="mt-0.5 size-5 shrink-0 text-indigo-300" /><div><h2 className="font-semibold text-white">Payment</h2><p className="mt-1 text-sm leading-6 text-slate-400">Cash on delivery and configured online payment methods are available at checkout.</p></div></article></div>
+        <TabsContent id="delivery" shouldForceMount className="pt-6 data-inert:hidden">
+          <h2 className="sr-only">Delivery &amp; Payment</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            <article className="flex gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+              <TruckIcon className="mt-0.5 size-5 shrink-0 text-indigo-300" aria-hidden />
+              <div>
+                <h3 className="font-semibold text-white">Shipping</h3>
+                <p className="mt-1 text-sm leading-6 text-slate-400">
+                  Shipping options and any applicable charges are shown during checkout.
+                </p>
+              </div>
+            </article>
+            <article className="flex gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+              <BanknoteIcon className="mt-0.5 size-5 shrink-0 text-indigo-300" aria-hidden />
+              <div>
+                <h3 className="font-semibold text-white">Payment</h3>
+                <p className="mt-1 text-sm leading-6 text-slate-400">
+                  Cash on delivery and configured online payment methods are available at checkout.
+                </p>
+              </div>
+            </article>
+          </div>
         </TabsContent>
       </Tabs>
     </section>

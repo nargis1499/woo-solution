@@ -6,7 +6,8 @@ import { SearchIcon } from "lucide-react";
 import { PRODUCTS_PER_PAGE, productCountLabel, shopHref } from "@/lib/catalog";
 import { getCategories, getProductPage } from "@/lib/data/products";
 import { pageRange, parsePage } from "@/lib/pagination";
-import { canonicalFor } from "@/lib/seo";
+import { canonicalFor, robotsFor } from "@/lib/seo";
+import { getSiteSettings, resolveSiteUrl } from "@/lib/site-settings";
 import { ProductGrid, ProductGridSkeleton } from "@/components/product-grid";
 import { ProductPagination } from "@/components/product-pagination";
 import { badgeVariants } from "@/components/ui/badge";
@@ -24,10 +25,43 @@ export async function generateMetadata({ searchParams }: { searchParams: SearchP
   const { category, q, page: rawPage } = await searchParams;
   const page = parsePage(rawPage);
   const path = q ? "/shop" : shopHref({ category, page });
+  const [settings, categories, alternates] = await Promise.all([
+    getSiteSettings(),
+    category ? getCategories().catch(() => []) : Promise.resolve([]),
+    canonicalFor(path),
+  ]);
+  const activeCategory = category ? categories.find((c) => c.slug === category) : undefined;
+  const unknownCategory = Boolean(category && categories.length > 0 && !activeCategory);
+  const shouldIndex = settings.seo_indexing && !q && !unknownCategory;
+
+  const baseTitle = activeCategory ? activeCategory.name : "Shop";
+  const title = page > 1 ? `${baseTitle} – page ${page}` : baseTitle;
+  const description = activeCategory
+    ? `Browse ${activeCategory.name} products at ${settings.store_name} — curated selection, transparent pricing, and fast checkout.`
+    : `Browse the full product catalog at ${settings.store_name}, filter by category, or search by keyword.`;
+  const base = resolveSiteUrl(settings);
+  const image = settings.seo_og_image_url ?? undefined;
+
   return {
-    title: page > 1 ? `Shop – page ${page}` : "Shop",
-    alternates: await canonicalFor(path),
-    robots: q ? { index: false, follow: true } : undefined,
+    title,
+    description,
+    alternates,
+    robots: robotsFor({ index: shouldIndex, follow: settings.seo_indexing }),
+    openGraph: {
+      type: "website",
+      siteName: settings.store_name,
+      title: `${title} · ${settings.store_name}`,
+      description,
+      url: base ? `${base}${path}` : undefined,
+      images: image ? [{ url: image, alt: `${title} · ${settings.store_name}` }] : undefined,
+    },
+    twitter: {
+      card: image ? "summary_large_image" : "summary",
+      site: settings.seo_twitter ? `@${settings.seo_twitter}` : undefined,
+      title: `${title} · ${settings.store_name}`,
+      description,
+      images: image ? [image] : undefined,
+    },
   };
 }
 

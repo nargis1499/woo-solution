@@ -21,6 +21,18 @@ import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { SimpleProductBlockCard } from "@/components/simple-product-block-card";
 
 /**
+ * Strip editor-only `data-block-*` attributes after `extractContentSegments` has parsed
+ * interactive blocks, and demote any body `<h1>` to `<h2>` so `page.title` remains the
+ * sole `<h1>` on every CMS page and blog post.
+ */
+export function cleanStorefrontHtml(html: string): string {
+  return html
+    .replace(/\s+data-block-(?:json|id|type)=(?:"[^"]*"|'[^']*')/gi, "")
+    .replace(/<h1(\b[^>]*)>/gi, "<h2$1>")
+    .replace(/<\/h1>/gi, "</h2>");
+}
+
+/**
  * Storefront template for a CMS page (also used by the admin preview). The
  * content is sanitised again right before rendering – the allow-list in
  * `lib/pages/sanitize.ts` is the only thing between the editor and the DOM.
@@ -121,7 +133,7 @@ export async function PageArticle({
             src={image.src}
             srcSet={srcSet || undefined}
             sizes="(min-width: 1024px) 1024px, 100vw"
-            alt={media?.alt ?? ""}
+            alt={media?.alt || page.title}
             width={media?.width ?? undefined}
             height={media?.height ?? undefined}
             referrerPolicy={media ? undefined : "no-referrer"}
@@ -138,18 +150,20 @@ export async function PageArticle({
             <div
               className="rich-text rich-text-lg"
               data-testid="page-content"
-              dangerouslySetInnerHTML={{ __html: html }}
+              dangerouslySetInnerHTML={{ __html: cleanStorefrontHtml(html) }}
             />
           </div>
         ) : (
           <div className="mx-auto mt-8 space-y-6" data-testid="page-content">
             {segments.map((seg, i) => {
               if (seg.kind === "html") {
+                const bodyHtml = cleanStorefrontHtml(seg.html);
+                if (!bodyHtml.trim()) return null;
                 return (
                   <div
                     key={`html-${i}`}
                     className="rich-text rich-text-lg"
-                    dangerouslySetInnerHTML={{ __html: seg.html }}
+                    dangerouslySetInnerHTML={{ __html: bodyHtml }}
                   />
                 );
               }
@@ -252,7 +266,9 @@ function StorefrontLayoutBlock({
                   key={`${child.id}-${childIdx}`}
                   className="rich-text rich-text-lg"
                   dangerouslySetInnerHTML={{
-                    __html: sanitizePageHtml(renderSingleBlockHtml(child, false)),
+                    __html: cleanStorefrontHtml(
+                      sanitizePageHtml(renderSingleBlockHtml(child, false)),
+                    ),
                   }}
                 />
               ),
