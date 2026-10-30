@@ -1,7 +1,7 @@
 "use client";
 
-import { startTransition, useActionState, useState, type ReactNode } from "react";
-import { TruckIcon } from "lucide-react";
+import { startTransition, useActionState, useEffect, useState, type ReactNode } from "react";
+import { SaveIcon, SearchIcon, StoreIcon, TruckIcon } from "lucide-react";
 import { updateGeneralSettings, updateSeoSettings, updateShopSettings, type AdminFormState } from "@/app/nemesis/actions";
 import {
   CURRENCIES,
@@ -38,28 +38,41 @@ import { MediaRefField } from "./media/media-ref-field";
 
 type Action = (prev: AdminFormState, formData: FormData) => Promise<AdminFormState>;
 
-/** One settings form = one card with its own Server Action and Save button (also used by UI → Home page). */
+/** One settings form = one card with its own Server Action and Save button (also used by Ecommerce → General). */
 export function SettingsCard({
   title,
   description,
+  icon,
+  formId,
+  onPendingChange,
   action,
   footer,
   children,
 }: {
   title: string;
   description?: string;
+  icon?: ReactNode;
+  /** When supplied by SettingsTabs, submission is triggered from the sticky top-right bar. */
+  formId?: string;
+  onPendingChange?: (pending: boolean) => void;
   action: Action;
-  /** Extra footer content next to the Save button, e.g. a preview link. */
+  /** Extra action content next to the Save button, e.g. a preview link. */
   footer?: ReactNode;
   children: (ctx: { v: Record<string, string>; err: Record<string, string> }) => ReactNode;
 }) {
   const [state, dispatch, isPending] = useActionState<AdminFormState, FormData>(action, null);
   useFormToast(state);
+
+  useEffect(() => {
+    onPendingChange?.(isPending);
+  }, [isPending, onPendingChange]);
+
   return (
     // Dispatched from onSubmit instead of `<form action>` on purpose: React 19 resets a form after an
     // `action` completes, which flips React Aria's switch/checkbox inputs back to their initial DOM
     // state and makes the next click look dead. Without the reset what you see is what gets saved.
     <form
+      id={formId}
       noValidate
       onSubmit={(e) => {
         if (e.target !== e.currentTarget) return; // a form inside the (portalled) media picker, not this one
@@ -68,20 +81,54 @@ export function SettingsCard({
         startTransition(() => dispatch(formData));
       }}
     >
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          {description && <CardDescription>{description}</CardDescription>}
-        </CardHeader>
-        <CardContent>
+      {formId && (
+        <button type="submit" className="sr-only" tabIndex={-1} aria-hidden="true">
+          Save changes
+        </button>
+      )}
+      <Card className={cn(!formId && "gap-0 overflow-visible py-0")}>
+        {formId ? (
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {icon}
+              {title}
+            </CardTitle>
+            {description && <CardDescription>{description}</CardDescription>}
+            {state?.error && <FieldError>{state.error}</FieldError>}
+          </CardHeader>
+        ) : (
+          <div
+            className="sticky top-14 z-20 rounded-t-xl border-b bg-card/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-card/85"
+            data-testid="settings-sticky-header"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <CardTitle className="flex items-center gap-2">
+                  {icon}
+                  {title}
+                </CardTitle>
+                {description && <CardDescription>{description}</CardDescription>}
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                {footer}
+                <SubmitButton pendingLabel="Saving…" pending={isPending}>
+                  <SaveIcon /> Save changes
+                </SubmitButton>
+              </div>
+            </div>
+            {state?.error && (
+              <div className="mt-2">
+                <FieldError>{state.error}</FieldError>
+              </div>
+            )}
+          </div>
+        )}
+        <CardContent className={cn(!formId && "py-6")}>
           <FieldGroup className="gap-5">{children({ v: state?.values ?? {}, err: state?.fieldErrors ?? {} })}</FieldGroup>
         </CardContent>
-        <CardFooter className="justify-between gap-3 border-t">
-          <SubmitButton pendingLabel="Saving…" pending={isPending}>
-            Save changes
-          </SubmitButton>
-          {footer}
-        </CardFooter>
+        {formId && footer && (
+          <CardFooter className="justify-end gap-3 border-t">{footer}</CardFooter>
+        )}
       </Card>
     </form>
   );
@@ -91,9 +138,25 @@ const invalid = (message?: string) => (message ? { "data-invalid": true as const
 
 /* ── General ─────────────────────────────────────────────────────────────── */
 
-export function GeneralSettingsForm({ settings, favicon }: { settings: SiteSettings; favicon: MediaRef | null }) {
+export function GeneralSettingsForm({
+  settings,
+  favicon,
+  formId,
+  onPendingChange,
+}: {
+  settings: SiteSettings;
+  favicon: MediaRef | null;
+  formId?: string;
+  onPendingChange?: (pending: boolean) => void;
+}) {
   return (
-    <SettingsCard title="General" action={updateGeneralSettings}>
+    <SettingsCard
+      title="General"
+      icon={<StoreIcon className="size-4 text-primary" />}
+      formId={formId}
+      onPendingChange={onPendingChange}
+      action={updateGeneralSettings}
+    >
       {({ v, err }) => (
         <>
           <div className="grid gap-5 sm:grid-cols-2">
@@ -157,11 +220,27 @@ export function GeneralSettingsForm({ settings, favicon }: { settings: SiteSetti
 
 const DESCRIPTION_IDEAL = 160;
 
-export function SeoSettingsForm({ settings, shareImage }: { settings: SiteSettings; shareImage: MediaRef | null }) {
+export function SeoSettingsForm({
+  settings,
+  shareImage,
+  formId,
+  onPendingChange,
+}: {
+  settings: SiteSettings;
+  shareImage: MediaRef | null;
+  formId?: string;
+  onPendingChange?: (pending: boolean) => void;
+}) {
   const [descriptionLength, setDescriptionLength] = useState((settings.seo_description ?? "").length);
 
   return (
-    <SettingsCard title="SEO" action={updateSeoSettings}>
+    <SettingsCard
+      title="SEO"
+      icon={<SearchIcon className="size-4 text-primary" />}
+      formId={formId}
+      onPendingChange={onPendingChange}
+      action={updateSeoSettings}
+    >
       {({ v, err }) => (
         <>
           <SwitchField id="seo_indexing" name="seo_indexing" label="Search engine visibility – allow search engines to index this site" defaultSelected={settings.seo_indexing} />
