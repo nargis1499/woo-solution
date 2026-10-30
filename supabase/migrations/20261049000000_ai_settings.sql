@@ -16,7 +16,7 @@ create table if not exists public.ai_settings (
   ollama_mode             text not null default 'browser'
                           check (ollama_mode in ('browser', 'tunnel')),
   ollama_base_url         text not null default 'http://localhost:11434',
-  ollama_num_ctx          integer not null default 16384
+  ollama_num_ctx          integer not null default 4096
                           check (ollama_num_ctx >= 2048 and ollama_num_ctx <= 131072),
   ollama_disable_thinking boolean not null default true,
   token_budget_mode       text not null default 'economy'

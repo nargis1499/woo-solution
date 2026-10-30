@@ -159,7 +159,7 @@ async function callOpenAiCompatible(opts: {
     /reasoner/i.test(opts.model);
 
   const systemContent =
-    opts.provider === "ollama" && opts.ollamaDisableThinking && /qwen3/i.test(opts.model)
+    opts.provider === "ollama" && opts.ollamaDisableThinking && /^qwen3(?!\.)/i.test(opts.model)
       ? `${opts.systemPrompt}\n/no_think`
       : opts.systemPrompt;
 
@@ -218,7 +218,7 @@ async function callOpenAiCompatible(opts: {
       payload.tool_choice = "auto";
     }
     if (opts.provider === "ollama") {
-      payload.options = { num_ctx: opts.ollamaNumCtx ?? 16384 };
+      payload.options = { num_ctx: opts.ollamaNumCtx ?? 4096 };
       if (opts.ollamaDisableThinking) {
         payload.think = false;
       }
