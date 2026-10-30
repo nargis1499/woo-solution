@@ -244,7 +244,7 @@ export const DEFAULT_AI_SETTINGS: AiSettingsServer = {
   custom_base_url: null,
   ollama_mode: "browser",
   ollama_base_url: "http://localhost:11434",
-  ollama_num_ctx: 16384,
+  ollama_num_ctx: 4096,
   ollama_disable_thinking: true,
   token_budget_mode: "economy",
   reasoning_effort: "low",

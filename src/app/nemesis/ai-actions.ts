@@ -97,7 +97,7 @@ export async function saveAiSettingsAction(
 
     const numCtx = Math.max(
       2048,
-      Math.min(131072, Math.round(Number(input.ollama_num_ctx) || 16384)),
+      Math.min(131072, Math.round(Number(input.ollama_num_ctx) || 4096)),
     );
     const temp = Math.max(
       0,

@@ -163,7 +163,7 @@ export function AiSettingsForm({
         const res = await testBrowserOllamaConnection({
           baseUrl: ollamaBaseUrl,
           model: primaryModel || "qwen3.5:9b",
-          numCtx: Number.parseInt(ollamaNumCtx, 10) || 16384,
+          numCtx: Number.parseInt(ollamaNumCtx, 10) || 4096,
           disableThinking: ollamaDisableThinking,
         });
         const msg = `Connected to local Ollama (${res.modelUsed}) in ${res.latencyMs}ms${res.toolCallingVerified ? " · Tool-calling verified ✓" : ""}`;
@@ -229,7 +229,7 @@ export function AiSettingsForm({
         custom_base_url: customBaseUrl || null,
         ollama_mode: ollamaMode,
         ollama_base_url: ollamaBaseUrl,
-        ollama_num_ctx: Number.parseInt(ollamaNumCtx, 10) || 16384,
+        ollama_num_ctx: Number.parseInt(ollamaNumCtx, 10) || 4096,
         ollama_disable_thinking: ollamaDisableThinking,
         token_budget_mode: budgetMode,
         reasoning_effort: reasoningEffort,
@@ -413,6 +413,9 @@ export function AiSettingsForm({
                         value={ollamaNumCtx}
                         onChange={(e) => setOllamaNumCtx(e.target.value)}
                       />
+                      <FieldDescription>
+                        4096 recommended for 6–8 GB VRAM GPUs (prevents CUDA / llama-server crashes).
+                      </FieldDescription>
                     </Field>
                   </div>
 
@@ -435,17 +438,29 @@ export function AiSettingsForm({
                   </div>
 
                   {ollamaMode === "browser" ? (
-                    <div className="rounded-lg border bg-background p-3 text-xs text-muted-foreground">
+                    <div className="space-y-2 rounded-lg border bg-background p-3 text-xs text-muted-foreground">
                       <p className="font-medium text-foreground">
                         How Browser-Direct Mode connects your live site to your PC:
                       </p>
-                      <p className="mt-1">
-                        Start Ollama on your computer allowing this domain&apos;s origin, then open{" "}
-                        <code>/nemesis</code> in this browser:
+                      <p>
+                        Allow browser CORS in Ollama, then open <code>/nemesis</code> on this PC:
                       </p>
-                      <pre className="mt-1.5 overflow-x-auto rounded bg-muted px-2.5 py-1.5 font-mono text-[11px] text-foreground">
-                        {`OLLAMA_ORIGINS="${originHint}" ollama serve`}
-                      </pre>
+                      <div>
+                        <span className="text-[11px] font-medium text-foreground">
+                          Windows PowerShell:
+                        </span>
+                        <pre className="mt-1 overflow-x-auto rounded bg-muted px-2.5 py-1.5 font-mono text-[11px] text-foreground">
+                          {`Stop-Process -Name "ollama*" -Force -ErrorAction SilentlyContinue; $env:OLLAMA_ORIGINS="*"; ollama serve`}
+                        </pre>
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-medium text-foreground">
+                          macOS / Linux:
+                        </span>
+                        <pre className="mt-1 overflow-x-auto rounded bg-muted px-2.5 py-1.5 font-mono text-[11px] text-foreground">
+                          {`OLLAMA_ORIGINS="${originHint}" ollama serve`}
+                        </pre>
+                      </div>
                     </div>
                   ) : (
                     <Field>
