@@ -1,4 +1,5 @@
 import "server-only";
+import { INVENTORY_INTELLIGENCE_TOOLS, executeInventoryTool } from "@/lib/ai/inventory/tools";
 import { assertAdmin } from "@/lib/admin/auth";
 import { expireTag, revalidateStore, UUID_RE } from "@/lib/admin/form";
 import { PAGES_TAG, pageTag } from "@/lib/data/pages";
@@ -32,7 +33,7 @@ import type {
  *    without calling the LLM again (0 extra tokens, 100% accurate math)
  * ────────────────────────────────────────────────────────────────────────── */
 
-export const AGENT_TOOLS: AiToolSpec[] = [
+const CORE_AGENT_TOOLS: AiToolSpec[] = [
   {
     name: "get_store_analytics",
     description:
@@ -213,6 +214,17 @@ export const AGENT_TOOLS: AiToolSpec[] = [
   },
 ];
 
+/** Capability groups are the extension point for future tool routing and per-group budgets. */
+export const AGENT_TOOL_GROUPS = [
+  { id: "inventory_intelligence", label: "Inventory Intelligence", tools: INVENTORY_INTELLIGENCE_TOOLS },
+  { id: "inventory_operations", label: "Inventory Operations", tools: CORE_AGENT_TOOLS.filter((t) => ["query_inventory", "preview_product_status_update"].includes(t.name)) },
+  { id: "store_analytics", label: "Store Analytics", tools: CORE_AGENT_TOOLS.filter((t) => t.name === "get_store_analytics") },
+  { id: "pricing", label: "Pricing & Promotions", tools: CORE_AGENT_TOOLS.filter((t) => t.name === "preview_category_discount") },
+  { id: "content_seo", label: "Content & SEO", tools: CORE_AGENT_TOOLS.filter((t) => ["query_content", "preview_content_update", "audit_and_fix_seo"].includes(t.name)) },
+  { id: "orders", label: "Order Operations", tools: CORE_AGENT_TOOLS.filter((t) => t.name === "preview_order_status_update") },
+] as const;
+export const AGENT_TOOLS: AiToolSpec[] = AGENT_TOOL_GROUPS.flatMap((group) => group.tools);
+
 export type StoreContextSummary = {
   storeName: string;
   currency: string;
@@ -264,6 +276,8 @@ export function buildAgentSystemPrompt(
     `Available categories (Name (slug)): ${catList}.`,
     `Brand tone: ${aiSettings.brand_tone}. Respond in ${aiSettings.default_language}.`,
     contentContextFromPath(currentPath),
+    `Capability groups: ${AGENT_TOOL_GROUPS.map((g) => `${g.label}: ${g.tools.map((t) => t.name).join(", ")}`).join("; ")}.`,
+    `Inventory Intelligence rules: use analyze_inventory_intelligence for forecasts, dead stock, overstock, sales spikes and reorder quantities. All numbers are computed by code from real order history, never by model guessing. State the lookback and supplier lead-time assumptions, flag limited/incomplete data, and never claim forecasts are guaranteed. Reorder suggestions are not purchase orders or received stock. For bulk publish/hide actions use preview_inventory_status_update with the same filters and analysis options and an explicit user-requested target status; approval is always required. Product-level and variation-level reorder quantities overlap: never sum them.`,
     `Rules:`,
     `1. Always use the provided tools for live store numbers, inventory checks, discounts, status/stock updates, order updates, and SEO audits. Never guess IDs or prices.`,
     `2. Map user category mentions (e.g. "mobile", "headphones", "accessories") to the closest slug from Available categories above.`,
@@ -383,6 +397,9 @@ export async function executeAgentToolCall(opts: {
 }> {
   await assertAdmin();
   const { call, aiSettings, store, money } = opts;
+  if (INVENTORY_INTELLIGENCE_TOOLS.some((tool) => tool.name === call.name)) {
+    return executeInventoryTool(call, store.manageStock);
+  }
   const maxRows = aiSettings.token_budget_mode === "economy" ? 15 : aiSettings.token_budget_mode === "standard" ? 30 : 60;
 
   if (call.name === "query_content" || call.name === "preview_content_update") {
@@ -1448,6 +1465,29 @@ export async function executeApprovedPlan(opts: {
             })
             .eq("id", vu.variationId);
         }
+        appliedCount++;
+      } else if (m.kind === "inventory_status") {
+        if (!UUID_RE.test(m.productId) || typeof m.isActive !== "boolean" || typeof m.previousUpdatedAt !== "string" || !Number.isFinite(Date.parse(m.previousUpdatedAt))) {
+          throw new Error("Invalid inventory approval. Regenerate the preview.");
+        }
+        if (!Array.isArray(m.variationVersions) || m.variationVersions.some((v) => !UUID_RE.test(v.id) || !Number.isFinite(Date.parse(v.updatedAt)))) {
+          throw new Error("Invalid variation snapshot. Regenerate the preview.");
+        }
+        if (m.variationVersions.length) {
+          const { data: versions, error: versionError } = await supabase.from("product_variations")
+            .select("id, updated_at").eq("product_id", m.productId);
+          if (versionError) throw new Error(versionError.message);
+          const signature = (rows: Array<{ id: string; updatedAt: string }>) => JSON.stringify(rows.map((v) => `${v.id}:${new Date(v.updatedAt).toISOString()}`).sort());
+          if (signature(m.variationVersions) !== signature((versions ?? []).map((v) => ({ id: v.id, updatedAt: v.updated_at })))) {
+            throw new Error("Variation stock or configuration changed after analysis. Generate a fresh preview.");
+          }
+        }
+        const { data: changed, error } = await supabase.from("products")
+          .update({ is_active: m.isActive, updated_at: new Date().toISOString() })
+          .eq("id", m.productId).eq("updated_at", m.previousUpdatedAt)
+          .select("id").maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!changed) throw new Error("Product changed or was removed after analysis. Generate a fresh preview.");
         appliedCount++;
       } else if (m.kind === "product_status") {
         if (!UUID_RE.test(m.productId)) continue;

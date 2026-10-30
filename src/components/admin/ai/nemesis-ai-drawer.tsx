@@ -72,6 +72,11 @@ type QuickPromptAction = {
 
 const STARTER_PROMPTS: QuickPromptAction[] = [
   {
+    label: "Inventory intelligence",
+    prompt: "Analyze inventory intelligence: predict stock depletion, identify dead and overstocked products, detect sales spikes, and suggest reorder quantities. Show the assumptions; do not change anything.",
+    icon: BoxesIcon,
+  },
+  {
     label: "Draft out-of-stock & check low stock",
     prompt:
       "Put all out-of-stock products into draft and list any active products with 3 or fewer in stock",
@@ -98,6 +103,19 @@ const STARTER_PROMPTS: QuickPromptAction[] = [
 
 function getFollowUpActions(entry: Extract<ChatEntry, { role: "assistant" }>): QuickPromptAction[] {
   const toolNames = new Set(entry.toolBadges.map((b) => b.name));
+
+  const report = entry.widgets.find((w) => w.kind === "inventory_intelligence");
+  if (report?.kind === "inventory_intelligence") {
+    const context = JSON.stringify({ ...report.options, ...report.scope });
+    return [
+      { label: "Reorder recommendations", prompt: `Use analyze_inventory_intelligence with filter=reorder and these same assumptions/scope: ${context}. Do not change stock or order anything.`, icon: PlusCircleIcon },
+      ...(report.complete && report.summary.dead > 0 ? [{
+        label: "Review drafting dead inventory",
+        prompt: `Prepare approval to move dead inventory to draft using preview_inventory_status_update, filter=dead, targetStatus=draft and these same assumptions/scope: ${context}. Only prepare a preview.`,
+        icon: FileTextIcon,
+      }] : []),
+    ];
+  }
 
   if (toolNames.has("preview_product_status_update") || toolNames.has("query_inventory")) {
     return [

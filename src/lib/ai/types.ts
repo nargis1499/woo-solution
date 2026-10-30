@@ -1,3 +1,4 @@
+import type { InventoryReport } from "@/lib/ai/inventory/intelligence";
 import type { AiContentEntity } from "@/lib/ai/content-fields";
 import type { AiProviderId } from "@/lib/ai/providers";
 
@@ -73,7 +74,16 @@ export type AiContentMutation = {
   previousUpdatedAt: string;
 };
 
+export type AiInventoryStatusMutation = {
+  kind: "inventory_status";
+  variationVersions: Array<{ id: string; updatedAt: string }>;
+  productId: string;
+  isActive: boolean;
+  previousUpdatedAt: string;
+};
+
 export type AiPlanMutation =
+  | AiInventoryStatusMutation
   | AiContentMutation
   | AiDiscountMutation
   | AiProductStatusMutation
@@ -100,6 +110,8 @@ export type AiActionPlan = {
   title: string;
   description: string;
   applyLabel: string;
+  /** Safety-critical plans never bypass approval, even with global auto-apply enabled. */
+  requiresApproval?: boolean;
   items: AiActionPlanItem[];
 };
 
@@ -164,7 +176,15 @@ export type AiSeoHealthyWidget = {
   scope: string;
 };
 
+export type AiInventoryIntelligenceWidget = InventoryReport & {
+  id: string;
+  kind: "inventory_intelligence";
+  filter: string;
+  scope: { categorySlug: string; search: string; status: string };
+};
+
 export type AiUiWidget =
+  | AiInventoryIntelligenceWidget
   | AiInventoryWidget
   | AiAnalyticsWidget
   | AiSeoHealthyWidget;
@@ -188,3 +208,7 @@ export type AiAgentTurnResponse = {
     usedTokensThisTurn: number;
   };
 };
+
+export function planRequiresApproval(plan: AiActionPlan): boolean {
+  return plan.requiresApproval === true || plan.items.some((item) => item.mutation.kind === "content_update" || item.mutation.kind === "inventory_status");
+}

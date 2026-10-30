@@ -14,6 +14,7 @@ import {
   executeApprovedPlan,
   loadStoreContextSummary,
 } from "@/lib/ai/tools";
+import { planRequiresApproval } from "@/lib/ai/types";
 import type {
   AiActionPlan,
   AiAgentTurnResponse,
@@ -113,14 +114,14 @@ export async function POST(request: Request) {
       }
 
       if (!aiSettings.require_confirmation && plans.length > 0) {
-        for (const p of plans.filter((p) => !p.items.some((i) => i.mutation.kind === "content_update"))) {
+        for (const p of plans.filter((p) => !planRequiresApproval(p))) {
           await executeApprovedPlan({
             plan: p,
             selectedItemIds: p.items.map((i) => i.id),
           });
         }
-        const pendingContent = plans.filter((p) => p.items.some((i) => i.mutation.kind === "content_update"));
-        plans.splice(0, plans.length, ...pendingContent);
+        const pendingApproval = plans.filter(planRequiresApproval);
+        plans.splice(0, plans.length, ...pendingApproval);
       }
 
       return NextResponse.json({
@@ -239,15 +240,15 @@ export async function POST(request: Request) {
 
     let autoAppliedTotal = 0;
     if (!aiSettings.require_confirmation && plans.length > 0) {
-      for (const p of plans.filter((p) => !p.items.some((i) => i.mutation.kind === "content_update"))) {
+      for (const p of plans.filter((p) => !planRequiresApproval(p))) {
         const applied = await executeApprovedPlan({
           plan: p,
           selectedItemIds: p.items.map((i) => i.id),
         });
         autoAppliedTotal += applied.appliedCount;
       }
-      const pendingContent = plans.filter((p) => p.items.some((i) => i.mutation.kind === "content_update"));
-      plans.splice(0, plans.length, ...pendingContent);
+      const pendingApproval = plans.filter(planRequiresApproval);
+      plans.splice(0, plans.length, ...pendingApproval);
     }
 
     if (!finalReply) {
