@@ -1,5 +1,7 @@
 # Woo Solution
 
+**Setting up a separate client?** Start with [README-CLIENT-SETUP.md](README-CLIENT-SETUP.md). Use **Settings → Advanced → Download fresh setup SQL** for a live, data-free application bootstrap with approved template settings. Cloudflare Workers and separate client GitHub accounts are covered there.
+
 A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Components), **Supabase** (Postgres + Auth) and **shadcn/ui on the React Aria base** (`react-aria-components`, Tailwind v4).
 
 **MVP scope** – customers can browse a product catalog, sign up / sign in, add items to a cart, check out with cash on delivery, and view their order history.
@@ -37,7 +39,7 @@ cp .env.example .env.local
 
 ### Set up the database
 
-**One file, one paste.** On a fresh Supabase project you can skip the list below: open the **SQL Editor**, paste [`supabase/complete-setup.sql`](supabase/complete-setup.sql) (all 25 migrations in order + the API role grants + the demo catalog, ~3,460 lines) and press **Run**. It creates every table, policy, trigger and function, the `media` Storage bucket, 4 categories and 12 demo products. Delete the clearly-marked *OPTIONAL demo catalog* block at the end if you want an empty store. Verified end-to-end against a brand-new database: sign-up → profile, dashboard, creating users, checkout → order, chat, notifications.
+For a separate client, use the live **Settings → Advanced** export and the [client setup guide](README-CLIENT-SETUP.md). It reflects the source database at download time, excludes existing records/credentials, and initializes a fresh Supabase project. It is not an upgrade script. The repository’s `supabase/complete-setup.sql` is a separately generated historical/offline bundle and may lag the live database; do not combine the two setup methods or assume that file includes later migrations or live settings.
 
 **Or run the migrations one by one** (e.g. to follow what each one adds) – open **SQL Editor** → *New query* and paste each file in order:
    1. [`supabase/migrations/20261014000000_init.sql`](supabase/migrations/20261014000000_init.sql) – schema, RLS, `place_order()`
