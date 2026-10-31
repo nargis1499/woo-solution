@@ -3,7 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, cache } from "react";
 import { getProductBySlug, getProducts } from "@/lib/data/products";
-import { slidesFor } from "@/lib/media/shared";
+import { StorefrontBlockContent } from "@/components/storefront-block-content";
+import { slidesFor, mediaUrl } from "@/lib/media/shared";
 import {
   breadcrumbJsonLd,
   NOINDEX,
@@ -32,34 +33,35 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 
   const base = resolveSiteUrl(settings);
   const path = `/products/${encodeURIComponent(product.slug)}`;
-  const canonical = base ? `${base}${path}` : undefined;
+  const canonical = product.canonical_url || (base ? `${base}${path}` : undefined);
   const description = productSeoDescription(product, settings.store_name);
   const slides = slidesFor(product);
+  const shareSrc = product.og_image?.path ? mediaUrl(product.og_image.path) : product.og_image_url;
   const ogImages =
-    slides.length > 0
+    shareSrc ? [{ url: shareSrc, alt: product.name }] : slides.length > 0
       ? slides.map((s) => ({ url: s.src, alt: s.alt || product.name }))
       : settings.seo_og_image_url
         ? [{ url: settings.seo_og_image_url, alt: product.name }]
         : undefined;
 
   return {
-    title: product.name,
+    title: product.seo_title || product.name,
     description,
     alternates: canonical ? { canonical } : undefined,
-    robots: robotsFor({ index: settings.seo_indexing, follow: settings.seo_indexing }),
+    robots: robotsFor({ index: settings.seo_indexing && product.robots_index !== false, follow: settings.seo_indexing && product.robots_follow !== false }),
     openGraph: {
       type: "website",
       siteName: settings.store_name,
-      title: product.name,
-      description,
+      title: product.og_title || product.seo_title || product.name,
+      description: product.og_description || description,
       url: canonical,
       images: ogImages,
     },
     twitter: {
       card: ogImages ? "summary_large_image" : "summary",
       site: settings.seo_twitter ? `@${settings.seo_twitter}` : undefined,
-      title: product.name,
-      description,
+      title: product.og_title || product.seo_title || product.name,
+      description: product.og_description || description,
       images: ogImages?.map((img) => img.url),
     },
   };
@@ -112,6 +114,12 @@ export default async function ProductPage({ params }: { params: Params }) {
           shippingEnabled={settings.shipping_enabled}
           shippingRateMicros={settings.shipping_rate_micros}
         />
+        {product.content?.trim() && (
+          <section className="mt-10 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-8" aria-labelledby="product-description-heading">
+            <h2 id="product-description-heading" className="mb-6 text-xl font-semibold">Detailed description</h2>
+            <StorefrontBlockContent content={product.content} />
+          </section>
+        )}
         <ProductInformationTabs product={product} />
 
         <Suspense fallback={null}>

@@ -203,6 +203,8 @@ export const USAGE_ROLE_LABEL: Record<MediaUsage["role"], string> = {
   post_image: "featured image",
   post_share_image: "share image",
   post_content: "in the content",
+  product_content: "detailed product content",
+  product_share_image: "product share image",
 };
 
 /* ─── confirm button (AlertDialog) ─────────────────────────────────────────── */

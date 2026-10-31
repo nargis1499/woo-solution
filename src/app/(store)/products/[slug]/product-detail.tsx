@@ -43,7 +43,7 @@ function swatchFor(value: string): string | null {
 /** The product gallery, option pickers and purchase actions share selected variation state. */
 export function ProductShowcase({
   product,
-  manageStock,
+  manageStock: globalManageStock,
   shippingEnabled,
   shippingRateMicros,
 }: {
@@ -52,6 +52,7 @@ export function ProductShowcase({
   shippingEnabled: boolean;
   shippingRateMicros: number;
 }) {
+  const manageStock = product.manage_stock ?? globalManageStock;
   const money = useMoney();
   const attributes = product.attributes ?? [];
   const variations = useMemo(() => (product.variations ?? []).filter((v) => v.is_active), [product.variations]);

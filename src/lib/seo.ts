@@ -157,7 +157,7 @@ const getCachedSitemapEntries = unstable_cache(
       const supabase = createPublicClient();
       const [categories, products, pages, posts] = await Promise.all([
         supabase.from("categories").select("slug").order("sort_order", { ascending: true }),
-        supabase.from("products").select("slug, updated_at").eq("is_active", true).order("created_at", { ascending: false }).limit(5000),
+        supabase.from("products").select("slug, updated_at").eq("is_active", true).eq("robots_index", true).order("created_at", { ascending: false }).limit(5000),
         getPublishedPagesForSitemap(),
         getPublishedPostsForSitemap(),
       ]);
@@ -258,7 +258,7 @@ export function breadcrumbJsonLd(
 
 /** Meta / structured-data description for a product, with a keyword-rich catalog fallback. */
 export function productSeoDescription(product: Product, storeName: string): string {
-  const explicit = product.description?.trim();
+  const explicit = product.seo_description?.trim() || product.description?.trim() || (product.content ? htmlToText(product.content).trim() : "");
   if (explicit) return truncate(explicit.replace(/\s+/g, " "), 160);
 
   const features = parseProductFeatures(product.features, 3);
@@ -274,11 +274,11 @@ export function productSeoDescription(product: Product, storeName: string): stri
 export function productJsonLd(product: Product, settings: SiteSettings): Record<string, unknown> {
   const base = resolveSiteUrl(settings);
   const path = `/products/${encodeURIComponent(product.slug)}`;
-  const canonicalUrl = base ? `${base}${path}` : null;
+  const canonicalUrl = product.canonical_url || (base ? `${base}${path}` : null);
   const money = moneyFromSettings(settings);
   const slides = slidesFor(product);
   const images = slides.map((s) => absoluteUrl(s.src, base)).filter(Boolean);
-  const description = product.description?.trim() || productSeoDescription(product, settings.store_name);
+  const description = product.description?.trim() || (product.content ? htmlToText(product.content) : "") || productSeoDescription(product, settings.store_name);
 
   const attributes = product.attributes ?? [];
   const activeVariations = (product.variations ?? []).filter((v) => v.is_active);
@@ -294,7 +294,7 @@ export function productJsonLd(product: Product, settings: SiteSettings): Record<
   let offers: Record<string, unknown>;
   if (isVariable && activeVariations.length > 0) {
     const range = priceRange(activeVariations);
-    const anyInStock = !settings.manage_stock || activeVariations.some((v) => v.stock > 0);
+    const anyInStock = !(product.manage_stock ?? settings.manage_stock) || activeVariations.some((v) => v.stock > 0);
     offers = {
       "@type": "AggregateOffer",
       ...(canonicalUrl ? { url: canonicalUrl } : {}),
@@ -310,7 +310,7 @@ export function productJsonLd(product: Product, settings: SiteSettings): Record<
         priceCurrency: money.currency,
         price: inputFromMicros(v.price_micros, money),
         availability:
-          !settings.manage_stock || v.stock > 0
+          !(product.manage_stock ?? settings.manage_stock) || v.stock > 0
             ? "https://schema.org/InStock"
             : "https://schema.org/OutOfStock",
         itemCondition: "https://schema.org/NewCondition",
@@ -321,7 +321,7 @@ export function productJsonLd(product: Product, settings: SiteSettings): Record<
   } else {
     const inStock = isVariable
       ? false
-      : !settings.manage_stock || product.stock > 0;
+      : !(product.manage_stock ?? settings.manage_stock) || product.stock > 0;
     offers = {
       "@type": "Offer",
       ...(canonicalUrl ? { url: canonicalUrl } : {}),

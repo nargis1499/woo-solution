@@ -39,7 +39,7 @@ export function inventoryOptions(args: Record<string, unknown>): InventoryOption
 export type InventoryProduct = {
   id: string; name: string; sku: string | null; category_id: string | null;
   category: { name: string; slug: string } | null;
-  type: "simple" | "variable"; stock: number; is_active: boolean;
+  type: "simple" | "variable"; manage_stock?: boolean; stock: number; is_active: boolean;
   created_at: string; updated_at: string;
   variations: Array<{ id: string; label: string; sku: string | null; stock: number; is_active: boolean; created_at: string; updated_at: string }>;
 };
@@ -48,7 +48,7 @@ export type InventorySale = {
 };
 export type InventoryInsightRow = {
   id: string; productId: string; variationId: string | null; name: string; sku: string | null;
-  status: "active" | "draft"; stock: number; observedDays: number; unitsSold: number;
+  status: "active" | "draft"; stock: number; stockManaged: boolean; observedDays: number; unitsSold: number;
   dailyVelocity: number; planningVelocity: number; daysToDepletion: number | null;
   estimatedDepletionAt: string | null; recentUnits: number; baselineUnits: number;
   spikeRatio: number | null; newDemand: boolean; reorderPoint: number;
@@ -81,6 +81,7 @@ export function calculateInventoryIntelligence(input: {
   const rows: InventoryInsightRow[] = [];
   let productsWithUnattributedSales = 0;
   for (const p of input.products) {
+    const managed = p.manage_stock ?? stockTrackingEnabled;
     // Parent signals use all product sales and total SELLABLE variation stock, not the parent stock column.
     const hasUnattributedSales = p.type === "variable" && (salesByKey.get(p.id) ?? []).some((sale) => !sale.variationId);
     if (hasUnattributedSales) productsWithUnattributedSales++;
@@ -116,12 +117,12 @@ export function calculateInventoryIntelligence(input: {
       // Respond to a detected spike, but do not treat it as guaranteed future demand.
       const planningVelocity = spike ? Math.max(dailyVelocity, recentRate) : dailyVelocity;
       const stock = Math.max(0, Number(item.stock) || 0);
-      const daysToDepletion = rowComplete && stockTrackingEnabled && planningVelocity > 0 ? stock / planningVelocity : null;
-      const dead = rowComplete && stockTrackingEnabled && age >= o.deadDays && stock > 0 && units(o.deadDays) === 0;
-      const overstock = rowComplete && stockTrackingEnabled && age >= Math.min(14, o.windowDays) && dailyVelocity > 0 && stock / dailyVelocity > o.overstockDays;
-      const reorderPoint = stockTrackingEnabled ? Math.ceil(planningVelocity * (o.leadTimeDays + o.safetyDays)) : 0;
-      const targetStock = stockTrackingEnabled ? Math.ceil(planningVelocity * (o.leadTimeDays + o.safetyDays + o.reviewDays)) : 0;
-      const suggestedReorder = rowComplete && stockTrackingEnabled && stock <= reorderPoint ? Math.max(0, targetStock - stock) : 0;
+      const daysToDepletion = rowComplete && managed && planningVelocity > 0 ? stock / planningVelocity : null;
+      const dead = rowComplete && managed && age >= o.deadDays && stock > 0 && units(o.deadDays) === 0;
+      const overstock = rowComplete && managed && age >= Math.min(14, o.windowDays) && dailyVelocity > 0 && stock / dailyVelocity > o.overstockDays;
+      const reorderPoint = managed ? Math.ceil(planningVelocity * (o.leadTimeDays + o.safetyDays)) : 0;
+      const targetStock = managed ? Math.ceil(planningVelocity * (o.leadTimeDays + o.safetyDays + o.reviewDays)) : 0;
+      const suggestedReorder = rowComplete && managed && stock <= reorderPoint ? Math.max(0, targetStock - stock) : 0;
       const signals: InventorySignal[] = [];
       if (rowComplete && daysToDepletion !== null && daysToDepletion <= o.depletionDays) signals.push("depletion");
       if (dead) signals.push("dead");
@@ -130,7 +131,7 @@ export function calculateInventoryIntelligence(input: {
       if (suggestedReorder > 0) signals.push("reorder");
       rows.push({
         id: item.key, productId: p.id, variationId: item.variationId, name: item.name,
-        sku: item.sku, status: p.is_active ? "active" : "draft", stock, observedDays,
+        sku: item.sku, stockManaged: managed, status: p.is_active ? "active" : "draft", stock, observedDays,
         unitsSold, dailyVelocity, planningVelocity, daysToDepletion,
         estimatedDepletionAt: daysToDepletion !== null && daysToDepletion <= 3650 ? new Date(nowMs + daysToDepletion * DAY).toISOString() : null,
         recentUnits, baselineUnits, spikeRatio, newDemand, reorderPoint, targetStock, suggestedReorder,
@@ -147,7 +148,8 @@ export function calculateInventoryIntelligence(input: {
   const warnings = [...(input.warnings ?? [])];
   warnings.push("Estimates use order creation dates: completed or paid processing orders only; cancelled, pending and refunded orders are excluded. Partial refunds/returns are not modeled.", "Stockout periods, historic stock adjustments, seasonality, supplier orders and inbound stock are not tracked by this model. Reorders assume no inbound units and are suggestions, not purchase orders.", "Limited history is not reliable evidence of dead stock. Parent and variation rows overlap; do not add their reorder quantities together.");
   if (productsWithUnattributedSales) warnings.push(`${productsWithUnattributedSales} variable products have sales without variation IDs. Parent totals include them, but SKU-level signals/reorders for those products are suppressed to avoid false conclusions.`);
-  if (!stockTrackingEnabled) warnings.push("Store stock tracking is disabled: depletion, dead-stock, overstock and reorder signals are disabled.");
+  const anyTracked = input.products.length ? input.products.some((p) => p.manage_stock ?? stockTrackingEnabled) : stockTrackingEnabled;
+  if (!anyTracked) warnings.push("Stock tracking is disabled for this selection: depletion, dead-stock, overstock and reorder signals are disabled.");
   if (!complete) warnings.push("Dataset is incomplete. Signals and reorder suggestions are suppressed; do not use partial sales totals for inventory decisions.");
-  return { generatedAt: now.toISOString(), options: o, stockTrackingEnabled, complete, warnings, productsAnalyzed: parents.length, skuRowsAnalyzed: rows.length - parents.length, matchingCount: rows.length, summary, rows };
+  return { generatedAt: now.toISOString(), options: o, stockTrackingEnabled: anyTracked, complete, warnings, productsAnalyzed: parents.length, skuRowsAnalyzed: rows.length - parents.length, matchingCount: rows.length, summary, rows };
 }

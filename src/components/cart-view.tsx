@@ -14,7 +14,7 @@ import { useMoney, useShipping } from "./money-provider";
 import { ProductImage } from "./product-image";
 import { QuantityInput } from "./quantity-input";
 
-export function CartView({ manageStock = true }: { manageStock?: boolean }) {
+export function CartView() {
   const money = useMoney();
   const shippingConfig = useShipping();
   const formatPrice = (cents: number) => formatMoney(cents, money);
@@ -67,7 +67,7 @@ export function CartView({ manageStock = true }: { manageStock?: boolean }) {
                   <p className="font-semibold tabular-nums">{formatPrice(item.priceMicros * item.quantity)}</p>
                 </div>
                 <div className="mt-auto flex items-center justify-between gap-4">
-                  <QuantityInput size="sm" value={item.quantity} max={manageStock ? (item.stock ?? undefined) : undefined} onChange={(q) => setQuantity(lineKey(item), q)} />
+                  <QuantityInput size="sm" value={item.quantity} max={item.stock ?? undefined} onChange={(q) => setQuantity(lineKey(item), q)} />
                   <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onPress={() => removeItem(lineKey(item))}>
                     <Trash2Icon /> Remove
                   </Button>

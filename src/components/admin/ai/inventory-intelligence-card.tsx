@@ -50,10 +50,10 @@ export function InventoryIntelligenceCard({ widget: w }: { widget: AiInventoryIn
                 <span className="rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{r.confidence === "limited" ? "Limited evidence" : "Established sales history"}</span>
               </div>
               <dl className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
-                <div><dt className="text-muted-foreground">Sellable stock</dt><dd className="font-medium text-foreground">{w.stockTrackingEnabled ? r.stock : "Not tracked"}</dd></div>
+                <div><dt className="text-muted-foreground">Sellable stock</dt><dd className="font-medium text-foreground">{r.stockManaged ? r.stock : "Not tracked"}</dd></div>
                 <div><dt className="text-muted-foreground">Sold / velocity</dt><dd className="font-medium text-foreground">{r.unitsSold} / {decimal(r.dailyVelocity)} per day</dd></div>
-                <div><dt className="text-muted-foreground">Estimated depletion</dt><dd className="font-medium text-foreground">{w.stockTrackingEnabled && r.stock === 0 ? "Out of stock now" : r.daysToDepletion === null ? "Insufficient data / no velocity" : `${decimal(r.daysToDepletion)} days`}</dd>{r.estimatedDepletionAt && r.stock > 0 && <dd className="text-[10px] text-muted-foreground">{date(r.estimatedDepletionAt)} UTC</dd>}</div>
-                <div><dt className="text-muted-foreground">Suggested reorder</dt><dd className="font-medium text-primary">{r.dataComplete && w.stockTrackingEnabled ? `${r.suggestedReorder} units` : "Unavailable"}</dd></div>
+                <div><dt className="text-muted-foreground">Estimated depletion</dt><dd className="font-medium text-foreground">{r.stockManaged && r.stock === 0 ? "Out of stock now" : r.daysToDepletion === null ? "Insufficient data / no velocity" : `${decimal(r.daysToDepletion)} days`}</dd>{r.estimatedDepletionAt && r.stock > 0 && <dd className="text-[10px] text-muted-foreground">{date(r.estimatedDepletionAt)} UTC</dd>}</div>
+                <div><dt className="text-muted-foreground">Suggested reorder</dt><dd className="font-medium text-primary">{r.dataComplete && r.stockManaged ? `${r.suggestedReorder} units` : "Unavailable"}</dd></div>
               </dl>
               <div className="flex flex-wrap gap-1.5">
                 {r.signals.length ? r.signals.map((signal) => (

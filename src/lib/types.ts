@@ -86,6 +86,20 @@ export type ProductVariation = {
 };
 
 export type Product = {
+  /** Optional unit cost: loaded only by admin helpers, never public product queries. */
+  cost_price_micros?: number | null;
+  content?: string;
+  manage_stock?: boolean;
+  seo_title?: string | null;
+  seo_description?: string | null;
+  canonical_url?: string | null;
+  robots_index?: boolean;
+  robots_follow?: boolean;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image_id?: string | null;
+  og_image_url?: string | null;
+  og_image?: MediaRef | null;
   id: string;
   category_id: string | null;
   name: string;
@@ -176,7 +190,7 @@ export type MediaUsage = {
   product_id: string | null;
   product_name: string | null;
   product_slug: string | null;
-  role: "image" | "gallery" | "variation" | "favicon" | "share_image" | "page_image" | "page_share_image" | "page_content" | "post_image" | "post_share_image" | "post_content";
+  role: "image" | "gallery" | "variation" | "favicon" | "share_image" | "page_image" | "page_share_image" | "page_content" | "post_image" | "post_share_image" | "post_content" | "product_content" | "product_share_image";
 };
 
 /* ─── Pages (CMS) ─────────────────────────────────────────────────────────── */
