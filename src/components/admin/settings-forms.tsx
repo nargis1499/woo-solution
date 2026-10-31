@@ -339,9 +339,10 @@ function ShopSettingsBody({ settings, v, err }: { settings: SiteSettings; v: Rec
       <SwitchField
         id="manage_stock"
         name="manage_stock"
-        label="Manage stock – track quantities for all products and stop selling when they run out"
+        label="Manage stock by default for new products"
         defaultSelected={settings.manage_stock}
       />
+      <p className="text-xs text-muted-foreground">Each product can override this default in its pricing and inventory section. Existing products retain their selected setting.</p>
       <FieldSeparator />
       <CurrencyFields
         currency={currency}

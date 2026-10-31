@@ -113,13 +113,13 @@ export function AiWidgetCard({ widget }: { widget: AiUiWidget }) {
           <div className="grid grid-cols-1 gap-2.5 pt-0.5 sm:grid-cols-2">
             {widget.items.map((item) => {
               const stockTone =
-                item.stock <= 0
+                item.stockManaged === false ? "border-primary/20 bg-primary/10 text-primary" : item.stock <= 0
                   ? "border-rose-500/30 bg-rose-500/15 text-rose-700 dark:text-rose-300"
                   : item.stock <= 3
                     ? "border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-300"
                     : "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
               const stockLabel =
-                item.stock <= 3 ? `${item.stock} remaining` : `${item.stock} in stock`;
+                item.stockManaged === false ? "Unlimited stock" : item.stock <= 3 ? `${item.stock} remaining` : `${item.stock} in stock`;
 
               return (
                 <div

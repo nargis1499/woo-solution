@@ -2,7 +2,7 @@ import "server-only";
 import { MEDIA_REF_COLUMNS, isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
 import { createClient } from "@/lib/supabase/server";
 import { BASE_ORDER_COLUMNS, ORDER_COLUMNS, ORDER_COLUMNS_NO_PAYMENT, ORDER_ITEM_COLUMNS, ORDER_ITEM_COLUMNS_LEGACY, withOrderColumns } from "@/lib/data/order-columns";
-import { isMissingBrandColumn, isMissingVariationSchema } from "@/lib/data/product-columns";
+import { isMissingBrandColumn, isMissingVariationSchema, PRODUCT_EDITOR_COLUMNS } from "@/lib/data/product-columns";
 import { withSortedVariations } from "@/lib/variations";
 import { requireAdmin } from "@/lib/admin/auth";
 import { ORDER_STATUSES } from "@/lib/admin/constants";
@@ -22,7 +22,7 @@ import type { AdminStats, Category, MediaRef, MenuItem, MenuLocation, Order, Ord
 const PRODUCT_COLUMNS_BASE =
   "id, category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, stock, is_active, is_featured, created_at, updated_at, category:categories(id, name, slug)";
 /** `type` / `sku` + the variation tables came with migration 14; `brand`, `features`, and `quick_checkout` came with migrations 25–27. */
-const PRODUCT_COLUMNS = `${PRODUCT_COLUMNS_BASE}, type, sku, brand, features, quick_checkout`;
+const PRODUCT_COLUMNS = `${PRODUCT_COLUMNS_BASE}, type, sku, brand, features, quick_checkout, manage_stock`;
 const PRODUCT_COLUMNS_NO_BRAND = `${PRODUCT_COLUMNS_BASE}, type, sku`;
 
 /** Media-library embeds (main image + ordered gallery). Only used where the form needs them. */
@@ -30,7 +30,7 @@ const PRODUCT_MEDIA_COLUMNS = `${PRODUCT_COLUMNS}, image_media_id, image_media:m
 const PRODUCT_MEDIA_COLUMNS_NO_BRAND = `${PRODUCT_COLUMNS_NO_BRAND}, image_media_id, image_media:media!products_image_media_id_fkey(${MEDIA_REF_COLUMNS}), gallery:product_media(media_id, position, media(${MEDIA_REF_COLUMNS}))`;
 
 /** Product form: the media embeds plus the variable-product tables. */
-const PRODUCT_VARIATION_COLUMNS = `${PRODUCT_MEDIA_COLUMNS}, attributes:product_attributes(id, product_id, name, options, is_quantity, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
+const PRODUCT_VARIATION_COLUMNS = `${PRODUCT_MEDIA_COLUMNS}, ${PRODUCT_EDITOR_COLUMNS}, attributes:product_attributes(id, product_id, name, options, is_quantity, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
 const PRODUCT_VARIATION_COLUMNS_NO_BRAND = `${PRODUCT_MEDIA_COLUMNS_NO_BRAND}, attributes:product_attributes(id, product_id, name, options, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
 
 /** Without `type` / `sku`, for a database that has not run migration 14 yet. */
@@ -146,7 +146,10 @@ export async function adminGetProduct(id: string): Promise<Product | null> {
   // Before the media migration ran the embeds don't resolve – fall back to the plain row.
   if (error && isMissingMediaSchema(error.message)) ({ data, error } = await load(PRODUCT_COLUMNS_LEGACY));
   if (error) throw new Error(`Failed to load product: ${error.message}`);
-  return data ? withSortedVariations(withSortedGallery(data as unknown as Product)) : null;
+  if (!data) return null;
+  const { data: cost, error: costError } = await supabase.from("product_costs").select("cost_price_micros").eq("product_id", id).maybeSingle();
+  if (costError) throw new Error(`Failed to load product cost: ${costError.message}`);
+  return withSortedVariations(withSortedGallery({ ...(data as unknown as Product), cost_price_micros: cost?.cost_price_micros ?? null } as unknown as Product));
 }
 
 /** Simple products selectable inside the Pages Block Editor ("Simple Product" block). */

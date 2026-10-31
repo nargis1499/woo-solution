@@ -8,7 +8,7 @@ import type { Product } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 
 type Props = {
-  product: Pick<Product, "id" | "slug" | "name" | "price_micros" | "image_url" | "stock">;
+  product: Pick<Product, "id" | "slug" | "name" | "price_micros" | "image_url" | "stock" | "manage_stock">;
   /**
    * The chosen combination of a variable product: its own price / stock / image replace the
    * product's, and the cart keeps it as a separate line.
@@ -40,8 +40,9 @@ export function AddToCartButton({
   mode = "add",
   label,
   icon = "cart",
-  manageStock = true,
+  manageStock: globalManageStock = true,
 }: Props) {
+  const manageStock = product.manage_stock ?? globalManageStock;
   const addItem = useCartStore((s) => s.addItem);
   const [added, setAdded] = useState(false);
   const router = useRouter();

@@ -14,7 +14,7 @@ import { WishlistButton } from "./wishlist-button";
 export function ProductListCard({
   product,
   priority,
-  manageStock = true,
+  manageStock: globalManageStock = true,
   quickCheckout,
   canEdit = false,
 }: {
@@ -24,6 +24,7 @@ export function ProductListCard({
   quickCheckout?: boolean;
   canEdit?: boolean;
 }) {
+  const manageStock = product.manage_stock ?? globalManageStock;
   const isQuickCheckout = quickCheckout ?? Boolean(product.quick_checkout);
   const onSale =
     product.compare_at_price_micros != null &&

@@ -58,7 +58,7 @@ async function loadInventoryData(days: number, now: Date) {
   // Bounded, explicitly paginated scans. Never silently treat a default 1000-row response as the entire store.
   for (let page = 0; page < 10; page++) {
     const { data, error } = await supabase.from("products")
-      .select("id, name, sku, category_id, type, stock, is_active, created_at, updated_at, category:categories(name, slug), variations:product_variations(id, label, sku, stock, is_active, created_at, updated_at)")
+      .select("id, name, sku, category_id, type, stock, manage_stock, is_active, created_at, updated_at, category:categories(name, slug), variations:product_variations(id, label, sku, stock, is_active, created_at, updated_at)")
       .order("id", { ascending: true }).range(page * 500, page * 500 + 499);
     if (error) throw new Error(`Inventory product scan failed: ${error.message}`);
     products.push(...(data ?? []) as unknown as InventoryProduct[]);

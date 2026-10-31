@@ -204,7 +204,7 @@ export async function PageArticle({
   );
 }
 
-function StorefrontLayoutBlock({
+export function StorefrontLayoutBlock({
   block,
   productsById,
   manageStock,

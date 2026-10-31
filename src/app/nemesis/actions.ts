@@ -1,9 +1,11 @@
 "use server";
 
+import { sanitizePageHtml, mediaIdsFromHtml, isBlankHtml } from "@/lib/pages/sanitize";
+import { isValidCanonical, isValidImageUrl, PAGE_CONTENT_MAX, SEO_TITLE_MAX, SEO_DESCRIPTION_MAX } from "@/lib/pages/shared";
 import { redirect } from "next/navigation";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
-import { SITE_SETTINGS_TAG } from "@/lib/site-settings";
+import { SITE_SETTINGS_TAG, getSiteSettingsFresh } from "@/lib/site-settings";
 import {
   HOME_FILTER_TITLE_MAX,
   HOME_HERO_BADGE_MAX,
@@ -140,8 +142,38 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
   const name = str(formData, "name", 200);
   const slug = slugify(str(formData, "slug", 100) || name);
   const description = str(formData, "description", 5000);
-  const categoryId = str(formData, "category_id", 40);
   const money = formMoney(formData);
+  const rawContent = typeof formData.get("content") === "string" ? formData.get("content") as string : "";
+  const sanitizedContent = sanitizePageHtml(rawContent.slice(0, PAGE_CONTENT_MAX * 2));
+  const content = isBlankHtml(sanitizedContent) ? "" : sanitizedContent;
+  const contentMediaIds = mediaIdsFromHtml(content);
+  const managed = formData.has("manage_stock") ? bool(formData, "manage_stock") : (await getSiteSettingsFresh()).manage_stock;
+  const costInput = str(formData, "cost_price", 30);
+  const costDisplay = /^[0-9.,\s]*$/.test(costInput) ? parseMoneyInput(costInput) : Number.NaN;
+  const seo = {
+    seo_title: str(formData, "seo_title", SEO_TITLE_MAX) || null,
+    seo_description: str(formData, "seo_description", SEO_DESCRIPTION_MAX) || null,
+    canonical_url: str(formData, "canonical_url", 500) || null,
+    robots_index: str(formData, "robots_index", 3) !== "off",
+    robots_follow: str(formData, "robots_follow", 3) !== "off",
+    og_title: str(formData, "og_title", SEO_TITLE_MAX) || null,
+    og_description: str(formData, "og_description", SEO_DESCRIPTION_MAX) || null,
+  };
+  for (const [key, max] of [["seo_title", SEO_TITLE_MAX], ["seo_description", SEO_DESCRIPTION_MAX], ["og_title", SEO_TITLE_MAX], ["og_description", SEO_DESCRIPTION_MAX], ["canonical_url", 500]] as const) {
+    const raw = formData.get(key);
+    if (typeof raw === "string" && raw.length > max) fieldErrors[key] = `Use at most ${max} characters.`;
+  }
+  const ogMode = str(formData, "og_image_mode", 10) || "keep";
+  const ogMediaId = str(formData, "og_image_media_id", 40);
+  const ogUrl = str(formData, "og_image_url", 2000);
+  if (rawContent.length > PAGE_CONTENT_MAX) fieldErrors.content = "Detailed content is too long (maximum 200,000 characters).";
+  if (Number.isNaN(costDisplay) || (costDisplay !== null && (!Number.isSafeInteger(toBaseMicros(costDisplay, money)) || toBaseMicros(costDisplay, money) < 0))) fieldErrors.cost_price = "Enter a non-negative cost price or leave it empty.";
+  if (seo.canonical_url && (!isValidCanonical(seo.canonical_url) || new URL(seo.canonical_url).hash)) fieldErrors.canonical_url = "Enter an absolute http(s) URL without a fragment.";
+  if (!["keep", "media", "url", "remove"].includes(ogMode)) fieldErrors.og_image_media_id = "Invalid social image selection.";
+  if (ogMode === "media" && !UUID_RE.test(ogMediaId)) fieldErrors.og_image_media_id = "Choose a social share image.";
+  if (ogMode === "url" && !isValidImageUrl(ogUrl)) fieldErrors.og_image_url = "Enter a valid http(s) image URL.";
+  const categoryId = str(formData, "category_id", 40);
+
   const type: ProductType = str(formData, "type", 10) === "variable" ? "variable" : "simple";
   const isVariable = type === "variable";
   const sku = str(formData, "sku", 64).trim() || null;
@@ -211,7 +243,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
     if (!fieldErrors.variations && variations.some((v) => v.saleDisplay !== null && !Number.isNaN(v.saleDisplay) && v.saleDisplay >= (v.regularDisplay as number))) {
       fieldErrors.variations = "A sale price must be lower than the regular price.";
     }
-    if (!fieldErrors.variations && variations.some((v) => !Number.isInteger(v.stockValue) || v.stockValue < 0)) {
+    if (!fieldErrors.variations && managed && variations.some((v) => !Number.isInteger(v.stockValue) || v.stockValue < 0)) {
       fieldErrors.variations = "Stock must be a whole number ≥ 0 for every variation.";
     }
     if (!fieldErrors.variations && !variations.some((v) => v.is_active && (v.regularDisplay ?? 0) > 0)) {
@@ -229,7 +261,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
     else if (saleDisplayMicros !== null && regularDisplayMicros !== null && !Number.isNaN(regularDisplayMicros) && saleDisplayMicros >= regularDisplayMicros) {
       fieldErrors.sale_price = "The sale price must be lower than the regular price.";
     }
-    if (!Number.isInteger(stock) || stock < 0) fieldErrors.stock = "Stock must be a whole number ≥ 0.";
+    if (managed && (!Number.isInteger(stock) || stock < 0)) fieldErrors.stock = "Stock must be a whole number ≥ 0.";
   }
   if (categoryId && !UUID_RE.test(categoryId)) fieldErrors.category_id = "Invalid category.";
   if (!["keep", "media", "url", "remove"].includes(imageMode)) fieldErrors.image_media_id = "Invalid image selection.";
@@ -249,6 +281,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
     // Stored shape: `price_micros` is what the customer pays, `compare_at_price_micros` the
     // regular price it discounts. Without a sale price the regular price is what you pay, so
     // the two are the same and nothing is struck through on the storefront.
+    let costMicros = costDisplay === null ? null : toBaseMicros(costDisplay, money);
     let regularMicros = toBaseMicros(regularDisplayMicros as number, money);
     let saleMicros = saleDisplayMicros === null ? null : toBaseMicros(saleDisplayMicros, money);
     if (isEdit) {
@@ -260,6 +293,11 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       const shown = { regular: str(formData, "regular_price_shown", 20), sale: str(formData, "sale_price_shown", 20) };
       if (shown.regular && regularInput === shown.regular) regularMicros = currentRegular;
       if (saleInput === shown.sale) saleMicros = currentSale;
+      if (costInput && costInput === str(formData, "cost_price_shown", 30)) {
+        const { data: currentCost, error: costError } = await supabase.from("product_costs").select("cost_price_micros").eq("product_id", id).maybeSingle();
+        if (costError) throw costError;
+        if (currentCost) costMicros = currentCost.cost_price_micros;
+      }
     }
     const priceMicros = saleMicros ?? regularMicros;
     const compareAtMicros = saleMicros !== null ? regularMicros : null;
@@ -269,6 +307,8 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       ...new Set([
         ...(imageMode === "media" ? [imageMediaId] : []),
         ...galleryIds,
+        ...contentMediaIds,
+        ...(ogMode === "media" ? [ogMediaId] : []),
         ...variations.flatMap((v) => (v.image_media_id ? [v.image_media_id] : [])),
       ]),
     ];
@@ -282,6 +322,8 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       if (imageMode === "media" && !found.has(imageMediaId)) {
         return { error: "Please fix the highlighted fields.", fieldErrors: { image_media_id: "That image is no longer in the Media Library – pick another one." }, values };
       }
+      if (ogMode === "media" && !found.has(ogMediaId)) return { error: "Choose an available social image.", fieldErrors: { og_image_media_id: "Image is missing or trashed." }, values };
+      if (contentMediaIds.some((mediaId) => !found.has(mediaId))) return { error: "Choose available images for the detailed content.", fieldErrors: { content: "An embedded image is missing or trashed." }, values };
       const missing = galleryIds.filter((g) => !found.has(g));
       if (missing.length) {
         return { error: "Please fix the highlighted fields.", fieldErrors: { gallery_ids: `${missing.length} gallery ${missing.length === 1 ? "image is" : "images are"} no longer in the Media Library – remove ${missing.length === 1 ? "it" : "them"} and try again.` }, values };
@@ -307,6 +349,12 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
       name,
       slug,
       description: description || null,
+      content,
+      manage_stock: managed,
+      ...seo,
+      ...(ogMode === "media" ? { og_image_id: ogMediaId, og_image_url: null }
+        : ogMode === "url" ? { og_image_id: null, og_image_url: ogUrl }
+          : ogMode === "remove" ? { og_image_id: null, og_image_url: null } : {}),
       category_id: categoryId || null,
       is_active: isActive,
       is_featured: isFeatured,
@@ -316,7 +364,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
         ? isEdit
           ? {}
           : { price_micros: 0, compare_at_price_micros: null, stock: 0 }
-        : { price_micros: priceMicros, compare_at_price_micros: compareAtMicros, stock }),
+        : { price_micros: priceMicros, compare_at_price_micros: compareAtMicros, ...(managed || !isEdit ? { stock: managed ? stock : 0 } : {}) }),
       ...image,
     };
     const row = { ...baseRow, brand, features, quick_checkout: quickCheckout };
@@ -337,7 +385,7 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
 
     // ── variable products: replacement attributes + variations ──────────────
     if (isVariable) {
-      await saveVariableProductSets(supabase, productId, attributes, variations, found, money);
+      await saveVariableProductSets(supabase, productId, attributes, variations, found, money, managed);
     } else if (isEdit) {
       // Switching back to a simple product drops the variation matrix for good.
       const { error: attrError } = await supabase.from("product_attributes").delete().eq("product_id", productId);
@@ -352,6 +400,21 @@ export async function saveProduct(_prev: AdminFormState, formData: FormData): Pr
     if (galleryIds.length) {
       const { error: insertError } = await supabase.from("product_media").insert(galleryIds.map((media_id, position) => ({ product_id: productId, media_id, position })));
       if (insertError) throw insertError;
+    }
+
+    if (costMicros === null) {
+      const { error } = await supabase.from("product_costs").delete().eq("product_id", productId);
+      if (error) throw error;
+    } else {
+      if (!Number.isSafeInteger(costMicros) || costMicros < 0) throw new Error("Cost price exceeds the supported range.");
+      const { error } = await supabase.from("product_costs").upsert({ product_id: productId, cost_price_micros: costMicros });
+      if (error) throw error;
+    }
+    const { error: contentClearError } = await supabase.from("product_content_media").delete().eq("product_id", productId);
+    if (contentClearError) throw contentClearError;
+    if (contentMediaIds.length) {
+      const { error } = await supabase.from("product_content_media").insert(contentMediaIds.map((media_id) => ({ product_id: productId, media_id })));
+      if (error) throw error;
     }
 
     // Media Library files are never deleted from here – they stay reusable.
@@ -447,6 +510,7 @@ async function saveVariableProductSets(
   variations: ParsedVariation[],
   found: Map<string, { id: string; path: string }>,
   money: Money,
+  manageStock: boolean,
 ): Promise<void> {
   const { error: attrDeleteError } = await supabase.from("product_attributes").delete().eq("product_id", productId);
   if (attrDeleteError) throw attrDeleteError;
@@ -480,6 +544,12 @@ async function saveVariableProductSets(
     if (error) throw error;
   }
 
+  const storedStock = new Map<string, number>();
+  if (!manageStock) {
+    const { data, error } = await supabase.from("product_variations").select("id, stock").eq("product_id", productId);
+    if (error) throw error;
+    for (const row of data ?? []) storedStock.set(row.id, row.stock);
+  }
   const names = attributes.map((a) => a.name);
   const rows = variations.map((v, index) => ({
     ...(v.id ? { id: v.id } : {}),
@@ -488,7 +558,7 @@ async function saveVariableProductSets(
     // the sale price is what the customer pays; the regular price is the struck-through one
     price_micros: v.saleDisplay !== null ? toBaseMicros(v.saleDisplay, money) : toBaseMicros(v.regularDisplay as number, money),
     compare_at_price_micros: v.saleDisplay !== null ? toBaseMicros(v.regularDisplay as number, money) : null,
-    stock: Number.isInteger(v.stockValue) && v.stockValue >= 0 ? v.stockValue : 0,
+    stock: !manageStock ? (v.id ? storedStock.get(v.id) ?? 0 : 0) : Number.isInteger(v.stockValue) && v.stockValue >= 0 ? v.stockValue : 0,
     is_active: v.is_active,
     image_media_id: v.image_media_id || null,
     image_url: v.image_media_id ? mediaUrl(found.get(v.image_media_id)!.path) : v.image_url || null,

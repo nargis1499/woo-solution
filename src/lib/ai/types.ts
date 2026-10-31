@@ -122,6 +122,7 @@ export type AiInventoryWidgetItem = {
   price: string;
   compareAtPrice?: string | null;
   stock: number;
+  stockManaged?: boolean;
   status: "active" | "draft";
   imageUrl?: string | null;
 };

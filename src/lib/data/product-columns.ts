@@ -10,7 +10,7 @@ const BASE =
   "id, category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, stock, is_active, is_featured, created_at, category:categories(id, name, slug)";
 
 /** Catalogue / list columns, with `type`, `sku`, `brand`, `features`, and `quick_checkout`. */
-export const PRODUCT_COLUMNS = `${BASE}, type, sku, brand, features, quick_checkout`;
+export const PRODUCT_COLUMNS = `${BASE}, type, sku, brand, features, quick_checkout, manage_stock`;
 
 /** Catalogue / list columns with `type` / `sku` but without `brand` / `features` / `quick_checkout`. */
 export const PRODUCT_COLUMNS_NO_BRAND = `${BASE}, type, sku`;
@@ -24,7 +24,8 @@ const VARIATION_RELATIONS = `attributes:product_attributes(id, product_id, name,
 const VARIATION_RELATIONS_NO_BRAND = `attributes:product_attributes(id, product_id, name, options, sort_order), variations:product_variations(id, product_id, sku, price_micros, compare_at_price_micros, stock, is_active, image_url, image_media_id, combination, label, sort_order, image_media:media!product_variations_image_media_id_fkey(${MEDIA_REF_COLUMNS}))`;
 
 /** Product page: media embeds + attributes + variations + brand. */
-export const PRODUCT_DETAIL_COLUMNS = `${PRODUCT_COLUMNS}, ${MEDIA_COLUMNS}, ${VARIATION_RELATIONS}`;
+export const PRODUCT_EDITOR_COLUMNS = `content, seo_title, seo_description, canonical_url, robots_index, robots_follow, og_title, og_description, og_image_id, og_image_url, og_image:media!products_og_image_id_fkey(${MEDIA_REF_COLUMNS})`;
+export const PRODUCT_DETAIL_COLUMNS = `${PRODUCT_COLUMNS}, ${PRODUCT_EDITOR_COLUMNS}, ${MEDIA_COLUMNS}, ${VARIATION_RELATIONS}`;
 
 /** Product page without `brand` / `is_quantity`. */
 export const PRODUCT_DETAIL_COLUMNS_NO_BRAND = `${PRODUCT_COLUMNS_NO_BRAND}, ${MEDIA_COLUMNS}, ${VARIATION_RELATIONS_NO_BRAND}`;

@@ -1,10 +1,10 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { PlusIcon, XIcon } from "lucide-react";
+import { PlusIcon, XIcon, PackageIcon, ShapesIcon, BadgeCheckIcon, LinkIcon, FileTextIcon, WalletIcon, TagsIcon, BoxesIcon, BarcodeIcon, FolderTreeIcon, CalculatorIcon, Settings2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { quickCreateCategory, saveProduct, type AdminFormState } from "@/app/nemesis/actions";
-import { CURRENCIES, DEFAULT_PRICE_MICROS, inputFromMicros } from "@/lib/money";
+import { CURRENCIES, DEFAULT_PRICE_MICROS, inputFromMicros, parseMoneyInput, formatMinor } from "@/lib/money";
 import type { Category, Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useMoney } from "@/components/money-provider";
@@ -20,6 +20,10 @@ import { useFormToast } from "./flash-toast";
 import { CheckboxField, SubmitButton } from "./form-bits";
 import { VariableProductFields, initialAttributes, initialVariations } from "./product-variations";
 import { submittedVariations, type DraftAttribute, type DraftVariation } from "@/lib/variations";
+import { Switch } from "@/components/ui/switch";
+import { BlockEditorCanvas, BlockSettingsInspector, useBlockEditorState } from "./pages/block-editor";
+import { SeoSettings } from "./pages/seo-settings";
+import { mediaUrl } from "@/lib/media/shared";
 import { ProductMediaFields } from "./media/product-media-fields";
 
 function slugify(input: string) {
@@ -31,19 +35,29 @@ export function ProductForm({
   categories,
   returnTo = "/nemesis/products",
   manageStock = true,
+  siteUrl = null,
+  storeName = "Store",
+  simpleProducts = [],
 }: {
   product?: Product | null;
   categories: Category[];
   /** List URL (page / size / filter) to go back to after saving or cancelling. */
   returnTo?: string;
-  /** Settings → WooCommerce → stock management; when off the stock field is hidden and left untouched. */
+  /** Initial stock-management default for new products; existing products use their own flag. */
   manageStock?: boolean;
+  siteUrl?: string | null;
+  storeName?: string;
+  simpleProducts?: Product[];
 }) {
   const [state, formAction] = useActionState<AdminFormState, FormData>(saveProduct, null);
   useFormToast(state);
   const v = state?.values ?? {};
   const err = state?.fieldErrors ?? {};
   const isEdit = Boolean(product);
+  const [stockManaged, setStockManaged] = useState(v.manage_stock ? v.manage_stock === "on" : product?.manage_stock ?? manageStock);
+  const [content, setContent] = useState(v.content ?? product?.content ?? "");
+  const [description, setDescription] = useState(v.description ?? product?.description ?? "");
+  const blockController = useBlockEditorState({ initialHtml: content, onChange: setContent });
 
   // slug auto-follows the name until the user edits the slug by hand
   const [slugTouched, setSlugTouched] = useState(Boolean(product?.slug));
@@ -116,6 +130,24 @@ export function ProductForm({
   const hasSale = product?.compare_at_price_micros != null && (product.compare_at_price_micros as number) > product.price_micros;
   const regularShown = product ? inputFromMicros(hasSale ? (product.compare_at_price_micros as number) : product.price_micros, money) : "";
   const saleShown = hasSale ? inputFromMicros(product!.price_micros, money) : "";
+  const costShown = product?.cost_price_micros != null ? inputFromMicros(product.cost_price_micros, money) : "";
+  const [regularPrice, setRegularPrice] = useState(v.regular_price ?? regularShown);
+  const [salePrice, setSalePrice] = useState(v.sale_price ?? saleShown);
+  const [costPrice, setCostPrice] = useState(v.cost_price ?? costShown);
+  const cost = /^[0-9.,\s]*$/.test(costPrice) ? parseMoneyInput(costPrice) : Number.NaN;
+  const priceCandidates = type === "simple"
+    ? [{ regular: regularPrice, sale: salePrice }]
+    : variations.filter((row) => row.is_active).map((row) => ({ regular: row.regularPrice, sale: row.salePrice }));
+  const profits = cost !== null && Number.isFinite(cost) ? priceCandidates.flatMap((row) => {
+    const regular = parseMoneyInput(row.regular);
+    const sale = parseMoneyInput(row.sale);
+    if (regular === null || !Number.isFinite(regular) || (sale !== null && (!Number.isFinite(sale) || sale >= regular))) return [];
+    const price = sale ?? regular;
+    return [{ profit: price - cost, margin: price > 0 ? ((price - cost) / price) * 100 : null }];
+  }) : [];
+  const profitLabel = profits.length ? [...new Set([Math.min(...profits.map((p) => p.profit)), Math.max(...profits.map((p) => p.profit))])].map((p) => formatMinor(p, money.currency)).join(" – ") : "—";
+  const margins = profits.flatMap((p) => p.margin === null ? [] : [p.margin]);
+  const marginLabel = margins.length ? [...new Set([Math.min(...margins), Math.max(...margins)])].map((p) => `${p.toFixed(1)}%`).join(" – ") : "N/A";
 
   return (
     <form action={formAction} className="grid gap-6 lg:grid-cols-[1fr_340px]" noValidate>
@@ -123,6 +155,8 @@ export function ProductForm({
       <input type="hidden" name="return_to" value={returnTo} />
       <input type="hidden" name="money_currency" value={money.currency} />
       <input type="hidden" name="money_rate" value={String(money.rate)} />
+      <input type="hidden" name="manage_stock" value={stockManaged ? "on" : "off"} />
+      <input type="hidden" name="cost_price_shown" value={costShown} />
       <input type="hidden" name="regular_price_shown" value={regularShown} />
       <input type="hidden" name="sale_price_shown" value={saleShown} />
       <input type="hidden" name="type" value={type} />
@@ -132,13 +166,26 @@ export function ProductForm({
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Details</CardTitle>
+            <CardTitle className="flex items-center gap-2"><PackageIcon className="size-4 text-primary" /> Product details</CardTitle>
           </CardHeader>
           <CardContent>
             <FieldGroup className="gap-5">
+              <Field data-invalid={Boolean(err.name) || undefined}>
+                <FieldLabel htmlFor="name"><PackageIcon className="size-4 text-muted-foreground" /> Product name</FieldLabel>
+                <Input
+                  id="name"
+                  name="name"
+                  required
+                  maxLength={200}
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); if (!slugTouched) setSlug(slugify(e.target.value)); }}
+                  aria-invalid={Boolean(err.name) || undefined}
+                />
+                <FieldError>{err.name}</FieldError>
+              </Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field data-invalid={Boolean(err.type) || undefined}>
-                  <FieldLabel htmlFor="product_type">Product type</FieldLabel>
+                  <FieldLabel htmlFor="product_type"><ShapesIcon className="size-4 text-muted-foreground" /> Product type</FieldLabel>
                   <Select
                     name="product_type"
                     defaultSelectedKey={type}
@@ -157,7 +204,7 @@ export function ProductForm({
                   <FieldError>{err.type}</FieldError>
                 </Field>
                 <Field data-invalid={Boolean(err.brand) || undefined}>
-                  <FieldLabel htmlFor="brand">Brand</FieldLabel>
+                  <FieldLabel htmlFor="brand"><BadgeCheckIcon className="size-4 text-muted-foreground" /> Brand</FieldLabel>
                   <Input
                     id="brand"
                     name="brand"
@@ -170,21 +217,8 @@ export function ProductForm({
                   <FieldError>{err.brand}</FieldError>
                 </Field>
               </div>
-              <Field data-invalid={Boolean(err.name) || undefined}>
-                <FieldLabel htmlFor="name">Name</FieldLabel>
-                <Input
-                  id="name"
-                  name="name"
-                  required
-                  maxLength={200}
-                  value={name}
-                  onChange={(e) => { setName(e.target.value); if (!slugTouched) setSlug(slugify(e.target.value)); }}
-                  aria-invalid={Boolean(err.name) || undefined}
-                />
-                <FieldError>{err.name}</FieldError>
-              </Field>
               <Field data-invalid={Boolean(err.slug) || undefined}>
-                <FieldLabel htmlFor="slug">Slug</FieldLabel>
+                <FieldLabel htmlFor="slug"><LinkIcon className="size-4 text-muted-foreground" /> Slug</FieldLabel>
                 <InputGroup>
                   <InputGroupAddon>
                     <InputGroupText>/products/</InputGroupText>
@@ -201,8 +235,8 @@ export function ProductForm({
                 <FieldError>{err.slug}</FieldError>
               </Field>
               <Field>
-                <FieldLabel htmlFor="description">Description</FieldLabel>
-                <Textarea id="description" name="description" rows={5} maxLength={5000} defaultValue={v.description ?? product?.description ?? ""} />
+                <FieldLabel htmlFor="description"><FileTextIcon className="size-4 text-muted-foreground" /> Short description</FieldLabel>
+                <Textarea id="description" name="description" rows={4} maxLength={5000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="A concise summary for product cards and the top of the product page." />
               </Field>
               <Field data-invalid={Boolean(err.features) || undefined}>
                 <FieldLabel htmlFor="features_input">Product Features</FieldLabel>
@@ -273,14 +307,21 @@ export function ProductForm({
 
         <Card>
           <CardHeader>
-            <CardTitle>Pricing &amp; inventory</CardTitle>
+            <CardTitle className="flex items-center gap-2"><WalletIcon className="size-4 text-primary" /> Pricing &amp; inventory</CardTitle>
           </CardHeader>
           <CardContent>
             <FieldGroup className="gap-5">
+              <div className="flex items-center justify-between gap-4 rounded-xl border bg-muted/30 p-4">
+                <div>
+                  <FieldLabel htmlFor="manage_stock"><BoxesIcon className="size-4 text-primary" /> Manage stock for this product</FieldLabel>
+                  <p className="mt-1 text-xs text-muted-foreground">{stockManaged ? "Track quantities and prevent overselling, including variations." : "Unlimited availability. Existing quantities are preserved."} New products default to the global ecommerce setting.</p>
+                </div>
+                <Switch id="manage_stock" isSelected={stockManaged} onChange={setStockManaged} aria-label="Manage stock for this product" />
+              </div>
               {type === "variable" ? null : (
               <div className="grid gap-4 sm:grid-cols-3">
                 <Field data-invalid={Boolean(err.regular_price) || undefined}>
-                  <FieldLabel htmlFor="regular_price">Regular price ({money.currency})</FieldLabel>
+                  <FieldLabel htmlFor="regular_price"><WalletIcon className="size-4 text-muted-foreground" /> Regular price ({money.currency})</FieldLabel>
                   <InputGroup>
                     <InputGroupAddon>
                       <InputGroupText data-testid="regular-price-currency">{symbol}</InputGroupText>
@@ -291,14 +332,14 @@ export function ProductForm({
                       inputMode="decimal"
                       placeholder={inputFromMicros(DEFAULT_PRICE_MICROS, money)}
                       required
-                      defaultValue={v.regular_price ?? regularShown}
+                      value={regularPrice} onChange={(e) => setRegularPrice(e.target.value)}
                       aria-invalid={Boolean(err.regular_price) || undefined}
                     />
                   </InputGroup>
                   <FieldError>{err.regular_price}</FieldError>
                 </Field>
                 <Field data-invalid={Boolean(err.sale_price) || undefined}>
-                  <FieldLabel htmlFor="sale_price">Sale price ({money.currency})</FieldLabel>
+                  <FieldLabel htmlFor="sale_price"><TagsIcon className="size-4 text-muted-foreground" /> Sale price ({money.currency})</FieldLabel>
                   <InputGroup>
                     <InputGroupAddon>
                       <InputGroupText data-testid="sale-price-currency">{symbol}</InputGroupText>
@@ -308,15 +349,15 @@ export function ProductForm({
                       name="sale_price"
                       inputMode="decimal"
                       placeholder="Optional"
-                      defaultValue={v.sale_price ?? saleShown}
+                      value={salePrice} onChange={(e) => setSalePrice(e.target.value)}
                       aria-invalid={Boolean(err.sale_price) || undefined}
                     />
                   </InputGroup>
                   <FieldError>{err.sale_price}</FieldError>
                 </Field>
-                {manageStock ? (
+                {stockManaged ? (
                   <Field data-invalid={Boolean(err.stock) || undefined}>
-                    <FieldLabel htmlFor="stock">Stock</FieldLabel>
+                    <FieldLabel htmlFor="stock"><BoxesIcon className="size-4 text-muted-foreground" /> Stock</FieldLabel>
                     <Input id="stock" name="stock" type="number" min={0} step={1} required defaultValue={v.stock ?? product?.stock ?? 0} aria-invalid={Boolean(err.stock) || undefined} />
                     <FieldError>{err.stock}</FieldError>
                   </Field>
@@ -326,8 +367,22 @@ export function ProductForm({
                 )}
               </div>
               )}
+              <Field data-invalid={Boolean(err.cost_price) || undefined}>
+                <FieldLabel htmlFor="cost_price"><WalletIcon className="size-4 text-muted-foreground" /> Unit cost price ({money.currency})</FieldLabel>
+                <InputGroup>
+                  <InputGroupAddon><InputGroupText>{symbol}</InputGroupText></InputGroupAddon>
+                  <InputGroupInput id="cost_price" name="cost_price" inputMode="decimal" placeholder="Optional" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} aria-invalid={Boolean(err.cost_price) || undefined} />
+                </InputGroup>
+                <p className="text-xs text-muted-foreground">Private to admins. {type === "variable" ? "This common unit cost is compared with each enabled variation’s selling price." : "Profit uses the sale price when set, otherwise the regular price."}</p>
+                <FieldError>{err.cost_price}</FieldError>
+              </Field>
+              <div role="status" aria-live="polite" className={cn("flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-primary/5 p-4 text-sm", profits.some((p) => p.profit < 0) ? "border-rose-500/30 text-rose-600 dark:text-rose-400" : "border-primary/20 text-primary")}>
+                <span className="inline-flex items-center gap-2 font-medium"><CalculatorIcon className="size-4" /> Calculated profit margin</span>
+                <span className="font-mono text-xs">Profit: <strong>{profitLabel}</strong> · Margin: <strong>{marginLabel}</strong></span>
+                <p className="w-full text-xs text-muted-foreground">{profits.length ? "Estimated gross profit per unit, before tax, shipping and payment fees. Margin = profit ÷ selling price." : "Enter valid selling and cost prices to calculate profit. Margin is unavailable for a zero selling price."}</p>
+              </div>
               <Field data-invalid={Boolean(err.sku) || undefined}>
-                <FieldLabel htmlFor="sku">SKU</FieldLabel>
+                <FieldLabel htmlFor="sku"><BarcodeIcon className="size-4 text-muted-foreground" /> SKU</FieldLabel>
                 <Input
                   id="sku"
                   name="sku"
@@ -340,7 +395,7 @@ export function ProductForm({
                 <FieldError>{err.sku}</FieldError>
               </Field>
               <Field data-invalid={Boolean(err.category_id) || undefined}>
-                <FieldLabel htmlFor="category_id">Category</FieldLabel>
+                <FieldLabel htmlFor="category_id"><FolderTreeIcon className="size-4 text-muted-foreground" /> Category</FieldLabel>
                 <input type="hidden" name="category_id" value={selectedCategoryId} />
                 <div className="flex flex-wrap items-center gap-2.5">
                   <Select
@@ -404,11 +459,30 @@ export function ProductForm({
             onAttributesChange={setAttributes}
             onVariationsChange={setVariations}
             money={money}
-            manageStock={manageStock}
+            manageStock={stockManaged}
             baseSku={sku || product?.sku || slug || name}
             errors={err}
           />
         )}
+        <Card className="overflow-visible">
+          <CardHeader><CardTitle className="flex items-center gap-2"><FileTextIcon className="size-4 text-primary" /> Detailed description &amp; content</CardTitle><p className="text-xs text-muted-foreground">Use the same blocks as pages and posts. This content is rendered on the product page for shoppers and search engines.</p></CardHeader>
+          <CardContent className="space-y-4">
+            <BlockEditorCanvas controller={blockController} simpleProducts={simpleProducts} name="content" invalid={Boolean(err.content)} />
+            <FieldError>{err.content}</FieldError>
+            <details className="rounded-xl border bg-muted/20" open>
+              <summary className="cursor-pointer p-4 text-sm font-medium"><Settings2Icon className="mr-2 inline size-4" /> Selected block settings</summary>
+              <BlockSettingsInspector controller={blockController} simpleProducts={simpleProducts} />
+            </details>
+          </CardContent>
+        </Card>
+        <SeoSettings
+          values={{ seo_title: v.seo_title ?? product?.seo_title ?? "", seo_description: v.seo_description ?? product?.seo_description ?? "", canonical_url: v.canonical_url ?? product?.canonical_url ?? "", robots_index: v.robots_index ? v.robots_index !== "off" : product?.robots_index ?? true, robots_follow: v.robots_follow ? v.robots_follow !== "off" : product?.robots_follow ?? true, og_title: v.og_title ?? product?.og_title ?? "", og_description: v.og_description ?? product?.og_description ?? "" }}
+          errors={err} pageTitle={name} slug={slug} contentHtml={content} fallbackDescription={description}
+          siteUrl={siteUrl} storeName={storeName} contentLabel="product" urlPrefix="/products"
+          ogImage={product?.og_image?.path ? { src: mediaUrl(product.og_image.path), media: product.og_image } : product?.og_image_url ? { src: product.og_image_url, media: null } : null}
+          hasFeaturedImage={Boolean(product?.image_url || product?.image_media)}
+          defaultOpen={Object.keys(err).some((key) => /^(seo_|og_|canonical)/.test(key))}
+        />
       </div>
 
       {/* ── Image + gallery (Media Library) ───────────────────────────────── */}

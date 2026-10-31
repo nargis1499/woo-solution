@@ -272,7 +272,7 @@ export function buildAgentSystemPrompt(
 
   return [
     `You are Nemesis AI, the store operations agent inside the "${store.storeName}" admin dashboard.`,
-    `Store currency: ${store.currency}. Stock tracking: ${store.manageStock ? "enabled" : "disabled"}.`,
+    `Store currency: ${store.currency}. Default stock tracking (products may override): ${store.manageStock ? "enabled" : "disabled"}.`,
     `Available categories (Name (slug)): ${catList}.`,
     `Brand tone: ${aiSettings.brand_tone}. Respond in ${aiSettings.default_language}.`,
     contentContextFromPath(currentPath),
@@ -303,6 +303,7 @@ type RawProductRow = {
   brand?: string | null;
   features?: string | null;
   stock: number;
+  manage_stock?: boolean;
   is_active: boolean;
   is_featured: boolean;
   category?: { id: string; name: string; slug: string } | null;
@@ -360,7 +361,7 @@ function resolveCategoryMatch(
 async function fetchAdminProductsForTools(): Promise<RawProductRow[]> {
   const supabase = await createClient();
   const fullSelect =
-    "id, category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, image_media_id, type, sku, brand, features, stock, is_active, is_featured, category:categories(id, name, slug), variations:product_variations(id, label, sku, price_micros, compare_at_price_micros, stock, is_active), image_media:media!products_image_media_id_fkey(id, name, path, alt)";
+    "id, category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, image_media_id, type, sku, brand, features, stock, manage_stock, is_active, is_featured, category:categories(id, name, slug), variations:product_variations(id, label, sku, price_micros, compare_at_price_micros, stock, is_active), image_media:media!products_image_media_id_fkey(id, name, path, alt)";
   const fallbackSelect =
     "id, category_id, name, slug, description, price_micros, compare_at_price_micros, image_url, stock, is_active, is_featured, category:categories(id, name, slug)";
 
@@ -548,10 +549,10 @@ export async function executeAgentToolCall(opts: {
       }));
 
     const stats = (statsData ?? {}) as Record<string, number>;
-    const outOfStockCount = products.filter((p) => p.is_active && effectiveProductStock(p) === 0).length;
+    const outOfStockCount = products.filter((p) => p.is_active && (p.manage_stock ?? store.manageStock) && effectiveProductStock(p) === 0).length;
     const lowStockCount = products.filter((p) => {
       const s = effectiveProductStock(p);
-      return p.is_active && s > 0 && s <= 3;
+      return p.is_active && (p.manage_stock ?? store.manageStock) && s > 0 && s <= 3;
     }).length;
 
     const payload = {
@@ -611,6 +612,7 @@ export async function executeAgentToolCall(opts: {
       if (statusFilter === "active" && !p.is_active) return false;
       if (statusFilter === "draft" && p.is_active) return false;
       const stock = effectiveProductStock(p);
+      if ((outOfStockOnly || maxStock !== null) && !(p.manage_stock ?? store.manageStock)) return false;
       if (outOfStockOnly && stock > 0) return false;
       if (maxStock !== null && stock > maxStock) return false;
       if (
@@ -635,6 +637,7 @@ export async function executeAgentToolCall(opts: {
         ? formatMoney(p.compare_at_price_micros, money)
         : null,
       stock: effectiveProductStock(p),
+      stockManaged: p.manage_stock ?? store.manageStock,
       status: p.is_active ? ("active" as const) : ("draft" as const),
     }));
 
@@ -647,11 +650,12 @@ export async function executeAgentToolCall(opts: {
         ? formatMoney(p.compare_at_price_micros, money)
         : null,
       stock: effectiveProductStock(p),
+      stockManaged: p.manage_stock ?? store.manageStock,
       status: p.is_active ? ("active" as const) : ("draft" as const),
       imageUrl: p.image_media?.path ? mediaUrl(p.image_media.path) : p.image_url,
     }));
 
-    const attentionCount = matched.filter((p) => effectiveProductStock(p) <= 3).length;
+    const attentionCount = matched.filter((p) => (p.manage_stock ?? store.manageStock) && effectiveProductStock(p) <= 3).length;
     const statusPrefix =
       statusFilter === "active"
         ? "Active Products"
@@ -768,7 +772,7 @@ export async function executeAgentToolCall(opts: {
         imageUrl: thumbUrl,
         oldValueLabel: formatMoney(baseMicros, money),
         newValueLabel: formatMoney(newPriceMicros, money),
-        stockBadge: store.manageStock ? stockBadgeFor(stock) : undefined,
+        stockBadge: (p.manage_stock ?? store.manageStock) ? stockBadgeFor(stock) : undefined,
         mutation: {
           kind: "discount",
           productId: p.id,
@@ -846,7 +850,9 @@ export async function executeAgentToolCall(opts: {
     const products = await fetchAdminProductsForTools();
     const matched = products.filter((p) => {
       if (cat && p.category_id !== cat.id && p.category?.slug !== cat.slug) return false;
+      if (newStock !== undefined && !(p.manage_stock ?? store.manageStock)) return false;
       const stock = effectiveProductStock(p);
+      if ((outOfStockOnly || maxStock !== null) && !(p.manage_stock ?? store.manageStock)) return false;
       if (outOfStockOnly && stock > 0) return false;
       if (maxStock !== null && stock > maxStock) return false;
       if (
@@ -913,7 +919,7 @@ export async function executeAgentToolCall(opts: {
         imageUrl: thumbUrl,
         oldValueLabel: oldLabel,
         newValueLabel: newLabel,
-        stockBadge: store.manageStock ? stockBadgeFor(stock) : undefined,
+        stockBadge: (p.manage_stock ?? store.manageStock) ? stockBadgeFor(stock) : undefined,
         mutation: {
           kind: "product_status",
           productId: p.id,

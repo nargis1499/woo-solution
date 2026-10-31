@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { NOINDEX } from "@/lib/seo";
-import { getSiteSettings } from "@/lib/site-settings";
 import { CartView } from "@/components/cart-view";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -22,6 +21,5 @@ export default function CartPage() {
 /** Rendered per request (not in the static shell) so the stock switch from Settings → WooCommerce is always current. */
 async function Cart() {
   await connection();
-  const { manage_stock } = await getSiteSettings();
-  return <CartView manageStock={manage_stock} />;
+  return <CartView />;
 }

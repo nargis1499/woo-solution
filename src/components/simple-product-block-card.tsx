@@ -44,10 +44,11 @@ export function SimpleProductBlockCard({
   block,
   product = null,
   editorMode = false,
-  manageStock = true,
+  manageStock: globalManageStock = true,
   canEdit = false,
   className,
 }: SimpleProductBlockCardProps) {
+  const manageStock = product?.manage_stock ?? globalManageStock;
   const money = useMoney();
   const addItem = useCartStore((s) => s.addItem);
   const [qty, setQty] = useState(1);
