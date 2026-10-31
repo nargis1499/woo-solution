@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useRef, useState, type ComponentType } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowRightIcon,
@@ -43,6 +43,8 @@ import {
 } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { AiWorkingIndicator } from "./ai-working-indicator";
+import { useNemesisChatScroll } from "./use-nemesis-chat-scroll";
 import { useNemesisAi } from "./ai-context";
 import {
   AiWidgetCard,
@@ -192,14 +194,10 @@ export function NemesisAiDrawer() {
     sessionTokens: number;
   }>({ sessionTokens: 0 });
 
-  const scrollRef = useRef<HTMLDivElement | null>(null);
   const msgSeqRef = useRef(0);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [entries, running]);
+  const latestEntryId = entries.at(-1)?.id;
+  const { scrollRef, loadingRef, latestResponseRef, beginTurn, showResponse, interactionProps } =
+    useNemesisChatScroll(open, latestEntryId, running);
 
   const providerMeta = AI_PROVIDERS[aiSettings.provider];
   const isBrowserOllama =
@@ -226,6 +224,7 @@ export function NemesisAiDrawer() {
       content: e.content,
     }));
 
+    beginTurn();
     setEntries((prev) => [...prev, userEntry]);
     setInput("");
     setRunning(true);
@@ -276,6 +275,7 @@ export function NemesisAiDrawer() {
           (data.widgets?.length ?? 0) === 0 &&
           data.toolBadges.every((badge) => badge.name === "query_content"),
       };
+      showResponse();
       setEntries((prev) => [...prev, assistantEntry]);
 
       if (!aiSettings.require_confirmation) {
@@ -286,6 +286,7 @@ export function NemesisAiDrawer() {
       toast.error(msg);
       msgSeqRef.current += 1;
       const errId = `err_${msgSeqRef.current}`;
+      showResponse();
       setEntries((prev) => [
         ...prev,
         {
@@ -415,7 +416,8 @@ export function NemesisAiDrawer() {
       {/* Main Chat Stream Container */}
       <div
         ref={scrollRef}
-        className="flex-1 space-y-6 overflow-y-auto p-4 sm:p-5"
+        className="nemesis-ai-scroll min-h-0 flex-1 space-y-6 overflow-y-auto p-4 [--nemesis-chat-padding:1rem] sm:p-5 sm:[--nemesis-chat-padding:1.25rem]"
+        {...interactionProps}
         data-testid="nemesis-ai-thread"
       >
         {!aiSettings.is_ready && (
@@ -487,7 +489,12 @@ export function NemesisAiDrawer() {
               </div>
             </div>
           ) : (
-            <div key={entry.id} className="flex items-start gap-3">
+            <div
+              key={entry.id}
+              ref={entry.id === latestEntryId ? latestResponseRef : undefined}
+              className="nemesis-ai-response flex items-start gap-3"
+              style={entry.id === latestEntryId ? { minHeight: "calc(var(--nemesis-chat-viewport, 0px) - var(--nemesis-chat-padding) - var(--nemesis-chat-padding))" } : undefined}
+            >
               {/* Bot Avatar */}
               <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/12 text-primary">
                 <BotIcon className="size-4" />
@@ -560,18 +567,15 @@ export function NemesisAiDrawer() {
         )}
 
         {running && (
-          <div className="flex items-start gap-3">
+          <div
+            ref={loadingRef}
+            className="flex items-start gap-3"
+            style={{ minHeight: "calc(var(--nemesis-chat-viewport, 0px) - var(--nemesis-chat-padding) - var(--nemesis-chat-padding))" }}
+          >
             <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/12 text-primary">
-              <BotIcon className="size-4" />
+              <BotIcon className="size-4" aria-hidden="true" />
             </div>
-            <div className="flex flex-1 items-center gap-2.5 rounded-xl border bg-card px-4 py-3 text-xs text-muted-foreground shadow-2xs">
-              <Spinner className="size-4 text-primary" />
-              <span>
-                {isBrowserOllama
-                  ? `Running local Ollama (${shortModel})…`
-                  : `Executing store tools with ${shortModel}…`}
-              </span>
-            </div>
+            <AiWorkingIndicator />
           </div>
         )}
       </div>
