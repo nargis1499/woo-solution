@@ -1,5 +1,6 @@
 import "server-only";
-import { responsePolicy, isStandaloneInventoryReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
+import { ORDER_INTELLIGENCE_TOOLS, executeOrderTool } from "@/lib/ai/orders/tools";
+import { responsePolicy, isStandaloneInventoryReport, isStandaloneOrderReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
 import { INVENTORY_INTELLIGENCE_TOOLS, executeInventoryTool } from "@/lib/ai/inventory/tools";
 import { assertAdmin } from "@/lib/admin/auth";
 import { expireTag, revalidateStore, UUID_RE } from "@/lib/admin/form";
@@ -193,26 +194,7 @@ const CORE_AGENT_TOOLS: AiToolSpec[] = [
       },
     },
   },
-  {
-    name: "preview_order_status_update",
-    description:
-      "Prepare a confirmation preview to update an order's status by order number (e.g. 1004).",
-    parameters: {
-      type: "object",
-      properties: {
-        orderNumber: {
-          type: "number",
-          description: "Numeric order_number (e.g. 1001).",
-        },
-        newStatus: {
-          type: "string",
-          enum: ["pending", "processing", "completed", "cancelled"],
-          description: "Target order status.",
-        },
-      },
-      required: ["orderNumber", "newStatus"],
-    },
-  },
+
 ];
 
 /** Capability groups are the extension point for future tool routing and per-group budgets. */
@@ -222,7 +204,7 @@ export const AGENT_TOOL_GROUPS = [
   { id: "store_analytics", label: "Store Analytics", tools: CORE_AGENT_TOOLS.filter((t) => t.name === "get_store_analytics") },
   { id: "pricing", label: "Pricing & Promotions", tools: CORE_AGENT_TOOLS.filter((t) => t.name === "preview_category_discount") },
   { id: "content_seo", label: "Content & SEO", tools: CORE_AGENT_TOOLS.filter((t) => ["query_content", "preview_content_update", "audit_and_fix_seo"].includes(t.name)) },
-  { id: "orders", label: "Order Operations", tools: CORE_AGENT_TOOLS.filter((t) => t.name === "preview_order_status_update") },
+  { id: "orders", label: "Order Management Intelligence", tools: ORDER_INTELLIGENCE_TOOLS },
 ] as const;
 export const AGENT_TOOLS: AiToolSpec[] = AGENT_TOOL_GROUPS.flatMap((group) => group.tools);
 
@@ -230,7 +212,9 @@ export const AGENT_TOOLS: AiToolSpec[] = AGENT_TOOL_GROUPS.flatMap((group) => gr
 export function selectAgentTools(prompt: string, policy: AiResponsePolicy): AiToolSpec[] {
   return policy.mode === "compact" && isStandaloneInventoryReport(prompt)
     ? INVENTORY_INTELLIGENCE_TOOLS.filter((tool) => tool.name === "analyze_inventory_intelligence")
-    : AGENT_TOOLS;
+    : policy.mode === "compact" && isStandaloneOrderReport(prompt)
+      ? ORDER_INTELLIGENCE_TOOLS.filter((tool) => tool.name === "query_order_intelligence")
+      : AGENT_TOOLS;
 }
 
 export type StoreContextSummary = {
@@ -280,11 +264,13 @@ export function buildAgentSystemPrompt(
 
   return [
     `You are Nemesis AI, the store operations agent inside the "${store.storeName}" admin dashboard.`,
+    `Current UTC time: ${new Date().toISOString()}. Interpret relative dates from this clock; default to UTC unless the administrator specifies a timezone.`,
     `Store currency: ${store.currency}. Default stock tracking (products may override): ${store.manageStock ? "enabled" : "disabled"}.`,
     `Available categories (Name (slug)): ${catList}.`,
     `Brand tone: ${aiSettings.brand_tone}. Respond in ${aiSettings.default_language}.`,
     contentContextFromPath(currentPath),
     `Capability groups: ${AGENT_TOOL_GROUPS.map((g) => `${g.label}: ${g.tools.map((t) => t.name).join(", ")}`).join("; ")}.`,
+    `Order Intelligence rules: use query_order_intelligence for all order investigation/search, paid revenue, customer history and problem detection. The simple "Analyze order intelligence" prompt means mode=report. Defaults: report 30 days, problems 90 days, customer history all time. Use exact date/filter metadata; never extrapolate page rows into totals. Refunded is a payment status, not an order-status enum. Unknown timestamps, taxes and discounts are unknown, not zero. Do not claim actual payment failure/success rates without attempt records. All order changes use preview_order_operations with explicit order targets and mandatory approval, even if auto-apply is enabled. Refund requests do not refund money; customer notifications are order-chat/in-app, not email/SMS. Use private notes, not customer-facing notes, for internal information. Never guess identities or merge customers by name. For bulk requests read matching targets first and clearly state the selected page/batch scope. Customer summaries use minimal PII; do not repeat addresses, phones, transaction hashes or emails unnecessarily.`,
     `Inventory Intelligence rules: use analyze_inventory_intelligence for forecasts, dead stock, overstock, sales spikes and reorder quantities. All numbers are computed by code from real order history, never by model guessing. Mention lookback/lead time only briefly when relevant; flag limited/incomplete data, and never claim forecasts are guaranteed. Reorder suggestions are not purchase orders or received stock. For bulk publish/hide actions use preview_inventory_status_update with the same filters and analysis options and an explicit user-requested target status; approval is always required. Product-level and variation-level reorder quantities overlap: never sum them.`,
     responsePolicy(aiSettings).summaryInstruction,
     `Rules:`,
@@ -411,6 +397,14 @@ export async function executeAgentToolCall(opts: {
   const { call, aiSettings, store, money } = opts;
   if (INVENTORY_INTELLIGENCE_TOOLS.some((tool) => tool.name === call.name)) {
     return executeInventoryTool(call, store.manageStock, opts.responsePolicy ?? responsePolicy(aiSettings));
+  }
+  if (ORDER_INTELLIGENCE_TOOLS.some((tool) => tool.name === call.name)) {
+    return executeOrderTool(call, opts.responsePolicy ?? responsePolicy(aiSettings), money);
+  }
+  if (call.name === "preview_order_status_update") {
+    return executeOrderTool({ ...call, name: "preview_order_operations", arguments: {
+      orders: [String(call.arguments.orderNumber)], action: "status", status: call.arguments.newStatus,
+    } }, opts.responsePolicy ?? responsePolicy(aiSettings), money);
   }
   const maxRows = aiSettings.token_budget_mode === "economy" ? 15 : aiSettings.token_budget_mode === "standard" ? 30 : 60;
 
@@ -1318,70 +1312,6 @@ export async function executeAgentToolCall(opts: {
     };
   }
 
-  /* 6. Preview Order Status Update */
-  if (call.name === "preview_order_status_update") {
-    const supabase = await createClient();
-    const orderNum = Number(call.arguments.orderNumber);
-    const newStatus = String(call.arguments.newStatus) as
-      | "pending"
-      | "processing"
-      | "completed"
-      | "cancelled";
-
-    const { data: order } = await supabase
-      .from("orders")
-      .select("id, order_number, status, shipping_name, total_micros")
-      .eq("order_number", orderNum)
-      .maybeSingle();
-
-    if (!order) {
-      return {
-        toolOutputJson: JSON.stringify({ error: `Order #${orderNum} not found.` }),
-        badge: {
-          id: call.id,
-          name: call.name,
-          summary: `preview_order_status_update(#${orderNum} not found)`,
-        },
-      };
-    }
-
-    const item: AiActionPlanItem = {
-      id: `order_${order.id}`,
-      title: `Order ${formatOrderNumber(order.order_number)} · ${order.shipping_name}`,
-      subtitle: formatMoney(order.total_micros, money),
-      oldValueLabel: order.status,
-      newValueLabel: newStatus,
-      mutation: {
-        kind: "order_status",
-        orderId: order.id,
-        newStatus,
-      },
-    };
-
-    const plan: AiActionPlan = {
-      id: `plan_order_${Date.now()}`,
-      title: `Update Order ${formatOrderNumber(order.order_number)} Status`,
-      description: `Move order from "${order.status}" to "${newStatus}".`,
-      applyLabel: "Apply Status Change",
-      items: [item],
-    };
-
-    return {
-      toolOutputJson: JSON.stringify({
-        status: "preview_ready",
-        orderNumber: formatOrderNumber(order.order_number),
-        from: order.status,
-        to: newStatus,
-      }),
-      badge: {
-        id: call.id,
-        name: call.name,
-        summary: `preview_order_status_update(${formatOrderNumber(order.order_number)} -> ${newStatus})`,
-      },
-      plan,
-    };
-  }
-
   return {
     toolOutputJson: JSON.stringify({ error: `Unknown tool: ${call.name}` }),
     badge: {
@@ -1583,17 +1513,14 @@ export async function executeApprovedPlan(opts: {
         touchedPages = true;
         if (updated?.slug) pageSlugs.push(updated.slug);
         appliedCount++;
-      } else if (m.kind === "order_status") {
-        if (!UUID_RE.test(m.orderId)) continue;
-        const { error } = await supabase
-          .from("orders")
-          .update({
-            status: m.newStatus,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", m.orderId);
+      } else if (m.kind === "order_operation") {
+        if (!UUID_RE.test(m.previewId)) throw new Error("Invalid approval preview.");
+        const { data, error } = await supabase.rpc("nemesis_apply_order_action", { p_preview_id: m.previewId });
         if (error) throw new Error(error.message);
+        if (!data?.ok) throw new Error(data?.error || "Order operation failed.");
         appliedCount++;
+      } else if (m.kind === "order_status") {
+        throw new Error("Legacy order preview is no longer valid. Generate a new order approval preview.");
       }
     } catch (err) {
       errors.push(`${item.title}: ${err instanceof Error ? err.message : "Failed"}`);

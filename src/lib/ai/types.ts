@@ -1,3 +1,4 @@
+import type { AiOrderIntelligenceWidget } from "@/lib/ai/orders/types";
 import type { InventoryReport } from "@/lib/ai/inventory/intelligence";
 import type { AiContentEntity } from "@/lib/ai/content-fields";
 import type { AiProviderId } from "@/lib/ai/providers";
@@ -83,6 +84,7 @@ export type AiInventoryStatusMutation = {
 };
 
 export type AiPlanMutation =
+  | { kind: "order_operation"; previewId: string }
   | AiInventoryStatusMutation
   | AiContentMutation
   | AiDiscountMutation
@@ -187,6 +189,7 @@ export type AiInventoryIntelligenceWidget = InventoryReport & {
 };
 
 export type AiUiWidget =
+  | AiOrderIntelligenceWidget
   | AiInventoryIntelligenceWidget
   | AiInventoryWidget
   | AiAnalyticsWidget
@@ -213,5 +216,5 @@ export type AiAgentTurnResponse = {
 };
 
 export function planRequiresApproval(plan: AiActionPlan): boolean {
-  return plan.requiresApproval === true || plan.items.some((item) => item.mutation.kind === "content_update" || item.mutation.kind === "inventory_status");
+  return plan.requiresApproval === true || plan.items.some((item) => item.mutation.kind === "order_operation" || item.mutation.kind === "order_status" || item.mutation.kind === "content_update" || item.mutation.kind === "inventory_status");
 }

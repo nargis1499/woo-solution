@@ -1,4 +1,4 @@
-import { responsePolicy, isStandaloneInventoryReport, type AiRateBudget } from "@/lib/ai/response-budget";
+import { responsePolicy, isStandaloneInventoryReport, isStandaloneOrderReport, type AiRateBudget } from "@/lib/ai/response-budget";
 import { NextResponse } from "next/server";
 import { AdminAuthError } from "@/lib/admin/auth";
 import {
@@ -253,8 +253,9 @@ export async function POST(request: Request) {
       }
       // Pure read-only reports already have deterministic findings. Save another model
       // request (and re-sending context/schemas) when the token/request budget is limited.
-      if (responsePolicy(aiSettings, observedRate).mode === "compact" && isStandaloneInventoryReport(prompt) &&
-          completion.toolCalls.length === 1 && completion.toolCalls[0].name === "analyze_inventory_intelligence" &&
+      if (responsePolicy(aiSettings, observedRate).mode === "compact" && completion.toolCalls.length === 1 &&
+          ((isStandaloneInventoryReport(prompt) && completion.toolCalls[0].name === "analyze_inventory_intelligence") ||
+           (isStandaloneOrderReport(prompt) && completion.toolCalls[0].name === "query_order_intelligence")) &&
           completionSummaries.length === completion.toolCalls.length && plans.length === 0 && aiSettings.default_language.toLowerCase().startsWith("en")) {
         finalReply = completionSummaries.slice(0, 2).join(" ");
         break;
