@@ -334,39 +334,48 @@ export function AiLogsBoard({
           onOpenChange={(open) => {
             if (!open) setDetail(null);
           }}
-          className="max-h-[90dvh] overflow-y-auto sm:max-w-5xl"
+          className="h-[85dvh] max-h-[90dvh] grid-cols-[minmax(0,1fr)] overflow-hidden p-0 sm:max-w-5xl [&>[data-slot=dialog]]:min-h-0 [&>[data-slot=dialog]]:min-w-0 [&>[data-slot=dialog]]:overflow-hidden"
           showCloseButton={false}
         >
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <DialogTitle>AI API request details</DialogTitle>
-              <Button variant="ghost" size="sm" onPress={() => setDetail(null)}>
-                Close
-              </Button>
-            </div>
-            <p className="break-all text-xs text-muted-foreground">
-              Request group: {detail.trace_id} · Actor:{" "}
-              {detail.actor_id ?? "Deleted account"} · Source: {detail.source}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              The data below is the captured outgoing body after privacy
-              filtering—not provider-hidden instructions. The redacted/truncated
-              flags describe any changes. Token counts come from provider
-              responses; they are not estimated from this preview. A missing
-              response can mean the request was interrupted or its log update
-              failed.
-            </p>
-            {[
-              ["Input sent to API", detail.request_payload],
-              ["API response / error", detail.response_payload],
-            ].map(([label, payload]) => (
-              <div key={String(label)}>
-                <h3 className="mb-2 text-sm font-medium">{String(label)}</h3>
-                <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-lg border bg-muted/30 p-3 text-xs">
-                  {JSON.stringify(payload, null, 2)}
-                </pre>
+          <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+            <div className="shrink-0 space-y-2 border-b px-4 py-3 sm:px-6">
+              <div className="flex min-w-0 items-center justify-between gap-3">
+                <DialogTitle>AI API request details</DialogTitle>
+                <Button className="shrink-0" variant="ghost" size="sm" onPress={() => setDetail(null)}>
+                  Close
+                </Button>
               </div>
-            ))}
+              <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                Request group: {detail.trace_id} · Actor:{" "}
+                {detail.actor_id ?? "Deleted account"} · Source: {detail.source}
+              </p>
+            </div>
+            <div
+              className="nemesis-log-scroll min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:px-6"
+              role="region"
+              aria-label="AI request and response payloads"
+              tabIndex={0}
+            >
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                The data below is the captured outgoing body after privacy
+                filtering—not provider-hidden instructions. The redacted/truncated
+                flags describe any changes. Token counts come from provider
+                responses; they are not estimated from this preview. A missing
+                response can mean the request was interrupted or its log update
+                failed.
+              </p>
+              {[
+                ["Input sent to API", detail.request_payload],
+                ["API response / error", detail.response_payload],
+              ].map(([label, payload]) => (
+                <section key={String(label)} className="min-w-0">
+                  <h3 className="mb-2 text-sm font-medium">{String(label)}</h3>
+                  <pre className="m-0 min-w-0 max-w-full whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-mono text-xs leading-relaxed [overflow-wrap:anywhere]">
+                    {JSON.stringify(payload, null, 2)}
+                  </pre>
+                </section>
+              ))}
+            </div>
           </div>
         </Dialog>
       ) : null}

@@ -658,33 +658,35 @@
   @apply ring-2 ring-primary ring-offset-2 ring-offset-background;
 }
 
-/* Nemesis chat only: a slim theme-colored thumb, no native scrollbar arrows. */
+/* Nemesis chat and log details: slim theme-colored thumbs, no native arrows. */
 @layer components {
   .nemesis-ai-scroll {
-    scrollbar-gutter: stable;
     overflow-anchor: none;
   }
-  .nemesis-ai-scroll::-webkit-scrollbar {
+  :is(.nemesis-ai-scroll, .nemesis-log-scroll) {
+    scrollbar-gutter: stable;
+  }
+  :is(.nemesis-ai-scroll, .nemesis-log-scroll)::-webkit-scrollbar {
     width: 5px;
     height: 5px;
   }
-  .nemesis-ai-scroll::-webkit-scrollbar-track {
+  :is(.nemesis-ai-scroll, .nemesis-log-scroll)::-webkit-scrollbar-track {
     background: transparent;
   }
-  .nemesis-ai-scroll::-webkit-scrollbar-thumb {
+  :is(.nemesis-ai-scroll, .nemesis-log-scroll)::-webkit-scrollbar-thumb {
     border-radius: 9999px;
     background: color-mix(in oklab, var(--primary) 50%, transparent);
   }
-  .nemesis-ai-scroll::-webkit-scrollbar-thumb:hover {
+  :is(.nemesis-ai-scroll, .nemesis-log-scroll)::-webkit-scrollbar-thumb:hover {
     background: color-mix(in oklab, var(--primary) 80%, transparent);
   }
-  .nemesis-ai-scroll::-webkit-scrollbar-button {
+  :is(.nemesis-ai-scroll, .nemesis-log-scroll)::-webkit-scrollbar-button {
     display: none;
     width: 0;
     height: 0;
   }
   @supports (-moz-appearance: none) {
-    .nemesis-ai-scroll {
+    :is(.nemesis-ai-scroll, .nemesis-log-scroll) {
       scrollbar-width: thin;
       scrollbar-color: color-mix(in oklab, var(--primary) 50%, transparent) transparent;
     }
