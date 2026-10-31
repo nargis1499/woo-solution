@@ -4,13 +4,18 @@ import { useCallback, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { SaveIcon } from "lucide-react";
 import type { Key } from "react-aria-components";
-import { isSettingsTab, SETTINGS_TABS, type SettingsTabId } from "@/lib/admin/settings-tabs";
+import {
+  isSettingsTab,
+  SETTINGS_TABS,
+  type SettingsTabId,
+} from "@/lib/admin/settings-tabs";
 import type { PublicAiSettings } from "@/lib/ai/providers";
 import type { SettingsMedia, SiteSettings } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GeneralSettingsForm, SeoSettingsForm } from "./settings-forms";
+import { AdvancedSettings } from "./advanced-settings";
 import { PresenceVisibilityCard } from "./presence-visibility";
 import { AiSettingsForm } from "./ai/ai-settings-form";
 import type { PresenceVisibility } from "@/lib/presence";
@@ -40,33 +45,47 @@ export function SettingsTabs({
     setTab(urlTab);
   }
 
-  const [pendingByTab, setPendingByTab] = useState<Record<SettingsTabId, boolean>>({
+  const [pendingByTab, setPendingByTab] = useState<
+    Record<SettingsTabId, boolean>
+  >({
     general: false,
     seo: false,
     ai: false,
+    advanced: false,
   });
 
   const handleGeneralPending = useCallback((pending: boolean) => {
-    setPendingByTab((prev) => (prev.general === pending ? prev : { ...prev, general: pending }));
+    setPendingByTab((prev) =>
+      prev.general === pending ? prev : { ...prev, general: pending },
+    );
   }, []);
 
   const handleSeoPending = useCallback((pending: boolean) => {
-    setPendingByTab((prev) => (prev.seo === pending ? prev : { ...prev, seo: pending }));
+    setPendingByTab((prev) =>
+      prev.seo === pending ? prev : { ...prev, seo: pending },
+    );
   }, []);
 
   const handleAiPending = useCallback((pending: boolean) => {
-    setPendingByTab((prev) => (prev.ai === pending ? prev : { ...prev, ai: pending }));
+    setPendingByTab((prev) =>
+      prev.ai === pending ? prev : { ...prev, ai: pending },
+    );
   }, []);
 
   function select(key: Key) {
     setTab(key);
     // Keep the tab in the URL without a server round-trip. Next.js syncs useSearchParams with this call
     // only when it is not handed its own history state back (that path is reserved for its internals).
-    const url = key === "general" ? "/nemesis/settings" : `/nemesis/settings?tab=${String(key)}`;
+    const url =
+      key === "general"
+        ? "/nemesis/settings"
+        : `/nemesis/settings?tab=${String(key)}`;
     window.history.replaceState(null, "", url);
   }
 
-  const activeTab: SettingsTabId = isSettingsTab(String(tab)) ? (String(tab) as SettingsTabId) : "general";
+  const activeTab: SettingsTabId = isSettingsTab(String(tab))
+    ? (String(tab) as SettingsTabId)
+    : "general";
   const activePending = pendingByTab[activeTab];
 
   function submitActiveTab() {
@@ -95,19 +114,21 @@ export function SettingsTabs({
           ))}
         </TabsList>
 
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            type="button"
-            isPending={activePending}
-            isDisabled={activePending}
-            aria-busy={activePending}
-            data-testid="settings-save-button"
-            onPress={submitActiveTab}
-          >
-            {activePending ? <Spinner /> : <SaveIcon />}
-            {activePending ? "Saving…" : "Save changes"}
-          </Button>
-        </div>
+        {activeTab !== "advanced" && (
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              type="button"
+              isPending={activePending}
+              isDisabled={activePending}
+              aria-busy={activePending}
+              data-testid="settings-save-button"
+              onPress={submitActiveTab}
+            >
+              {activePending ? <Spinner /> : <SaveIcon />}
+              {activePending ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* shouldForceMount keeps every form mounted, so unsaved edits survive switching tabs */}
@@ -137,6 +158,9 @@ export function SettingsTabs({
           formId="settings-form-ai"
           onPendingChange={handleAiPending}
         />
+      </TabsContent>
+      <TabsContent id="advanced" shouldForceMount className="data-inert:hidden">
+        <AdvancedSettings />
       </TabsContent>
     </Tabs>
   );
