@@ -32,6 +32,7 @@ import type {
   AiAgentTurnResponse,
   AiChatHistoryItem,
   AiToolBadge,
+  AiTurnUsage,
   AiUiWidget,
 } from "@/lib/ai/types";
 import { Button, LinkButton } from "@/components/ui/button";
@@ -64,6 +65,7 @@ type ChatEntry =
       modelUsed: string;
       usedFallback: boolean;
       tokensUsed: number;
+      usage?: AiTurnUsage;
       needsApprovalPreview?: boolean;
     };
 
@@ -276,6 +278,7 @@ export function NemesisAiDrawer() {
         modelUsed: data.modelUsed,
         usedFallback: data.usedFallback,
         tokensUsed: data.rateLimit.usedTokensThisTurn,
+        usage: data.usage,
         // Recovery is only relevant to a content draft, never ordinary chat,
         // read-only results, existing approval cards, or completed write tools.
         needsApprovalPreview:
@@ -538,6 +541,22 @@ export function NemesisAiDrawer() {
                     usedFallback={entry.usedFallback}
                     modelUsed={entry.modelUsed}
                   />
+                )}
+
+                {entry.usage && (
+                  <details className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2 text-[11px] text-muted-foreground">
+                    <summary className="cursor-pointer">
+                      Token usage · Input {entry.usage.inputTokens == null ? "not reported" : entry.usage.inputTokens.toLocaleString()} · Output {entry.usage.outputTokens == null ? "not reported" : entry.usage.outputTokens.toLocaleString()}
+                    </summary>
+                    <dl className="mt-2 grid grid-cols-2 gap-2">
+                      <div><dt>Total reported tokens</dt><dd className="font-medium text-foreground">{entry.usage.totalTokens == null ? "Not fully reported" : entry.usage.totalTokens.toLocaleString()}</dd></div>
+                      <div><dt>Successful AI calls</dt><dd className="font-medium text-foreground">{entry.usage.requests}</dd></div>
+                      <div><dt>Context</dt><dd className="font-medium text-foreground">{entry.usage.contextMode === "greeting" ? "Lightweight greeting" : entry.usage.contextMode === "scoped" ? "Task-specific" : "Full (uncertain or mixed context)"}</dd></div>
+                      <div><dt>Initial tools / history messages</dt><dd className="font-medium text-foreground">{entry.usage.toolCount} / {entry.usage.historyMessages}</dd></div>
+                    </dl>
+                    <p className="mt-2 break-words">{entry.usage.models.map(m => `${m.model}: ${m.requests} call${m.requests === 1 ? "" : "s"}`).join(" · ")}</p>
+                    <p className="mt-2 leading-relaxed">Usage covers successful reported calls for this response, including tool copywriting when used. Input includes instructions, tools, history and returned data—not just your message. Multiple calls resend context. Failed attempts may consume unreported quota. Totals may include additional provider-counted tokens; these are not a price or the TPM meter.</p>
+                  </details>
                 )}
 
                 {/* Recovery when a model replies with copy instead of invoking a write tool. */}

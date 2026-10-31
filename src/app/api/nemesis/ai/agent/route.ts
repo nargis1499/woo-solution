@@ -1,4 +1,5 @@
-import { buildConversationPrompt, isSimpleConversation, requestGroups, routingPrompt } from "@/lib/ai/request-context";
+import { createUsageCollector } from "@/lib/ai/usage";
+import { buildConversationPrompt, isSimpleConversation, planRequestContext } from "@/lib/ai/request-context";
 import { responsePolicy, isStandaloneInventoryReport, isStandaloneOrderReport, type AiRateBudget } from "@/lib/ai/response-budget";
 import { NextResponse } from "next/server";
 import { AdminAuthError } from "@/lib/admin/auth";
@@ -79,14 +80,16 @@ export async function POST(request: Request) {
     if (body.phase === "ollama_prepare") {
       const prompt = (body.prompt ?? "").trim();
       const simpleConversation = isSimpleConversation(prompt);
-      const taskPrompt = routingPrompt(prompt, body.history);
-      const groups = requestGroups(taskPrompt);
+      const requestContext = planRequestContext(prompt, body.history);
+      const { toolPrompt: taskPrompt, groups } = requestContext;
       const context = simpleConversation ? null : (await loadStoreContextSummary(groups === null || groups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g)))).context;
       const systemPrompt = context ? buildAgentSystemPrompt(aiSettings, context, body.currentPath, groups) : buildConversationPrompt(aiSettings);
       return NextResponse.json({
         ok: true,
         systemPrompt,
-        tools: selectAgentTools(taskPrompt, responsePolicy(aiSettings)),
+        tools: selectAgentTools(taskPrompt, responsePolicy(aiSettings), groups),
+        history: requestContext.history,
+        contextMode: requestContext.mode,
         simpleConversation,
         responsePolicy: responsePolicy(aiSettings),
         ollamaBaseUrl: aiSettings.ollama_base_url,
@@ -157,15 +160,18 @@ export async function POST(request: Request) {
     if (isSimpleConversation(prompt)) {
       const completion = await runModelCompletion({ settings: aiSettings, systemPrompt: buildConversationPrompt(aiSettings), messages: [{ role: "user", content: prompt }], tools: [] });
       if (!completion.text.trim()) throw new Error("The model returned an empty response. Please try again.");
+      const usage = createUsageCollector();
+      usage.record(completion);
       const data: AiAgentTurnResponse = {
+        usage: usage.snapshot({ contextMode: "greeting", toolCount: 0, historyMessages: 0 }),
         reply: completion.text, toolBadges: [], plans: [], widgets: [], provider: aiSettings.provider,
         modelUsed: completion.modelUsed, usedFallback: completion.usedFallback,
         rateLimit: { ...completion.rateLimit, usedTokensThisTurn: completion.usage.totalTokens },
       };
       return NextResponse.json({ ok: true, data });
     }
-    const taskPrompt = routingPrompt(prompt, body.history);
-    const groups = requestGroups(taskPrompt);
+    const requestContext = planRequestContext(prompt, body.history);
+    const { toolPrompt: taskPrompt, groups } = requestContext;
     const { context, money } = await loadStoreContextSummary(groups === null || groups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g)));
 
     const historyLimit =
@@ -175,7 +181,7 @@ export async function POST(request: Request) {
           ? 10
           : 24;
 
-    const messages: AiTurnMessage[] = (body.history ?? [])
+    const messages: AiTurnMessage[] = requestContext.history
       .slice(-historyLimit)
       .filter((h) => typeof h.content === "string" && h.content && (h.role === "user" || h.role === "assistant"))
       .map((h) => ({
@@ -195,6 +201,8 @@ export async function POST(request: Request) {
           ? 4
           : 6;
 
+    const usage = createUsageCollector();
+    const usageContext = { contextMode: requestContext.mode, toolCount: selectAgentTools(taskPrompt, responsePolicy(aiSettings), groups).length, historyMessages: messages.length - 1 };
     const toolBadges: AiToolBadge[] = [];
     const plans: AiActionPlan[] = [];
     const widgets: AiUiWidget[] = [];
@@ -213,13 +221,14 @@ export async function POST(request: Request) {
         settings: aiSettings,
         systemPrompt: buildAgentSystemPrompt(aiSettings, context, body.currentPath, groups, responsePolicy(aiSettings, observedRate).summaryInstruction),
         messages,
-        tools: isLastAllowedRound ? [] : selectAgentTools(taskPrompt, responsePolicy(aiSettings, observedRate)),
+        tools: isLastAllowedRound ? [] : selectAgentTools(taskPrompt, responsePolicy(aiSettings, observedRate), groups),
       });
 
       for (const key of ["limitTokensPerMin", "remainingTokensPerMin", "limitRequests", "remainingRequests"] as const) {
         const value = completion.rateLimit[key];
         if (value != null) observedRate[key] = value;
       }
+      usage.record(completion);
       totalTokensUsed += completion.usage.totalTokens;
       lastModelUsed = completion.modelUsed;
       if (completion.usedFallback) anyFallback = true;
@@ -257,6 +266,7 @@ export async function POST(request: Request) {
           store: context,
           money,
           allowModelSubcall: true,
+          onModelUsage: (result) => { usage.record(result); totalTokensUsed += result.usage.totalTokens; },
           responsePolicy: responsePolicy(aiSettings, observedRate),
         });
         toolBadges.push(exec.badge);
@@ -304,6 +314,7 @@ export async function POST(request: Request) {
     }
 
     const payload: AiAgentTurnResponse = {
+      usage: usage.snapshot(usageContext),
       reply: finalReply,
       toolBadges,
       plans,

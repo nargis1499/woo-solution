@@ -200,7 +200,19 @@ export type AiChatHistoryItem = {
   content: string;
 };
 
+export type AiTurnUsage = {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  requests: number;
+  contextMode: "greeting" | "scoped" | "full";
+  toolCount: number;
+  historyMessages: number;
+  models: Array<{ model: string; requests: number }>;
+};
+
 export type AiAgentTurnResponse = {
+  usage?: AiTurnUsage;
   reply: string;
   toolBadges: AiToolBadge[];
   plans: AiActionPlan[];
