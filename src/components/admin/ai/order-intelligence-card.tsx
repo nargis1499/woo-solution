@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ClipboardListIcon, DownloadIcon, AlertTriangleIcon } from "lucide-react";
+import { ClipboardListIcon, DownloadIcon } from "lucide-react";
+import { OrderAlerts } from "./order-alerts";
+import { orderAlertCopy } from "@/lib/ai/orders/alert-copy";
 import { parseOrderPaymentInfo } from "@/lib/order-payment";
 import { formatMoney, USD_MONEY } from "@/lib/money";
 import type { AiOrderIntelligenceWidget, OrderReport, OrderRow } from "@/lib/ai/orders/types";
@@ -23,7 +25,7 @@ function exportPage(report: OrderReport, summaryAsOf: string) {
   const data = [
     ["Report", report.mode, "Page data UTC", report.generatedAt, "Summary data UTC", summaryAsOf, "Scope", "CURRENT LOADED PAGE ONLY", "Filters", JSON.stringify(report.filters)],
     ["Order", "Created UTC", "Customer", "Status", "Payment", "Fulfillment", "Shipping", "Quantity", "Total USD", "Problems"],
-    ...report.rows.map(o => [o.order_number, o.created_at, o.shipping_name, o.status, o.payment_status, o.fulfillment_status, o.shipping_status, o.quantity, (o.total_micros / 1000000).toFixed(2), o.flags.map(f => f.reason).join("; ")]),
+    ...report.rows.map(o => [o.order_number, o.created_at, o.shipping_name, o.status, o.payment_status, o.fulfillment_status, o.shipping_status, o.quantity, (o.total_micros / 1000000).toFixed(2), o.flags.map(f => orderAlertCopy(f, o).title).join("; ")]),
     ...(report.metrics ? [["METRICS FOR ALL MATCHING ORDERS"], ["Orders", report.metrics.orders, "Paid orders", report.metrics.paidOrders, "Paid revenue USD", report.metrics.revenueMicros / 1000000, "AOV USD", report.metrics.aovMicros / 1000000]] : []),
   ];
   const url = URL.createObjectURL(new Blob(["\uFEFF" + data.map(row => row.map(csvCell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" }));
@@ -38,6 +40,7 @@ function OrderDetails({ order: o }: { order: OrderRow }) {
     <p>{o.shipping_name} · {o.customer_email || "No email recorded"}</p>
     <p className="text-muted-foreground">{[o.shipping_address_line1, o.shipping_address_line2, o.shipping_city, o.shipping_postal_code, o.shipping_country].filter(Boolean).join(", ")} {o.shipping_phone ? `· ${o.shipping_phone}` : ""}</p>
     <p>{o.status} · Payment: {o.payment_status} ({payment.methodLabel}) · Fulfillment: {o.fulfillment_status} · Shipping: {o.shipping_status}</p>
+    <OrderAlerts order={o}/>
     <dl className="grid grid-cols-2 gap-2 rounded-md border p-2">
       {[ ["Subtotal (USD)", o.subtotal_micros == null ? "Not recorded" : money(o.subtotal_micros)], ["Shipping (USD)", o.shipping_micros == null ? "Not recorded" : money(o.shipping_micros)], ["Discount", "Not separately recorded"], ["Tax", "Not separately recorded"], ["Total (USD)", money(o.total_micros)], ["Checkout currency / rate", `${o.currency ?? "Unknown"} / ${o.exchange_rate ?? "Unknown"}`] ].map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd>{value}</dd></div>)}
     </dl>
@@ -105,10 +108,10 @@ export function OrderIntelligenceCard({ widget }: { widget: AiOrderIntelligenceW
     {widget.combinations.length > 0 && <details><summary className="cursor-pointer font-medium">Frequently bought together</summary><ul className="mt-2 space-y-1 text-muted-foreground">{widget.combinations.map(c => <li key={`${c.first}-${c.second}`}>{c.first} + {c.second}: {c.orders} paid orders</li>)}</ul></details>}
     {customerReport && <div className="space-y-2 rounded-lg border bg-muted/15 p-3"><div className="flex items-center justify-between"><h4 className="font-medium">Customer all-history purchase summary</h4><button type="button" className={button} onClick={() => setCustomerReport(null)}>Close</button></div><p>{customerReport.metrics?.orders ?? 0} orders · {money(customerReport.metrics?.revenueMicros ?? 0)} eligible paid spending</p>{customerReport.rows.map(o => <div key={o.id} className="flex justify-between gap-2"><Link className="text-primary underline" href={`/nemesis/orders/${o.id}`}>#{o.order_number} · {date(o.created_at)}</Link><span>{o.status} · {money(o.total_micros)}</span></div>)}{customerReport.hasMore && <p className="text-muted-foreground">Showing the first 20 orders. Ask Nemesis for this customer’s purchase history to browse further pages.</p>}</div>}
     {widget.mode === "detail" ? page.rows.map(o => <OrderDetails key={o.id} order={o}/>) : <>
-      <h4 className="font-medium">{widget.mode === "problems" ? "Priority alerts (high severity, then oldest first)" : "Underlying orders"}</h4>
+      <h4 className="font-medium">{widget.mode === "problems" ? "Orders to review (highest priority, then oldest first)" : "Underlying orders"}</h4>
       <p className="text-[10px] text-muted-foreground">{widget.mode === "problems" ? `${widget.total} orders scanned; shown rows are flagged matches only.` : `${widget.total} total matching orders.`} Loaded page: {page.rows.length} rows, fetched {date(page.generatedAt)}. Read-only snapshot; refresh before acting.</p>
       {rows.length === 0 && <p className="rounded-md border border-dashed p-3 text-muted-foreground">No matching orders or alerts in this scope.</p>}
-      <div className="space-y-2">{rows.map(o => <article key={o.id} className="space-y-2 rounded-lg border bg-muted/10 p-3"><div className="flex flex-wrap justify-between gap-2"><div><Link className="font-semibold text-primary hover:underline" href={`/nemesis/orders/${o.id}`}>Order #{o.order_number}</Link><p className="text-muted-foreground">{o.shipping_name} · {money(o.total_micros)} · {o.quantity} units</p></div><button type="button" className={button} disabled={busy} onClick={() => inspect(o.id)}>Inspect details</button></div><p className="text-[11px] text-muted-foreground">{o.status} · {o.payment_status} · {o.fulfillment_status} / {o.shipping_status} · {date(o.created_at)}</p>{o.flags.map(f => <div key={f.reason} className={`rounded-md border p-2 text-[11px] ${f.severity === "high" ? "border-amber-500/40 bg-amber-500/10" : "bg-muted/20"}`}><p className="flex items-center gap-1 font-medium"><AlertTriangleIcon className="size-3 shrink-0"/>{f.severity.toUpperCase()} · {f.reason}</p><p className="mt-1 text-muted-foreground">{f.next}</p></div>)}</article>)}</div>
+      <div className="space-y-2">{rows.map(o => <article key={o.id} className="space-y-2 rounded-lg border bg-muted/10 p-3"><div className="flex flex-wrap justify-between gap-2"><div><Link className="font-semibold text-primary hover:underline" href={`/nemesis/orders/${o.id}`}>Order #{o.order_number}</Link><p className="text-muted-foreground">{o.shipping_name} · {money(o.total_micros)} · {o.quantity} units</p></div><button type="button" className={button} disabled={busy} onClick={() => inspect(o.id)}>Inspect details</button></div><p className="text-[11px] text-muted-foreground">{o.status} · {o.payment_status} · {o.fulfillment_status} / {o.shipping_status} · {date(o.created_at)}</p><OrderAlerts order={o}/></article>)}</div>
       {page.rows.length > widget.initialVisibleRows && <button type="button" className={button} onClick={() => setExpanded(!expanded)}>{expanded ? "Show fewer loaded orders" : `Show all ${page.rows.length} loaded orders`}</button>}
       <div className="flex items-center justify-between gap-2"><button type="button" disabled={busy || history.length === 0} className={button} onClick={() => navigate(true)}>Previous page</button><span className="text-[10px] text-muted-foreground">Page {history.length + 1} · no AI tokens for browsing</span><button type="button" disabled={busy || !page.hasMore} className={button} onClick={() => navigate()}>Next page</button></div>
     </>}

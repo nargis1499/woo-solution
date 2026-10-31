@@ -99,8 +99,16 @@ Payment gateway attempt/failure ledgers and partial refund amounts do not exist.
 
 ## Migration and verification
 
-Apply `supabase/migrations/20261051000000_order_intelligence.sql` before using these tools. It adds operational fields, private audit/previews, guarded RPCs, triggers and indexes. No existing order status/payment value is rewritten; existing fulfillment remains `unknown`, while new orders default to unfulfilled/pending shipping. Supabase management API returned HTTP 502 for both read-only schema inspection and health requests during this implementation, so the migration has **not been applied** by this session. Database activation remains pending.
+Apply `supabase/migrations/20261051000000_order_intelligence.sql` before using these tools. It adds operational fields, private audit/previews, guarded RPCs, triggers and indexes. No existing order status/payment value is rewritten; existing fulfillment remains `unknown`, while new orders default to unfulfilled/pending shipping. The initial implementation could not apply the migration because Supabase management requests returned HTTP 502. The administrator subsequently confirmed that they ran the migration; this confirmation is user-reported, not a fresh database verification.
 
 Private tables have RLS and no customer write access. Only the three guarded entry RPCs are executable by authenticated clients; helper functions are private.
 
 Static verification: ESLint, TypeScript, SQL/PLpgSQL parser and diff checks. No test suites, live model requests or live order actions were run, following the user's no-test instruction. Runtime/load/provider behavior is not represented as tested.
+
+## Plain-language order checks
+
+The order list and detail cards present flags as “Things to check,” with an issue-specific icon, a short title, a brief explanation and a “Next step.” High priority uses an amber “Review soon” badge; medium priority uses a blue “Review” badge. Accessible badge labels retain the actual high/medium priority, so color is not the only indicator. The layout wraps on narrow screens and adapts to light/dark themes.
+
+Examples: “Shipping update overdue,” “Payment needs checking” (or “Cash-on-delivery payment to check”), and “Shipping status missing.” A shipped order without a tracking number instead says “Tracking number missing.” Missing historical records are not presented as proof that an order was never shipped, and unpaid/COD is not described as payment failure.
+
+`src/lib/ai/orders/alert-copy.ts` translates the existing database reasons for display and CSV titles; `order-alerts.tsx` renders them consistently. All ten existing flag reasons are covered. Unknown/new reasons keep their original reason and recommended action instead of being hidden. No database migration, rule change, priority change, extra AI request, or order mutation is needed for this presentation update.
