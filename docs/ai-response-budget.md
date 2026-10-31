@@ -55,7 +55,7 @@ Lint, TypeScript, and diff checks are static verification. No test suites or liv
 - Exact standalone greetings/social exchanges (for example `hello`, `hi`, `thank you`) use a short conversational system prompt, **zero tools and zero old history**. They do not load catalog/categories/store summaries. Authentication, AI settings, language/tone, configured custom instructions and provider failover still apply. This remains one normal provider completion, not a fabricated/canned store-data response. Long administrator custom instructions can still increase its input size.
 - This is an exact allowlist, not `startsWith("hello")`. `Hello, show my orders` is a store task, not small talk. Unrecognized languages/wording use the agent path, never an unsafe guess that a task is a greeting.
 - Recognizable task domains select the union of relevant capability groups. Pricing includes product lookup; revenue/AOV/product sales rankings include the paid-order report capability. Explicit read-only wording without a mutation verb omits write schemas. Read/write requests retain the appropriate preview tools and existing approval requirements.
-- Ambiguous wording, unsupported-domain combinations and context-dependent follow-ups keep the full workflow. Recent user topics are considered for multi-turn routing; normal task history keeps its existing provider-specific bounds. Prior greetings do not add domains. This conservative router is not a guarantee that arbitrary natural-language tasks will always have a minimum-size payload.
+- Ambiguous wording and unsupported-domain combinations keep the full workflow. Recognized follow-ups inherit the contiguous current topic and union explicit mixed domains; clear new topics do not inherit unrelated earlier tool groups/history. Unknown dependencies still keep broader coverage. Existing provider-specific history bounds remain in force. This conservative router is not a guarantee that arbitrary natural-language tasks will always have a minimum-size payload.
 - Agent system instructions include only the chosen domain-specific rules; irrelevant category reads/lists and duplicate capability-name listings are omitted. The response-budget instruction is included **once** per model request, with current quota information, rather than appended to an already-included copy.
 - Browser-direct Ollama uses the same preparation decision. Greetings do not receive native tool schemas or prompt-based tool instructions, even when prompt-tool fallback was remembered for earlier tasks. Normal task recovery and approval paths remain unchanged.
 - No extra AI classifier/router request is used. Mutation payloads, approval IDs and proposed content are not truncated by this change.
@@ -63,3 +63,25 @@ Lint, TypeScript, and diff checks are static verification. No test suites or liv
 The header shows **Last used** with the actual successful response model and a fallback marker when applicable; while generating it labels the configured model **Primary**, not a claimed final responder. Missing quota headers are not borrowed across different providers/models. TPM remains a provider-reported rate-window estimate, not the exact cost of the visible message; no daily limit is inferred from provider/model names.
 
 Verification: ESLint, TypeScript and diff checks only. No tests, live greetings, provider requests or order actions were run under the standing no-test instruction. No exact tokenizer measurement or promised post-change token count is asserted. No database migration is required.
+
+
+## Further input savings and usage visibility
+
+`planRequestContext` makes the same context decision for cloud providers and browser-direct Ollama:
+
+- Greeting recognition accepts decorative emoji (including modifiers) and addressing “Nemesis”/“AI,” but still matches the **whole message**. Extra task words cannot become a greeting accidentally. Replies remain model-generated in the configured language/tone, not hard-coded English templates.
+- A clear new domain starts without unrelated history. A recognized follow-up such as “same report, but for the last 7 days” can inherit the current topic instead of advertising the whole store catalog. Recognizable mixed-domain follow-ups union their needed groups.
+- Short follow-ups without their own domain use a limited filter/continuation vocabulary; missing antecedents, unknown topics, unsupported combinations and uncertain dependencies fall back to the full workflow. Recent mixed-domain dependencies are retained, rather than picking a single winning topic.
+- History retains original message text, not an AI-generated summary that might lose IDs, proposed copy or filter values. Existing cloud history limits/character caps and the browser's six-message limit still apply; no new truncation of mutations/approval payloads is introduced.
+- Domain instructions are shorter while keeping approval, overlap, missing-data, privacy and live-data rules. Stable instructions precede changing time/path/context details. This can help automatic prefix reuse **only where a provider supports it**; it does not guarantee cached billing, lower TPM/daily usage, or identical cache semantics across providers. No provider-specific caching API is enabled.
+- There is no additional model call for topic classification, summarization or routing.
+
+Each newly generated chat response has a **Token usage** disclosure showing:
+
+- Provider-reported input, output and total tokens across the successful calls for that response.
+- Successful call count and model names, including server-side SEO copywriting and browser prompt-tool recovery completions when used.
+- Initial context mode (lightweight greeting, task-specific, or full), tool-schema count and retained history-message count. These are context counts, **not an invented token-by-section estimate**.
+
+OpenAI-compatible usage uses reported prompt/completion counters; Anthropic input includes reported cache-read/cache-creation tokens, and Gemini output includes reported thought tokens. Provider totals can include other counted tokens and may not equal the two visible components exactly. Missing/malformed usage yields “not reported,” not a fabricated zero. Failed HTTP attempts may consume quota without returning counters and are not included in the successful-call total. Multi-step input includes repeated context; this is neither a price estimate nor the header's provider rate-window estimate.
+
+No live token measurements, test suites, model requests or order mutations were run for this update. Verification remains lint, TypeScript and diff checks. The implementation reduces unnecessary context structurally; no unmeasured percentage or exact post-change token cost is promised. No migration is needed.

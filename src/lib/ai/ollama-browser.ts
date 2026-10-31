@@ -1,3 +1,4 @@
+import { createUsageCollector } from "@/lib/ai/usage";
 import { isStandaloneInventoryReport, isStandaloneOrderReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
 import { CONTENT_PREVIEW_REPAIR, needsContentPreviewRepair } from "@/lib/ai/content-fields";
 import type { AiToolCall, AiToolSpec } from "@/lib/ai/client";
@@ -315,13 +316,15 @@ export async function runBrowserOllamaAgentTurn(opts: {
   const prepRes = await fetch("/api/nemesis/ai/agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phase: "ollama_prepare", currentPath: opts.currentPath, prompt: opts.prompt, history: opts.history.slice(-4) }),
+    body: JSON.stringify({ phase: "ollama_prepare", currentPath: opts.currentPath, prompt: opts.prompt, history: opts.history.slice(-6) }),
   });
   const prepJson = (await prepRes.json()) as {
     ok: boolean;
     error?: string;
     systemPrompt: string;
     simpleConversation?: boolean;
+    history?: AiChatHistoryItem[];
+    contextMode?: "greeting" | "scoped" | "full";
     responsePolicy: AiResponsePolicy;
     language: string;
     tools: AiToolSpec[];
@@ -353,7 +356,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
 
   const wireMessages: Array<Record<string, unknown>> = [
     { role: "system", content: buildSystemContent(usePromptMode) },
-    ...(prepJson.simpleConversation ? [] : opts.history.slice(-6).map((h) => ({ role: h.role, content: h.content }))),
+    ...(prepJson.simpleConversation ? [] : (prepJson.history ?? opts.history).slice(-6).map((h) => ({ role: h.role, content: h.content }))),
     { role: "user", content: opts.prompt },
   ];
 
@@ -361,6 +364,14 @@ export async function runBrowserOllamaAgentTurn(opts: {
   const plans: AiActionPlan[] = [];
   const widgets: AiUiWidget[] = [];
   let totalTokens = 0;
+  const usage = createUsageCollector();
+  function recordUsage(data: Awaited<ReturnType<typeof postOllamaChatWithRecovery>>["data"]) {
+    const input = data.prompt_eval_count ?? 0;
+    const output = data.eval_count ?? 0;
+    usage.record({ modelUsed: data.model || prepJson.model, usage: { promptTokens: input, completionTokens: output, totalTokens: input + output, reported: typeof data.prompt_eval_count === "number" && typeof data.eval_count === "number" } });
+    totalTokens += input + output;
+  }
+  const usageContext = { contextMode: prepJson.contextMode ?? (prepJson.simpleConversation ? "greeting" as const : "full" as const), toolCount: prepJson.tools.length, historyMessages: wireMessages.length - 2 };
   let finalReply = "";
   let repairedContentPreview = false;
 
@@ -377,9 +388,10 @@ export async function runBrowserOllamaAgentTurn(opts: {
         temperature: 0.2,
       });
 
+      recordUsage(turnResult.data);
       // If native `tools` crashed on round 0 and recovered without prompt instructions yet,
       // re-run round 0 once with the JSON tool schema instructions in the system prompt!
-      if (turnResult.usedPromptToolsFallback && !usePromptMode && round === 0) {
+      if (prepJson.tools.length > 0 && turnResult.usedPromptToolsFallback && !usePromptMode && round === 0) {
         usePromptMode = true;
         wireMessages[0] = { role: "system", content: buildSystemContent(true) };
         turnResult = await postOllamaChatWithRecovery({
@@ -390,13 +402,13 @@ export async function runBrowserOllamaAgentTurn(opts: {
           disableThinking: prepJson.disableThinking,
           temperature: 0.2,
         });
+        recordUsage(turnResult.data);
       }
     } catch (err) {
       throw new Error(formatOllamaCorsError(root, err));
     }
 
     const chatJson = turnResult.data;
-    totalTokens += (chatJson.prompt_eval_count ?? 0) + (chatJson.eval_count ?? 0);
 
     const content = (chatJson.message?.content ?? "")
       .replace(/<think>[\s\S]*?<\/think>/gi, "")
@@ -505,6 +517,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
     plans,
     widgets,
     provider: "ollama",
+    usage: usage.snapshot(usageContext),
     modelUsed: prepJson.model,
     usedFallback: false,
     rateLimit: {

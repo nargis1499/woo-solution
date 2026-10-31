@@ -53,6 +53,7 @@ export type AiCompletionResult = {
   modelUsed: string;
   usedFallback: boolean;
   usage: {
+    reported?: boolean;
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
@@ -289,7 +290,7 @@ async function callOpenAiCompatible(opts: {
     text: (choice?.content ?? "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim(),
     toolCalls,
     modelUsed: json.model || opts.model,
-    usage: { promptTokens, completionTokens, totalTokens },
+    usage: { promptTokens, completionTokens, totalTokens, reported: typeof json.usage?.prompt_tokens === "number" && typeof json.usage?.completion_tokens === "number" },
     rateLimit: {
       limitTokensPerMin: parseHeaderInt(res.headers, "x-ratelimit-limit-tokens"),
       remainingTokensPerMin: parseHeaderInt(res.headers, "x-ratelimit-remaining-tokens"),
@@ -384,7 +385,7 @@ async function callAnthropic(opts: {
       name?: string;
       input?: unknown;
     }>;
-    usage?: { input_tokens?: number; output_tokens?: number };
+    usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
   };
 
   let text = "";
@@ -401,7 +402,7 @@ async function callAnthropic(opts: {
     }
   }
 
-  const promptTokens = json.usage?.input_tokens ?? 0;
+  const promptTokens = (json.usage?.input_tokens ?? 0) + (json.usage?.cache_creation_input_tokens ?? 0) + (json.usage?.cache_read_input_tokens ?? 0);
   const completionTokens = json.usage?.output_tokens ?? 0;
   const totalTokens = promptTokens + completionTokens;
 
@@ -409,7 +410,7 @@ async function callAnthropic(opts: {
     text: text.trim(),
     toolCalls,
     modelUsed: json.model || opts.model,
-    usage: { promptTokens, completionTokens, totalTokens },
+    usage: { promptTokens, completionTokens, totalTokens, reported: typeof json.usage?.input_tokens === "number" && typeof json.usage?.output_tokens === "number" },
     rateLimit: {
       limitTokensPerMin: parseHeaderInt(res.headers, "anthropic-ratelimit-tokens-limit"),
       remainingTokensPerMin: parseHeaderInt(res.headers, "anthropic-ratelimit-tokens-remaining"),
@@ -522,6 +523,7 @@ async function callGemini(opts: {
     usageMetadata?: {
       promptTokenCount?: number;
       candidatesTokenCount?: number;
+      thoughtsTokenCount?: number;
       totalTokenCount?: number;
     };
   };
@@ -543,14 +545,14 @@ async function callGemini(opts: {
   }
 
   const promptTokens = json.usageMetadata?.promptTokenCount ?? 0;
-  const completionTokens = json.usageMetadata?.candidatesTokenCount ?? 0;
+  const completionTokens = (json.usageMetadata?.candidatesTokenCount ?? 0) + (json.usageMetadata?.thoughtsTokenCount ?? 0);
   const totalTokens = json.usageMetadata?.totalTokenCount ?? promptTokens + completionTokens;
 
   return {
     text: text.trim(),
     toolCalls,
     modelUsed: cleanModel,
-    usage: { promptTokens, completionTokens, totalTokens },
+    usage: { promptTokens, completionTokens, totalTokens, reported: typeof json.usageMetadata?.promptTokenCount === "number" && typeof json.usageMetadata?.candidatesTokenCount === "number" },
     rateLimit: {
       limitTokensPerMin: null,
       remainingTokensPerMin: null,
