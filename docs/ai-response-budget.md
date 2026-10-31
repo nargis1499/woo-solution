@@ -40,6 +40,10 @@ This is payload/request optimization, not a universal quota scheduler. It cannot
 - Full warning/calculation data remain in the structured report for correctness and future tooling; they are not serialized wholesale into model context.
 - Token telemetry distinguishes provider-reported TPM from session totals. It never assumes an 8,000-token account quota when headers are missing; usage includes input/history/schemas as well as output.
 
+## Order Management Intelligence
+
+Order tools also use this policy. Full order widgets never become model context: counts/metrics and bounded examples are serialized separately, including bounded line-item examples on exact investigations. Compact order reports initially show five rows, with local reveal/paging/detail inspection and loaded-page CSV export requiring no model call. The unambiguous “Analyze order intelligence” starter advertises only the read tool in compact mode; unfamiliar or mixed tasks keep the full catalog. An eligible compact English standalone order report can also finish with its deterministic summary without a redundant completion. Approval messages/operation payloads remain complete and are stored server-side, never shortened to satisfy a summary budget. See [Order Intelligence](nemesis-order-intelligence.md).
+
 ## Verification for this change
 
 Lint, TypeScript, and diff checks are static verification. No test suites or live provider requests were run, following the user's earlier no-test instruction. No exact token-reduction claim is made without a live measurement; savings come from smaller schemas/results and eliminating the redundant model round on eligible reports.

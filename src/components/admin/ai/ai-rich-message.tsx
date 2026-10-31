@@ -15,6 +15,7 @@ import {
   TrendingUpIcon,
 } from "lucide-react";
 import type { AiToolBadge, AiUiWidget } from "@/lib/ai/types";
+import { OrderIntelligenceCard } from "./order-intelligence-card";
 import { InventoryIntelligenceCard } from "./inventory-intelligence-card";
 import { cn } from "@/lib/utils";
 
@@ -82,6 +83,7 @@ export function ToolOperationsAccordion({ badges }: { badges: AiToolBadge[] }) {
 /* ── 2. Structured Read-Tool Dashboard Widgets ───────────────────────────── */
 
 export function AiWidgetCard({ widget }: { widget: AiUiWidget }) {
+  if (widget.kind === "order_intelligence") return <OrderIntelligenceCard widget={widget} />;
   if (widget.kind === "inventory_intelligence") return <InventoryIntelligenceCard widget={widget} />;
   if (widget.kind === "inventory") {
     return (

@@ -1,4 +1,4 @@
-import { isStandaloneInventoryReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
+import { isStandaloneInventoryReport, isStandaloneOrderReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
 import { CONTENT_PREVIEW_REPAIR, needsContentPreviewRepair } from "@/lib/ai/content-fields";
 import type { AiToolCall, AiToolSpec } from "@/lib/ai/client";
 import type {
@@ -466,8 +466,9 @@ export async function runBrowserOllamaAgentTurn(opts: {
     toolBadges.push(...execJson.badges);
     plans.push(...execJson.plans);
     if (execJson.widgets) widgets.push(...execJson.widgets);
-    if (prepJson.responsePolicy.mode === "compact" && isStandaloneInventoryReport(opts.prompt) &&
-        parsedCalls.length === 1 && parsedCalls[0].name === "analyze_inventory_intelligence" &&
+    if (prepJson.responsePolicy.mode === "compact" && parsedCalls.length === 1 &&
+        ((isStandaloneInventoryReport(opts.prompt) && parsedCalls[0].name === "analyze_inventory_intelligence") ||
+         (isStandaloneOrderReport(opts.prompt) && parsedCalls[0].name === "query_order_intelligence")) &&
         execJson.completionSummaries?.length === parsedCalls.length && plans.length === 0 && prepJson.language.toLowerCase().startsWith("en")) {
       finalReply = execJson.completionSummaries.slice(0, 2).join(" ");
       break;

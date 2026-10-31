@@ -46,3 +46,8 @@ export function isStandaloneInventoryReport(prompt: string): boolean {
   if (normalized === starter) return true;
   return /^(?:please )?(?:(?:analyze|run|show) )?(?:inventory intelligence(?: report)?|stock depletion|dead (?:stock|inventory)|overstock|sales spikes?|reorder (?:quantities|recommendations))$/.test(normalized);
 }
+
+/** Only the known read-only order starter gets a narrowed catalog/fast finish. */
+export function isStandaloneOrderReport(prompt: string): boolean {
+  return /^(?:analyze|show|run) order intelligence(?: report)?[.!?]?$/i.test(prompt.trim());
+}

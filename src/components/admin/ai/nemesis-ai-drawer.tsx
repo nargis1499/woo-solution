@@ -18,6 +18,7 @@ import {
   RotateCcwIcon,
   SearchCheckIcon,
   SettingsIcon,
+  ShoppingCartIcon,
   SparklesIcon,
   TagIcon,
   XIcon,
@@ -71,6 +72,7 @@ type QuickPromptAction = {
 };
 
 const STARTER_PROMPTS: QuickPromptAction[] = [
+  { label: "Order intelligence", prompt: "Analyze order intelligence.", icon: ShoppingCartIcon },
   {
     label: "Inventory intelligence",
     prompt: "Analyze inventory intelligence: predict stock depletion, identify dead and overstocked products, detect sales spikes, and suggest reorder quantities. Show the assumptions; do not change anything.",
@@ -889,7 +891,7 @@ function ActionPlanPreviewCard({
                     </div>
                   </div>
                 ) : item.detailText && (
-                  <p className="mt-2 rounded-md border bg-muted/40 px-2.5 py-1.5 text-[11px] leading-relaxed text-foreground/90">
+                  <p className="mt-2 whitespace-pre-wrap break-words rounded-md border bg-muted/40 px-2.5 py-1.5 text-[11px] leading-relaxed text-foreground/90">
                     {item.detailText}
                   </p>
                 )}
