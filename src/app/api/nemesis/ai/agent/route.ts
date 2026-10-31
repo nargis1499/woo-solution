@@ -1,3 +1,4 @@
+import { responsePolicy, isStandaloneInventoryReport, type AiRateBudget } from "@/lib/ai/response-budget";
 import { NextResponse } from "next/server";
 import { AdminAuthError } from "@/lib/admin/auth";
 import {
@@ -8,7 +9,7 @@ import {
 import { CONTENT_PREVIEW_REPAIR, needsContentPreviewRepair } from "@/lib/ai/content-fields";
 import { loadAiSettingsForAction } from "@/lib/ai/settings";
 import {
-  AGENT_TOOLS,
+  selectAgentTools,
   buildAgentSystemPrompt,
   executeAgentToolCall,
   executeApprovedPlan,
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
         }
       | {
           phase: "ollama_prepare";
+          prompt?: string;
           currentPath?: string;
         }
       | {
@@ -78,12 +80,14 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         systemPrompt,
-        tools: AGENT_TOOLS,
+        tools: selectAgentTools(body.prompt ?? "", responsePolicy(aiSettings)),
+        responsePolicy: responsePolicy(aiSettings),
         ollamaBaseUrl: aiSettings.ollama_base_url,
         model: aiSettings.primary_model,
         numCtx: aiSettings.ollama_num_ctx,
         disableThinking: aiSettings.ollama_disable_thinking,
         requireConfirmation: aiSettings.require_confirmation,
+        language: aiSettings.default_language,
       });
     }
 
@@ -94,6 +98,7 @@ export async function POST(request: Request) {
       const badges: AiToolBadge[] = [];
       const plans: AiActionPlan[] = [];
       const widgets: AiUiWidget[] = [];
+      const completionSummaries: string[] = [];
 
       for (const tc of body.toolCalls ?? []) {
         const out = await executeAgentToolCall({
@@ -111,6 +116,7 @@ export async function POST(request: Request) {
         badges.push(out.badge);
         if (out.plan) plans.push(out.plan);
         if (out.widget) widgets.push(out.widget);
+        if (out.completionSummary) completionSummaries.push(out.completionSummary);
       }
 
       if (!aiSettings.require_confirmation && plans.length > 0) {
@@ -127,6 +133,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         toolResults,
+        completionSummaries,
         badges,
         plans,
         widgets,
@@ -179,16 +186,21 @@ export async function POST(request: Request) {
     let remainingTokensPerMin: number | null | undefined = null;
     let finalReply = "";
     let repairedContentPreview = false;
+    const observedRate: AiRateBudget = {};
 
     for (let round = 0; round <= maxRounds; round++) {
       const isLastAllowedRound = round === maxRounds;
       const completion = await runModelCompletion({
         settings: aiSettings,
-        systemPrompt,
+        systemPrompt: `${systemPrompt}\nCurrent response budget: ${responsePolicy(aiSettings, observedRate).summaryInstruction}`,
         messages,
-        tools: isLastAllowedRound ? [] : AGENT_TOOLS,
+        tools: isLastAllowedRound ? [] : selectAgentTools(prompt, responsePolicy(aiSettings, observedRate)),
       });
 
+      for (const key of ["limitTokensPerMin", "remainingTokensPerMin", "limitRequests", "remainingRequests"] as const) {
+        const value = completion.rateLimit[key];
+        if (value != null) observedRate[key] = value;
+      }
       totalTokensUsed += completion.usage.totalTokens;
       lastModelUsed = completion.modelUsed;
       if (completion.usedFallback) anyFallback = true;
@@ -218,6 +230,7 @@ export async function POST(request: Request) {
         toolCalls: completion.toolCalls,
       });
 
+      const completionSummaries: string[] = [];
       for (const tc of completion.toolCalls) {
         const exec = await executeAgentToolCall({
           call: tc,
@@ -225,16 +238,26 @@ export async function POST(request: Request) {
           store: context,
           money,
           allowModelSubcall: true,
+          responsePolicy: responsePolicy(aiSettings, observedRate),
         });
         toolBadges.push(exec.badge);
         if (exec.plan) plans.push(exec.plan);
         if (exec.widget) widgets.push(exec.widget);
+        if (exec.completionSummary) completionSummaries.push(exec.completionSummary);
         messages.push({
           role: "tool",
           toolCallId: tc.id,
           name: tc.name,
           content: exec.toolOutputJson,
         });
+      }
+      // Pure read-only reports already have deterministic findings. Save another model
+      // request (and re-sending context/schemas) when the token/request budget is limited.
+      if (responsePolicy(aiSettings, observedRate).mode === "compact" && isStandaloneInventoryReport(prompt) &&
+          completion.toolCalls.length === 1 && completion.toolCalls[0].name === "analyze_inventory_intelligence" &&
+          completionSummaries.length === completion.toolCalls.length && plans.length === 0 && aiSettings.default_language.toLowerCase().startsWith("en")) {
+        finalReply = completionSummaries.slice(0, 2).join(" ");
+        break;
       }
     }
 

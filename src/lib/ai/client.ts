@@ -42,6 +42,8 @@ export type AiTurnMessage =
 export type AiRateLimitInfo = {
   limitTokensPerMin?: number | null;
   remainingTokensPerMin?: number | null;
+  limitRequests?: number | null;
+  remainingRequests?: number | null;
   usedTokensThisTurn: number;
 };
 
@@ -291,6 +293,8 @@ async function callOpenAiCompatible(opts: {
     rateLimit: {
       limitTokensPerMin: parseHeaderInt(res.headers, "x-ratelimit-limit-tokens"),
       remainingTokensPerMin: parseHeaderInt(res.headers, "x-ratelimit-remaining-tokens"),
+      limitRequests: parseHeaderInt(res.headers, "x-ratelimit-limit-requests"),
+      remainingRequests: parseHeaderInt(res.headers, "x-ratelimit-remaining-requests"),
       usedTokensThisTurn: totalTokens,
     },
   };
@@ -409,6 +413,8 @@ async function callAnthropic(opts: {
     rateLimit: {
       limitTokensPerMin: parseHeaderInt(res.headers, "anthropic-ratelimit-tokens-limit"),
       remainingTokensPerMin: parseHeaderInt(res.headers, "anthropic-ratelimit-tokens-remaining"),
+      limitRequests: parseHeaderInt(res.headers, "anthropic-ratelimit-requests-limit"),
+      remainingRequests: parseHeaderInt(res.headers, "anthropic-ratelimit-requests-remaining"),
       usedTokensThisTurn: totalTokens,
     },
   };

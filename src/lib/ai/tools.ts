@@ -1,4 +1,5 @@
 import "server-only";
+import { responsePolicy, isStandaloneInventoryReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
 import { INVENTORY_INTELLIGENCE_TOOLS, executeInventoryTool } from "@/lib/ai/inventory/tools";
 import { assertAdmin } from "@/lib/admin/auth";
 import { expireTag, revalidateStore, UUID_RE } from "@/lib/admin/form";
@@ -225,6 +226,13 @@ export const AGENT_TOOL_GROUPS = [
 ] as const;
 export const AGENT_TOOLS: AiToolSpec[] = AGENT_TOOL_GROUPS.flatMap((group) => group.tools);
 
+/** Small tool catalog for unambiguous read-only reports on constrained turns. */
+export function selectAgentTools(prompt: string, policy: AiResponsePolicy): AiToolSpec[] {
+  return policy.mode === "compact" && isStandaloneInventoryReport(prompt)
+    ? INVENTORY_INTELLIGENCE_TOOLS.filter((tool) => tool.name === "analyze_inventory_intelligence")
+    : AGENT_TOOLS;
+}
+
 export type StoreContextSummary = {
   storeName: string;
   currency: string;
@@ -277,14 +285,15 @@ export function buildAgentSystemPrompt(
     `Brand tone: ${aiSettings.brand_tone}. Respond in ${aiSettings.default_language}.`,
     contentContextFromPath(currentPath),
     `Capability groups: ${AGENT_TOOL_GROUPS.map((g) => `${g.label}: ${g.tools.map((t) => t.name).join(", ")}`).join("; ")}.`,
-    `Inventory Intelligence rules: use analyze_inventory_intelligence for forecasts, dead stock, overstock, sales spikes and reorder quantities. All numbers are computed by code from real order history, never by model guessing. State the lookback and supplier lead-time assumptions, flag limited/incomplete data, and never claim forecasts are guaranteed. Reorder suggestions are not purchase orders or received stock. For bulk publish/hide actions use preview_inventory_status_update with the same filters and analysis options and an explicit user-requested target status; approval is always required. Product-level and variation-level reorder quantities overlap: never sum them.`,
+    `Inventory Intelligence rules: use analyze_inventory_intelligence for forecasts, dead stock, overstock, sales spikes and reorder quantities. All numbers are computed by code from real order history, never by model guessing. Mention lookback/lead time only briefly when relevant; flag limited/incomplete data, and never claim forecasts are guaranteed. Reorder suggestions are not purchase orders or received stock. For bulk publish/hide actions use preview_inventory_status_update with the same filters and analysis options and an explicit user-requested target status; approval is always required. Product-level and variation-level reorder quantities overlap: never sum them.`,
+    responsePolicy(aiSettings).summaryInstruction,
     `Rules:`,
     `1. Always use the provided tools for live store numbers, inventory checks, discounts, status/stock updates, order updates, and SEO audits. Never guess IDs or prices.`,
     `2. Map user category mentions (e.g. "mobile", "headphones", "accessories") to the closest slug from Available categories above.`,
     `3. Write tools automatically render an interactive Confirmation Preview table, and read tools (query_inventory, get_store_analytics) automatically render rich dashboard UI cards in the chat.`,
     `4. Content requests (generate/rewrite/improve/translate a description, title, page/post body, SEO metadata, features, or alt text) are actionable edits, not just chat. ALWAYS read the target with query_content, then call preview_content_update with the complete proposed copy, including when replacing non-empty content. Do not use the missing-fields SEO audit for targeted rewrites. Never claim an edit was saved without an execution result.`,
     `5. If the target is unclear, ask which item; never guess or edit all matches. Advice-only or explicitly chat-only drafts need no preview. Unsupported edits must be explained rather than pretending to save them.`,
-    `6. Because those structured UI cards are already shown to the admin, do NOT repeat item-by-item markdown lists or raw tables—instead write a brief, natural 1–2 sentence summary or insight and offer the next step.${customNote}`,
+    `6. Because those structured UI cards are already shown to the admin, do NOT repeat item-by-item markdown lists or raw tables—instead default to a natural 1–2 sentence takeaway. Provide fuller explanations only when requested and the response budget allows.${customNote}`,
   ].join("\n");
 }
 
@@ -390,16 +399,18 @@ export async function executeAgentToolCall(opts: {
   store: StoreContextSummary;
   money: Money;
   allowModelSubcall: boolean;
+  responsePolicy?: AiResponsePolicy;
 }): Promise<{
   toolOutputJson: string;
   badge: AiToolBadge;
   plan?: AiActionPlan;
   widget?: AiUiWidget;
+  completionSummary?: string;
 }> {
   await assertAdmin();
   const { call, aiSettings, store, money } = opts;
   if (INVENTORY_INTELLIGENCE_TOOLS.some((tool) => tool.name === call.name)) {
-    return executeInventoryTool(call, store.manageStock);
+    return executeInventoryTool(call, store.manageStock, opts.responsePolicy ?? responsePolicy(aiSettings));
   }
   const maxRows = aiSettings.token_budget_mode === "economy" ? 15 : aiSettings.token_budget_mode === "standard" ? 30 : 60;
 

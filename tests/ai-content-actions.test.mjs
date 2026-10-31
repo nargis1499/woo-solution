@@ -54,6 +54,7 @@ function fixture(entity = "product", field = "description", previousValue = "Ori
   } };
   const tools = loadTs("src/lib/ai/tools.ts", {
     "@/lib/ai/content-fields": fields,
+    "@/lib/ai/response-budget": loadTs("src/lib/ai/response-budget.ts"),
     "@/lib/ai/inventory/tools": { INVENTORY_INTELLIGENCE_TOOLS: [] },
     "@/lib/admin/auth": { assertAdmin: async () => { if (!authorized) throw new Error("Admin access required"); } },
     "@/lib/admin/form": { UUID_RE, expireTag: (tag) => expired.push(tag), revalidateStore: () => refreshes++ },

@@ -387,7 +387,7 @@ export function NemesisAiDrawer() {
             </span>
           </div>
 
-          <div className="inline-flex items-center gap-1.5 rounded-full border bg-background/85 px-3 py-1 text-xs">
+          <div title="Token usage includes input, chat history, tool definitions, and output—not just visible text. TPM is shown only when reported by the provider." className="inline-flex items-center gap-1.5 rounded-full border bg-background/85 px-3 py-1 text-xs">
             <CpuIcon className="size-3.5 text-primary" />
             {usedInMinute !== null && rateInfo.limit ? (
               <>
@@ -398,19 +398,12 @@ export function NemesisAiDrawer() {
                   / {rateInfo.limit.toLocaleString()} TPM
                 </span>
               </>
-            ) : aiSettings.provider === "groq" && aiSettings.token_budget_mode === "economy" ? (
-              <>
-                <span className="font-mono font-medium text-foreground">
-                  {rateInfo.sessionTokens.toLocaleString()}
-                </span>
-                <span className="text-muted-foreground">/ 8,000 TPM</span>
-              </>
             ) : (
               <>
                 <span className="font-mono font-medium text-foreground">
                   {rateInfo.sessionTokens.toLocaleString()}
                 </span>
-                <span className="text-muted-foreground">tokens</span>
+                <span className="text-muted-foreground">session tokens</span>
               </>
             )}
           </div>

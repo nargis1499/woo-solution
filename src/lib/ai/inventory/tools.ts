@@ -1,4 +1,5 @@
 import "server-only";
+import type { AiResponsePolicy } from "@/lib/ai/response-budget";
 import { assertAdmin } from "@/lib/admin/auth";
 import { UUID_RE } from "@/lib/admin/form";
 import { createClient } from "@/lib/supabase/server";
@@ -31,7 +32,7 @@ const analysisProperties = {
 export const INVENTORY_INTELLIGENCE_TOOLS: AiToolSpec[] = [
   {
     name: "analyze_inventory_intelligence",
-    description: "Inventory Intelligence: deterministically forecast stock depletion from sales velocity, identify dead inventory and overstock, detect sales spikes, and calculate suggested reorder quantities. Reads real orders and stock, including variation/SKU-level analysis. Returns a dashboard with assumptions and data quality warnings; never guesses or saves stock. Use this instead of get_store_analytics/query_inventory for inventory predictions.",
+    description: "Inventory Intelligence: deterministically forecast stock depletion from sales velocity, identify dead inventory and overstock, detect sales spikes, and calculate suggested reorder quantities. Reads real orders and stock, including variation/SKU-level analysis. Returns a dashboard with concise findings; never guesses or saves stock. Use this instead of get_store_analytics/query_inventory for inventory predictions.",
     parameters: { type: "object", properties: analysisProperties },
   },
   {
@@ -94,8 +95,8 @@ async function loadInventoryData(days: number, now: Date) {
   return { products, sales, complete, warnings };
 }
 
-export async function executeInventoryTool(call: AiToolCall, stockTrackingEnabled: boolean): Promise<{
-  toolOutputJson: string; badge: AiToolBadge; plan?: AiActionPlan; widget?: AiUiWidget;
+export async function executeInventoryTool(call: AiToolCall, stockTrackingEnabled: boolean, policy: AiResponsePolicy): Promise<{
+  toolOutputJson: string; badge: AiToolBadge; plan?: AiActionPlan; widget?: AiUiWidget; completionSummary?: string;
 }> {
   await assertAdmin();
   const a = call.arguments;
@@ -158,11 +159,36 @@ export async function executeInventoryTool(call: AiToolCall, stockTrackingEnable
         };
       }),
     } : undefined;
-    return { badge, plan, toolOutputJson: JSON.stringify({ status: plan ? "preview_ready" : "no_changes_needed", matchedCount: targets.length, previewCount: selected.length, saved: false, warnings: report.warnings, instruction: "Only parent products are changed. Use the approval card. No stock has been received or ordered." }) };
+    return { badge, plan, toolOutputJson: JSON.stringify({ status: plan ? "preview_ready" : "no_changes_needed", matchedCount: targets.length, previewCount: selected.length, saved: false, instruction: "Only parent products are changed. Use the approval card. No stock has been received or ordered." }) };
   }
-  const widget = { ...report, id: `inventory_report_${call.id}`, kind: "inventory_intelligence" as const, filter, scope: { categorySlug: category, search, status: String(status) }, matchingCount: matched.length, rows: matched.slice(0, limit) };
+  const widget = { ...report, id: `inventory_report_${call.id}`, kind: "inventory_intelligence" as const, responseMode: policy.mode, initialVisibleRows: policy.visibleRows, filter, scope: { categorySlug: category, search, status: String(status) }, matchingCount: matched.length, rows: matched.slice(0, limit) };
+  const labels = { depletion: "at risk of running out", dead: "with no recent demand", overstock: "overstocked", spike: "with a sales spike", reorder: "needing restock" };
+  const findings = Object.entries(report.summary)
+    .filter(([signal, count]) => count > 0 && (filter === "all" || filter === signal))
+    .map(([signal, count]) => `${count} ${labels[signal as InventorySignal]}`);
+  const completionSummary = report.productsAnalyzed === 0
+    ? "No products match these filters. No changes were made."
+    : !report.complete
+      ? "Inventory history is incomplete, so forecasts and reorder suggestions are unavailable. Check the history coverage before making inventory decisions."
+      : `${report.productsAnalyzed} products reviewed using ${options.windowDays}-day sales: ${findings.length ? findings.join(", ") : "no matching inventory signals detected"}. ${!report.stockTrackingEnabled ? "Stock is untracked here; only sales patterns were checked." : report.rows.every((r) => r.unitsSold === 0) ? "More sales history is needed for reliable forecasts." : "Review the flagged products below; no stock or orders were changed."}`;
+  // Widgets go directly to React, NOT back through the LLM. In constrained mode
+  // only send counts + the few actionable findings; never serialize the widget wholesale.
+  const samples = (policy.mode === "compact" ? matched.filter((r) => r.signals.length > 0) : matched)
+    .slice(0, policy.modelSampleRows).map((r) => ({
+      productId: r.productId, ...(r.variationId ? { variationId: r.variationId } : {}), name: r.name,
+      stock: r.stockManaged ? r.stock : "untracked",
+      daysLeft: r.daysToDepletion === null ? null : Math.round(r.daysToDepletion * 10) / 10,
+      reorder: r.dataComplete && r.stockManaged && r.unitsSold > 0 ? r.suggestedReorder : null, signals: r.signals, dataComplete: r.dataComplete,
+    }));
   return {
-    badge, widget,
-    toolOutputJson: JSON.stringify({ ...widget, rows: widget.rows.slice(0, 12).map((r) => ({ productId: r.productId, variationId: r.variationId, name: r.name, stock: r.stock, sold: r.unitsSold, dailyVelocity: r.dailyVelocity, daysToDepletion: r.daysToDepletion, suggestedReorder: r.suggestedReorder, signals: r.signals, confidence: r.confidence })), instruction: "A structured dashboard shows the full displayed results. Summarize insights briefly. Estimates depend on stated assumptions. Reorders are suggestions, never silently change stock to targetStock. To bulk hide/publish use preview_inventory_status_update with explicit target status and the same analysis options." }),
+    badge, widget, completionSummary,
+    toolOutputJson: JSON.stringify({
+      complete: report.complete, stockTrackingEnabled: report.stockTrackingEnabled, products: report.productsAnalyzed, matched: matched.length,
+      windowDays: options.windowDays, leadTimeDays: options.leadTimeDays,
+      summary: report.summary, sample: samples, sampleCount: samples.length,
+      limitedEvidence: report.rows.filter((r) => r.confidence === "limited").length,
+      ...(report.complete ? {} : { warning: "Incomplete history: signals and reorder suggestions disabled." }),
+      instruction: policy.summaryInstruction + " Full product data is already rendered in the dashboard. No changes were made. Do not repeat an assumptions section or product-by-product data.",
+    }),
   };
 }
