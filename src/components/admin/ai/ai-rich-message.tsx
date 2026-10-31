@@ -693,7 +693,7 @@ export function RichAiMessage({
 
       {usedFallback && modelUsed && (
         <p className="border-t pt-2 text-[11px] text-muted-foreground">
-          Routed via fallback worker model ({modelUsed})
+          Answered by fallback model ({modelUsed})
         </p>
       )}
     </div>

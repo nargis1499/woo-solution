@@ -1,3 +1,4 @@
+import { buildConversationPrompt, isSimpleConversation, requestGroups, routingPrompt } from "@/lib/ai/request-context";
 import { responsePolicy, isStandaloneInventoryReport, isStandaloneOrderReport, type AiRateBudget } from "@/lib/ai/response-budget";
 import { NextResponse } from "next/server";
 import { AdminAuthError } from "@/lib/admin/auth";
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
       | {
           phase: "ollama_prepare";
           prompt?: string;
+          history?: AiChatHistoryItem[];
           currentPath?: string;
         }
       | {
@@ -75,12 +77,17 @@ export async function POST(request: Request) {
 
     /* Phase B: Browser-Direct Local Ollama Step 1 — prepare context & tool schemas */
     if (body.phase === "ollama_prepare") {
-      const { context } = await loadStoreContextSummary();
-      const systemPrompt = buildAgentSystemPrompt(aiSettings, context, body.currentPath);
+      const prompt = (body.prompt ?? "").trim();
+      const simpleConversation = isSimpleConversation(prompt);
+      const taskPrompt = routingPrompt(prompt, body.history);
+      const groups = requestGroups(taskPrompt);
+      const context = simpleConversation ? null : (await loadStoreContextSummary(groups === null || groups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g)))).context;
+      const systemPrompt = context ? buildAgentSystemPrompt(aiSettings, context, body.currentPath, groups) : buildConversationPrompt(aiSettings);
       return NextResponse.json({
         ok: true,
         systemPrompt,
-        tools: selectAgentTools(body.prompt ?? "", responsePolicy(aiSettings)),
+        tools: selectAgentTools(taskPrompt, responsePolicy(aiSettings)),
+        simpleConversation,
         responsePolicy: responsePolicy(aiSettings),
         ollamaBaseUrl: aiSettings.ollama_base_url,
         model: aiSettings.primary_model,
@@ -146,8 +153,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Please enter a prompt." }, { status: 400 });
     }
 
-    const { context, money } = await loadStoreContextSummary();
-    const systemPrompt = buildAgentSystemPrompt(aiSettings, context, body.currentPath);
+    // Greetings do not need the catalog, order rules, store reads, or old conversation.
+    if (isSimpleConversation(prompt)) {
+      const completion = await runModelCompletion({ settings: aiSettings, systemPrompt: buildConversationPrompt(aiSettings), messages: [{ role: "user", content: prompt }], tools: [] });
+      if (!completion.text.trim()) throw new Error("The model returned an empty response. Please try again.");
+      const data: AiAgentTurnResponse = {
+        reply: completion.text, toolBadges: [], plans: [], widgets: [], provider: aiSettings.provider,
+        modelUsed: completion.modelUsed, usedFallback: completion.usedFallback,
+        rateLimit: { ...completion.rateLimit, usedTokensThisTurn: completion.usage.totalTokens },
+      };
+      return NextResponse.json({ ok: true, data });
+    }
+    const taskPrompt = routingPrompt(prompt, body.history);
+    const groups = requestGroups(taskPrompt);
+    const { context, money } = await loadStoreContextSummary(groups === null || groups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g)));
 
     const historyLimit =
       aiSettings.token_budget_mode === "economy"
@@ -158,7 +177,7 @@ export async function POST(request: Request) {
 
     const messages: AiTurnMessage[] = (body.history ?? [])
       .slice(-historyLimit)
-      .filter((h) => h.content && (h.role === "user" || h.role === "assistant"))
+      .filter((h) => typeof h.content === "string" && h.content && (h.role === "user" || h.role === "assistant"))
       .map((h) => ({
         role: h.role,
         content:
@@ -192,9 +211,9 @@ export async function POST(request: Request) {
       const isLastAllowedRound = round === maxRounds;
       const completion = await runModelCompletion({
         settings: aiSettings,
-        systemPrompt: `${systemPrompt}\nCurrent response budget: ${responsePolicy(aiSettings, observedRate).summaryInstruction}`,
+        systemPrompt: buildAgentSystemPrompt(aiSettings, context, body.currentPath, groups, responsePolicy(aiSettings, observedRate).summaryInstruction),
         messages,
-        tools: isLastAllowedRound ? [] : selectAgentTools(prompt, responsePolicy(aiSettings, observedRate)),
+        tools: isLastAllowedRound ? [] : selectAgentTools(taskPrompt, responsePolicy(aiSettings, observedRate)),
       });
 
       for (const key of ["limitTokensPerMin", "remainingTokensPerMin", "limitRequests", "remainingRequests"] as const) {
