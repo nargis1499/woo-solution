@@ -1,4 +1,5 @@
 import "server-only";
+import { isSimpleConversation, isExplicitReadRequest, requestGroups, type AgentGroup } from "@/lib/ai/request-context";
 import { ORDER_INTELLIGENCE_TOOLS, executeOrderTool } from "@/lib/ai/orders/tools";
 import { responsePolicy, isStandaloneInventoryReport, isStandaloneOrderReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
 import { INVENTORY_INTELLIGENCE_TOOLS, executeInventoryTool } from "@/lib/ai/inventory/tools";
@@ -210,11 +211,16 @@ export const AGENT_TOOLS: AiToolSpec[] = AGENT_TOOL_GROUPS.flatMap((group) => gr
 
 /** Small tool catalog for unambiguous read-only reports on constrained turns. */
 export function selectAgentTools(prompt: string, policy: AiResponsePolicy): AiToolSpec[] {
-  return policy.mode === "compact" && isStandaloneInventoryReport(prompt)
+  if (isSimpleConversation(prompt)) return [];
+  const groups = requestGroups(prompt);
+  const selected = policy.mode === "compact" && isStandaloneInventoryReport(prompt)
     ? INVENTORY_INTELLIGENCE_TOOLS.filter((tool) => tool.name === "analyze_inventory_intelligence")
     : policy.mode === "compact" && isStandaloneOrderReport(prompt)
       ? ORDER_INTELLIGENCE_TOOLS.filter((tool) => tool.name === "query_order_intelligence")
-      : AGENT_TOOLS;
+      : groups ? AGENT_TOOL_GROUPS.filter((group) => groups.includes(group.id)).flatMap((group) => group.tools) : AGENT_TOOLS;
+  return groups && isExplicitReadRequest(prompt)
+    ? selected.filter(tool => ["query_inventory", "get_store_analytics", "query_content", "query_order_intelligence", "analyze_inventory_intelligence"].includes(tool.name))
+    : selected;
 }
 
 export type StoreContextSummary = {
@@ -224,7 +230,7 @@ export type StoreContextSummary = {
   categories: Array<{ name: string; slug: string; id: string }>;
 };
 
-export async function loadStoreContextSummary(): Promise<{
+export async function loadStoreContextSummary(includeCategories = true): Promise<{
   context: StoreContextSummary;
   money: Money;
 }> {
@@ -233,10 +239,9 @@ export async function loadStoreContextSummary(): Promise<{
     getSiteSettingsFresh(),
     createClient(),
   ]);
-  const { data: catRows } = await supabase
-    .from("categories")
-    .select("id, name, slug")
-    .order("sort_order", { ascending: true });
+  const { data: catRows } = includeCategories
+    ? await supabase.from("categories").select("id, name, slug").order("sort_order", { ascending: true })
+    : { data: [] };
   const money = moneyFromSettings(settings);
   return {
     money,
@@ -253,7 +258,10 @@ export function buildAgentSystemPrompt(
   aiSettings: AiSettingsServer,
   store: StoreContextSummary,
   currentPath?: string,
+  groups: AgentGroup[] | null = null,
+  budgetInstruction = responsePolicy(aiSettings).summaryInstruction,
 ): string {
+  const has = (group: AgentGroup) => groups === null || groups.includes(group);
   const catList =
     store.categories.length > 0
       ? store.categories.map((c) => `${c.name} (${c.slug})`).join(", ")
@@ -266,21 +274,20 @@ export function buildAgentSystemPrompt(
     `You are Nemesis AI, the store operations agent inside the "${store.storeName}" admin dashboard.`,
     `Current UTC time: ${new Date().toISOString()}. Interpret relative dates from this clock; default to UTC unless the administrator specifies a timezone.`,
     `Store currency: ${store.currency}. Default stock tracking (products may override): ${store.manageStock ? "enabled" : "disabled"}.`,
-    `Available categories (Name (slug)): ${catList}.`,
+    (has("inventory_operations") || has("inventory_intelligence") || has("pricing")) ? `Available categories (Name (slug)): ${catList}.` : "",
     `Brand tone: ${aiSettings.brand_tone}. Respond in ${aiSettings.default_language}.`,
     contentContextFromPath(currentPath),
-    `Capability groups: ${AGENT_TOOL_GROUPS.map((g) => `${g.label}: ${g.tools.map((t) => t.name).join(", ")}`).join("; ")}.`,
-    `Order Intelligence rules: use query_order_intelligence for all order investigation/search, paid revenue, customer history and problem detection. The simple "Analyze order intelligence" prompt means mode=report. Defaults: report 30 days, problems 90 days, customer history all time. Use exact date/filter metadata; never extrapolate page rows into totals. Refunded is a payment status, not an order-status enum. Unknown timestamps, taxes and discounts are unknown, not zero. Do not claim actual payment failure/success rates without attempt records. All order changes use preview_order_operations with explicit order targets and mandatory approval, even if auto-apply is enabled. Refund requests do not refund money; customer notifications are order-chat/in-app, not email/SMS. Use private notes, not customer-facing notes, for internal information. Never guess identities or merge customers by name. For bulk requests read matching targets first and clearly state the selected page/batch scope. Customer summaries use minimal PII; do not repeat addresses, phones, transaction hashes or emails unnecessarily.`,
-    `Inventory Intelligence rules: use analyze_inventory_intelligence for forecasts, dead stock, overstock, sales spikes and reorder quantities. All numbers are computed by code from real order history, never by model guessing. Mention lookback/lead time only briefly when relevant; flag limited/incomplete data, and never claim forecasts are guaranteed. Reorder suggestions are not purchase orders or received stock. For bulk publish/hide actions use preview_inventory_status_update with the same filters and analysis options and an explicit user-requested target status; approval is always required. Product-level and variation-level reorder quantities overlap: never sum them.`,
-    responsePolicy(aiSettings).summaryInstruction,
+    has("orders") ? `Order Intelligence rules: use query_order_intelligence for all order investigation/search, paid revenue, customer history and problem detection. The simple "Analyze order intelligence" prompt means mode=report. Defaults: report 30 days, problems 90 days, customer history all time. Use exact date/filter metadata; never extrapolate page rows into totals. Refunded is a payment status, not an order-status enum. Unknown timestamps, taxes and discounts are unknown, not zero. Do not claim actual payment failure/success rates without attempt records. All order changes use preview_order_operations with explicit order targets and mandatory approval, even if auto-apply is enabled. Refund requests do not refund money; customer notifications are order-chat/in-app, not email/SMS. Use private notes, not customer-facing notes, for internal information. Never guess identities or merge customers by name. For bulk requests read matching targets first and clearly state the selected page/batch scope. Customer summaries use minimal PII; do not repeat addresses, phones, transaction hashes or emails unnecessarily.` : "",
+    has("inventory_intelligence") ? `Inventory Intelligence rules: use analyze_inventory_intelligence for forecasts, dead stock, overstock, sales spikes and reorder quantities. All numbers are computed by code from real order history, never by model guessing. Mention lookback/lead time only briefly when relevant; flag limited/incomplete data, and never claim forecasts are guaranteed. Reorder suggestions are not purchase orders or received stock. For bulk publish/hide actions use preview_inventory_status_update with the same filters and analysis options and an explicit user-requested target status; approval is always required. Product-level and variation-level reorder quantities overlap: never sum them.` : "",
+    budgetInstruction,
     `Rules:`,
     `1. Always use the provided tools for live store numbers, inventory checks, discounts, status/stock updates, order updates, and SEO audits. Never guess IDs or prices.`,
     `2. Map user category mentions (e.g. "mobile", "headphones", "accessories") to the closest slug from Available categories above.`,
     `3. Write tools automatically render an interactive Confirmation Preview table, and read tools (query_inventory, get_store_analytics) automatically render rich dashboard UI cards in the chat.`,
-    `4. Content requests (generate/rewrite/improve/translate a description, title, page/post body, SEO metadata, features, or alt text) are actionable edits, not just chat. ALWAYS read the target with query_content, then call preview_content_update with the complete proposed copy, including when replacing non-empty content. Do not use the missing-fields SEO audit for targeted rewrites. Never claim an edit was saved without an execution result.`,
+    has("content_seo") ? `4. Content requests (generate/rewrite/improve/translate a description, title, page/post body, SEO metadata, features, or alt text) are actionable edits, not just chat. ALWAYS read the target with query_content, then call preview_content_update with the complete proposed copy, including when replacing non-empty content. Do not use the missing-fields SEO audit for targeted rewrites. Never claim an edit was saved without an execution result.` : "",
     `5. If the target is unclear, ask which item; never guess or edit all matches. Advice-only or explicitly chat-only drafts need no preview. Unsupported edits must be explained rather than pretending to save them.`,
     `6. Because those structured UI cards are already shown to the admin, do NOT repeat item-by-item markdown lists or raw tables—instead default to a natural 1–2 sentence takeaway. Provide fuller explanations only when requested and the response budget allows.${customNote}`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 type RawProductRow = {

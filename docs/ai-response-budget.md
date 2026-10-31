@@ -47,3 +47,19 @@ Order tools also use this policy. Full order widgets never become model context:
 ## Verification for this change
 
 Lint, TypeScript, and diff checks are static verification. No test suites or live provider requests were run, following the user's earlier no-test instruction. No exact token-reduction claim is made without a live measurement; savings come from smaller schemas/results and eliminating the redundant model round on eligible reports.
+
+## Task-specific input context
+
+`src/lib/ai/request-context.ts` also controls **input**, independently of the compact/detailed output policy:
+
+- Exact standalone greetings/social exchanges (for example `hello`, `hi`, `thank you`) use a short conversational system prompt, **zero tools and zero old history**. They do not load catalog/categories/store summaries. Authentication, AI settings, language/tone, configured custom instructions and provider failover still apply. This remains one normal provider completion, not a fabricated/canned store-data response. Long administrator custom instructions can still increase its input size.
+- This is an exact allowlist, not `startsWith("hello")`. `Hello, show my orders` is a store task, not small talk. Unrecognized languages/wording use the agent path, never an unsafe guess that a task is a greeting.
+- Recognizable task domains select the union of relevant capability groups. Pricing includes product lookup; revenue/AOV/product sales rankings include the paid-order report capability. Explicit read-only wording without a mutation verb omits write schemas. Read/write requests retain the appropriate preview tools and existing approval requirements.
+- Ambiguous wording, unsupported-domain combinations and context-dependent follow-ups keep the full workflow. Recent user topics are considered for multi-turn routing; normal task history keeps its existing provider-specific bounds. Prior greetings do not add domains. This conservative router is not a guarantee that arbitrary natural-language tasks will always have a minimum-size payload.
+- Agent system instructions include only the chosen domain-specific rules; irrelevant category reads/lists and duplicate capability-name listings are omitted. The response-budget instruction is included **once** per model request, with current quota information, rather than appended to an already-included copy.
+- Browser-direct Ollama uses the same preparation decision. Greetings do not receive native tool schemas or prompt-based tool instructions, even when prompt-tool fallback was remembered for earlier tasks. Normal task recovery and approval paths remain unchanged.
+- No extra AI classifier/router request is used. Mutation payloads, approval IDs and proposed content are not truncated by this change.
+
+The header shows **Last used** with the actual successful response model and a fallback marker when applicable; while generating it labels the configured model **Primary**, not a claimed final responder. Missing quota headers are not borrowed across different providers/models. TPM remains a provider-reported rate-window estimate, not the exact cost of the visible message; no daily limit is inferred from provider/model names.
+
+Verification: ESLint, TypeScript and diff checks only. No tests, live greetings, provider requests or order actions were run under the standing no-test instruction. No exact tokenizer measurement or promised post-change token count is asserted. No database migration is required.

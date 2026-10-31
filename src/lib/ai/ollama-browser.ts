@@ -315,12 +315,13 @@ export async function runBrowserOllamaAgentTurn(opts: {
   const prepRes = await fetch("/api/nemesis/ai/agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phase: "ollama_prepare", currentPath: opts.currentPath, prompt: opts.prompt }),
+    body: JSON.stringify({ phase: "ollama_prepare", currentPath: opts.currentPath, prompt: opts.prompt, history: opts.history.slice(-4) }),
   });
   const prepJson = (await prepRes.json()) as {
     ok: boolean;
     error?: string;
     systemPrompt: string;
+    simpleConversation?: boolean;
     responsePolicy: AiResponsePolicy;
     language: string;
     tools: AiToolSpec[];
@@ -343,16 +344,16 @@ export async function runBrowserOllamaAgentTurn(opts: {
     },
   }));
 
-  let usePromptMode = getRememberedPromptToolsFlag();
+  let usePromptMode = prepJson.tools.length > 0 && getRememberedPromptToolsFlag();
 
   const buildSystemContent = (promptMode: boolean) =>
-    promptMode
+    promptMode && prepJson.tools.length > 0
       ? `${prepJson.systemPrompt}\n${buildPromptToolsAddendum(prepJson.tools)}`
       : prepJson.systemPrompt;
 
   const wireMessages: Array<Record<string, unknown>> = [
     { role: "system", content: buildSystemContent(usePromptMode) },
-    ...opts.history.slice(-6).map((h) => ({ role: h.role, content: h.content })),
+    ...(prepJson.simpleConversation ? [] : opts.history.slice(-6).map((h) => ({ role: h.role, content: h.content }))),
     { role: "user", content: opts.prompt },
   ];
 
@@ -370,7 +371,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
         root,
         model: prepJson.model,
         messages: wireMessages,
-        ollamaTools: !usePromptMode && round < 3 ? ollamaTools : undefined,
+        ollamaTools: !usePromptMode && round < 3 && ollamaTools.length > 0 ? ollamaTools : undefined,
         numCtx: prepJson.numCtx || 4096,
         disableThinking: prepJson.disableThinking,
         temperature: 0.2,
@@ -409,6 +410,11 @@ export async function runBrowserOllamaAgentTurn(opts: {
         name: c.function!.name!,
         arguments: parseArgs(c.function?.arguments),
       }));
+
+    if (prepJson.simpleConversation) {
+      finalReply = content;
+      break;
+    }
 
     if (parsedCalls.length === 0 && round < 3) {
       parsedCalls = parsePromptToolCalls(content, round);

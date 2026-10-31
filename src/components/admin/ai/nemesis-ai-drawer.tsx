@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { needsContentPreviewRepair } from "@/lib/ai/content-fields";
-import { AI_PROVIDERS } from "@/lib/ai/providers";
+import { AI_PROVIDERS, type AiProviderId } from "@/lib/ai/providers";
 import { runBrowserOllamaAgentTurn } from "@/lib/ai/ollama-browser";
 import type {
   AiActionPlan,
@@ -192,6 +192,10 @@ export function NemesisAiDrawer() {
     limit?: number | null;
     remaining?: number | null;
     sessionTokens: number;
+    provider?: AiProviderId;
+    primaryModel?: string;
+    modelUsed?: string;
+    usedFallback?: boolean;
   }>({ sessionTokens: 0 });
 
   const msgSeqRef = useRef(0);
@@ -250,11 +254,16 @@ export function NemesisAiDrawer() {
         data = json.data;
       }
 
-      setRateInfo((prev) => ({
-        limit: data.rateLimit.limitTokensPerMin ?? prev.limit,
-        remaining: data.rateLimit.remainingTokensPerMin ?? prev.remaining,
-        sessionTokens: prev.sessionTokens + (data.rateLimit.usedTokensThisTurn || 0),
-      }));
+      setRateInfo((prev) => {
+        const sameModel = prev.provider === data.provider && prev.modelUsed === data.modelUsed;
+        return {
+          limit: data.rateLimit.limitTokensPerMin ?? (sameModel ? prev.limit : null),
+          remaining: data.rateLimit.remainingTokensPerMin ?? (sameModel ? prev.remaining : null),
+          sessionTokens: prev.sessionTokens + (data.rateLimit.usedTokensThisTurn || 0),
+          provider: data.provider, primaryModel: aiSettings.primary_model,
+          modelUsed: data.modelUsed, usedFallback: data.usedFallback,
+        };
+      });
 
       msgSeqRef.current += 1;
       const assistantEntry: ChatEntry = {
@@ -306,12 +315,14 @@ export function NemesisAiDrawer() {
     }
   }
 
+  const hasReportedModel = rateInfo.provider === aiSettings.provider && rateInfo.primaryModel === aiSettings.primary_model && Boolean(rateInfo.modelUsed);
   const usedInMinute =
-    rateInfo.limit != null && rateInfo.remaining != null
+    hasReportedModel && rateInfo.limit != null && rateInfo.remaining != null
       ? Math.max(0, rateInfo.limit - rateInfo.remaining)
       : null;
 
-  const shortModel = (aiSettings.primary_model || "No model").replace(/^[^/]+\//, "");
+  const displayedModel = !running && hasReportedModel ? rateInfo.modelUsed! : aiSettings.primary_model;
+  const shortModel = (displayedModel || "No model").replace(/^[^/]+\//, "");
   const lastAssistantId = [...entries].reverse().find((e) => e.role === "assistant")?.id;
 
   return (
@@ -384,10 +395,11 @@ export function NemesisAiDrawer() {
                 aiSettings.is_ready ? "bg-emerald-500" : "bg-amber-500",
               )}
             />
-            <span className="text-muted-foreground">Model:</span>
+            <span className="text-muted-foreground">{running ? "Primary:" : hasReportedModel ? "Last used:" : "Model:"}</span>
             <span className="truncate font-mono font-medium text-foreground">
               {providerMeta.label} · {shortModel}
             </span>
+            {!running && hasReportedModel && rateInfo.usedFallback && <span className="shrink-0 text-[10px] text-muted-foreground">Fallback</span>}
           </div>
 
           <div title="Token usage includes input, chat history, tool definitions, and output—not just visible text. TPM is shown only when reported by the provider." className="inline-flex items-center gap-1.5 rounded-full border bg-background/85 px-3 py-1 text-xs">

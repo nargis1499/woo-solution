@@ -54,6 +54,7 @@ function fixture(entity = "product", field = "description", previousValue = "Ori
   } };
   const tools = loadTs("src/lib/ai/tools.ts", {
     "@/lib/ai/content-fields": fields,
+    "@/lib/ai/request-context": loadTs("src/lib/ai/request-context.ts"),
     "@/lib/ai/response-budget": loadTs("src/lib/ai/response-budget.ts"),
     "@/lib/ai/orders/tools": { ORDER_INTELLIGENCE_TOOLS: [] },
     "@/lib/ai/inventory/tools": { INVENTORY_INTELLIGENCE_TOOLS: [] },
