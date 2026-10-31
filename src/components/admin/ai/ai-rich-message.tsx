@@ -31,7 +31,7 @@ function splitToolSummary(summary: string): { fn: string; args: string } {
 }
 
 export function ToolOperationsAccordion({ badges }: { badges: AiToolBadge[] }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   if (badges.length === 0) return null;
 
@@ -41,6 +41,7 @@ export function ToolOperationsAccordion({ badges }: { badges: AiToolBadge[] }) {
         type="button"
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full cursor-pointer items-center justify-between border-b border-transparent bg-muted/40 px-3.5 py-2 text-muted-foreground transition-colors hover:bg-muted/70 data-[open=true]:border-border/60"
+        aria-expanded={expanded}
         data-open={expanded || undefined}
       >
         <div className="flex items-center gap-2">
