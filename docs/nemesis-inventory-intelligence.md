@@ -11,7 +11,7 @@
 - Content & SEO
 - Order Operations
 
-Both cloud providers and browser-direct Ollama receive the same flattened catalog today. The registry is an extension point for future selective tool loading, per-group budgets, permissions, and routing; it does not yet add another model/router call or background agent.
+Cloud providers and browser-direct Ollama use the same registry. Constrained, unambiguous standalone Inventory Intelligence requests receive only the read-only analysis schema; mixed or unfamiliar wording keeps the full catalog. This conservative selection adds no model/router call or background agent. See [AI response-budget policy](ai-response-budget.md) for the shared compact/detailed rules.
 
 ## Modules
 
@@ -45,6 +45,12 @@ Both cloud providers and browser-direct Ollama receive the same flattened catalo
 | Display/approval batch size | 20, configurable up to 50 |
 
 All tool inputs have bounded numeric validation. Users can specify actual supplier lead times, category, name/SKU, active/draft/all status and signal. Analysis defaults to active products; status previews default to all so publishing a draft is possible. Exact category slugs do not fuzzy-match into another category. Status preview filters and calculations are recomputed from live data, not trusted from a model-generated report.
+
+## Concise reporting and model context
+
+Economy mode or observed quota pressure selects a compact report: initially up to five flagged product cards, with all other **loaded** rows available through a local expand control. Standard/High mode without detected quota pressure shows the full loaded batch. Calculation details stay short in either mode. The Assumptions & data quality panel is removed; header context, limited-evidence labels, and critical incomplete-history/stock-tracking alerts remain.
+
+The complete widget is delivered to the UI, not serialized back into model context. The model receives counts and a bounded sample (three actionable rows in compact mode, twelve in detailed mode). Eligible compact English standalone reports finish with a server-computed summary, avoiding another model request. Mixed tasks, approval workflows, custom wording outside the conservative read-only allowlist, and non-English summaries retain the normal model loop. No underlying calculation, approval, or stock-mutation behavior is reduced.
 
 ## Data and safeguards
 

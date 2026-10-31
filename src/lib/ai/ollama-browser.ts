@@ -1,3 +1,4 @@
+import { isStandaloneInventoryReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
 import { CONTENT_PREVIEW_REPAIR, needsContentPreviewRepair } from "@/lib/ai/content-fields";
 import type { AiToolCall, AiToolSpec } from "@/lib/ai/client";
 import type {
@@ -314,12 +315,14 @@ export async function runBrowserOllamaAgentTurn(opts: {
   const prepRes = await fetch("/api/nemesis/ai/agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phase: "ollama_prepare", currentPath: opts.currentPath }),
+    body: JSON.stringify({ phase: "ollama_prepare", currentPath: opts.currentPath, prompt: opts.prompt }),
   });
   const prepJson = (await prepRes.json()) as {
     ok: boolean;
     error?: string;
     systemPrompt: string;
+    responsePolicy: AiResponsePolicy;
+    language: string;
     tools: AiToolSpec[];
     ollamaBaseUrl: string;
     model: string;
@@ -450,6 +453,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
     const execJson = (await execRes.json()) as {
       ok: boolean;
       error?: string;
+      completionSummaries?: string[];
       toolResults: Array<{ toolCallId: string; name: string; content: string }>;
       badges: AiToolBadge[];
       plans: AiActionPlan[];
@@ -462,6 +466,12 @@ export async function runBrowserOllamaAgentTurn(opts: {
     toolBadges.push(...execJson.badges);
     plans.push(...execJson.plans);
     if (execJson.widgets) widgets.push(...execJson.widgets);
+    if (prepJson.responsePolicy.mode === "compact" && isStandaloneInventoryReport(opts.prompt) &&
+        parsedCalls.length === 1 && parsedCalls[0].name === "analyze_inventory_intelligence" &&
+        execJson.completionSummaries?.length === parsedCalls.length && plans.length === 0 && prepJson.language.toLowerCase().startsWith("en")) {
+      finalReply = execJson.completionSummaries.slice(0, 2).join(" ");
+      break;
+    }
     for (const tr of execJson.toolResults) {
       if (rawNativeCalls.length > 0 && !usePromptMode) {
         wireMessages.push({

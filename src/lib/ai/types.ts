@@ -180,6 +180,8 @@ export type AiSeoHealthyWidget = {
 export type AiInventoryIntelligenceWidget = InventoryReport & {
   id: string;
   kind: "inventory_intelligence";
+  responseMode?: "compact" | "detailed";
+  initialVisibleRows?: number;
   filter: string;
   scope: { categorySlug: string; search: string; status: string };
 };
