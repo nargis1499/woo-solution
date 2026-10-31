@@ -7,6 +7,7 @@ import {
   ChevronsUpDownIcon,
   ExternalLinkIcon,
   FileTextIcon,
+  FileClockIcon,
   GaugeIcon,
   LayoutTemplateIcon,
   LogOutIcon,
@@ -54,6 +55,7 @@ export const ADMIN_NAV = [
   // for the tab strip itself, not the sidebar.
   { href: "/nemesis/ui", label: "UI", icon: LayoutTemplateIcon },
   { href: "/nemesis/ecommerce", label: "E-commerce", icon: StoreIcon },
+  { href: "/nemesis/logs", label: "Logs", icon: FileClockIcon },
   { href: "/nemesis/settings", label: "Settings", icon: SettingsIcon },
 ];
 

@@ -393,6 +393,7 @@ export async function executeAgentToolCall(opts: {
   store: StoreContextSummary;
   money: Money;
   allowModelSubcall: boolean;
+  traceId?: string;
   onModelUsage?: (result: Awaited<ReturnType<typeof runModelCompletion>>) => void;
   responsePolicy?: AiResponsePolicy;
 }): Promise<{
@@ -1192,6 +1193,7 @@ export async function executeAgentToolCall(opts: {
         });
 
         const copyRes = await runModelCompletion({
+          traceId: opts.traceId,
           settings: aiSettings,
           preferWorkerModel: true,
           systemPrompt: `Write concise, natural e-commerce SEO text in ${aiSettings.default_language} (${aiSettings.brand_tone} tone) for "${store.storeName}". Return ONLY a JSON array: [{"idx":0,"text":"..."}]. Keep meta_description <= 155 chars, image_alt_text <= 110 chars, product_description 1-2 sentences.`,
