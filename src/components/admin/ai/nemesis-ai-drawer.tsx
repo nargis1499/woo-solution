@@ -85,7 +85,7 @@ const STARTER_PROMPTS: QuickPromptAction[] = [
   {
     label: "10% off main category",
     prompt:
-      "Add a 10% discount on products in our main category and flag any with less than 3 in stock",
+      "Add a 10% discount on products in our main category",
     icon: PercentIcon,
   },
   {
