@@ -1,3 +1,4 @@
+import { capturingAiFetch, type LogSink } from "@/lib/logs/capture";
 import { createUsageCollector } from "@/lib/ai/usage";
 import { isStandaloneInventoryReport, isStandaloneOrderReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
 import { CONTENT_PREVIEW_REPAIR, needsContentPreviewRepair } from "@/lib/ai/content-fields";
@@ -9,6 +10,29 @@ import type {
   AiToolBadge,
   AiUiWidget,
 } from "@/lib/ai/types";
+
+const browserLogSink: LogSink = {
+  async start(entry) {
+    const res = await fetch("/api/nemesis/logs/browser", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(3000),
+      body: JSON.stringify({ phase: "start", trace_id: entry.trace_id, model: entry.model, payload: entry.request_payload }),
+    });
+    if (!res.ok) return null;
+    return ((await res.json()) as { id: string | null }).id;
+  },
+  async finish(id, entry) {
+    const { response_payload, ...metadata } = entry;
+    const res = await fetch("/api/nemesis/logs/browser", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(3000),
+      body: JSON.stringify({ phase: "finish", id, ...metadata, payload: response_payload }),
+    });
+    if (!res.ok) console.warn("Browser AI diagnostic update unavailable");
+  },
+};
 
 const PROMPT_TOOLS_CACHE_KEY = "nemesis_ollama_use_prompt_tools";
 
@@ -138,6 +162,7 @@ function rememberPromptToolsFlag() {
 }
 
 async function postOllamaChatWithRecovery(opts: {
+  traceId: string;
   root: string;
   model: string;
   messages: Array<Record<string, unknown>>;
@@ -159,10 +184,14 @@ async function postOllamaChatWithRecovery(opts: {
     };
   };
 }> {
+  const loggedFetch = capturingAiFetch(
+    { trace_id: opts.traceId, provider: "ollama", model: opts.model, source: "browser" },
+    browserLogSink,
+  );
   const safeNumCtx = Math.min(opts.numCtx || 4096, 32768);
 
   const sendOnce = async (payload: Record<string, unknown>) => {
-    const res = await fetch(`${opts.root}/api/chat`, {
+    const res = await loggedFetch(`${opts.root}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -269,6 +298,7 @@ export async function testBrowserOllamaConnection(opts: {
 
   try {
     const result = await postOllamaChatWithRecovery({
+      traceId: crypto.randomUUID(),
       root,
       model: opts.model,
       numCtx: opts.numCtx || 4096,
@@ -313,6 +343,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
   currentPath?: string;
   history: AiChatHistoryItem[];
 }): Promise<AiAgentTurnResponse> {
+  const traceId = crypto.randomUUID();
   const prepRes = await fetch("/api/nemesis/ai/agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -379,6 +410,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
     let turnResult: Awaited<ReturnType<typeof postOllamaChatWithRecovery>>;
     try {
       turnResult = await postOllamaChatWithRecovery({
+        traceId,
         root,
         model: prepJson.model,
         messages: wireMessages,
@@ -395,6 +427,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
         usePromptMode = true;
         wireMessages[0] = { role: "system", content: buildSystemContent(true) };
         turnResult = await postOllamaChatWithRecovery({
+          traceId,
           root,
           model: prepJson.model,
           messages: wireMessages,

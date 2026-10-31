@@ -30,6 +30,7 @@ export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
+    const traceId = crypto.randomUUID();
     const { server: aiSettings } = await loadAiSettingsForAction();
     const body = (await request.json()) as
       | {
@@ -158,7 +159,7 @@ export async function POST(request: Request) {
 
     // Greetings do not need the catalog, order rules, store reads, or old conversation.
     if (isSimpleConversation(prompt)) {
-      const completion = await runModelCompletion({ settings: aiSettings, systemPrompt: buildConversationPrompt(aiSettings), messages: [{ role: "user", content: prompt }], tools: [] });
+      const completion = await runModelCompletion({ traceId, settings: aiSettings, systemPrompt: buildConversationPrompt(aiSettings), messages: [{ role: "user", content: prompt }], tools: [] });
       if (!completion.text.trim()) throw new Error("The model returned an empty response. Please try again.");
       const usage = createUsageCollector();
       usage.record(completion);
@@ -218,6 +219,7 @@ export async function POST(request: Request) {
     for (let round = 0; round <= maxRounds; round++) {
       const isLastAllowedRound = round === maxRounds;
       const completion = await runModelCompletion({
+        traceId,
         settings: aiSettings,
         systemPrompt: buildAgentSystemPrompt(aiSettings, context, body.currentPath, groups, responsePolicy(aiSettings, observedRate).summaryInstruction),
         messages,
@@ -266,6 +268,7 @@ export async function POST(request: Request) {
           store: context,
           money,
           allowModelSubcall: true,
+          traceId,
           onModelUsage: (result) => { usage.record(result); totalTokensUsed += result.usage.totalTokens; },
           responsePolicy: responsePolicy(aiSettings, observedRate),
         });

@@ -1,4 +1,6 @@
 import "server-only";
+import { capturingAiFetch } from "@/lib/logs/capture";
+import { diagnosticLogSink } from "@/lib/logs/server";
 import {
   AI_PROVIDERS,
   type AiProviderId,
@@ -131,6 +133,7 @@ function extractApiErrorMessage(bodyText: string, status: number): string {
 /* ── 1. OpenAI-Compatible Adapter (Groq, OpenAI, OpenRouter, DeepSeek, Ollama Tunnel, Custom) ── */
 
 async function callOpenAiCompatible(opts: {
+  fetcher: typeof fetch;
   provider: AiProviderId;
   baseUrl: string;
   apiKey: string | null;
@@ -229,7 +232,7 @@ async function callOpenAiCompatible(opts: {
     return payload;
   };
 
-  let res = await fetch(endpoint, {
+  let res = await opts.fetcher(endpoint, {
     method: "POST",
     headers,
     body: JSON.stringify(buildPayload(true)),
@@ -239,7 +242,7 @@ async function callOpenAiCompatible(opts: {
   if (!res.ok && res.status === 400 && isReasoningModel) {
     const firstErr = await res.text();
     if (/reasoning_effort|unknown|unrecognized|not supported/i.test(firstErr)) {
-      res = await fetch(endpoint, {
+      res = await opts.fetcher(endpoint, {
         method: "POST",
         headers,
         body: JSON.stringify(buildPayload(false)),
@@ -304,6 +307,7 @@ async function callOpenAiCompatible(opts: {
 /* ── 2. Anthropic Messages Adapter (Claude) ──────────────────────────────── */
 
 async function callAnthropic(opts: {
+  fetcher: typeof fetch;
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -361,7 +365,7 @@ async function callAnthropic(opts: {
     }));
   }
 
-  const res = await fetch(endpoint, {
+  const res = await opts.fetcher(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -424,6 +428,7 @@ async function callAnthropic(opts: {
 /* ── 3. Google Gemini Adapter (`generateContent`) ────────────────────────── */
 
 async function callGemini(opts: {
+  fetcher: typeof fetch;
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -495,7 +500,7 @@ async function callGemini(opts: {
     ];
   }
 
-  const res = await fetch(endpoint, {
+  const res = await opts.fetcher(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -569,6 +574,7 @@ export async function runModelCompletion(opts: {
   messages: AiTurnMessage[];
   tools?: AiToolSpec[];
   preferWorkerModel?: boolean;
+  traceId?: string;
   overrideProvider?: AiProviderId;
   overrideModel?: string;
   overrideApiKey?: string | null;
@@ -607,9 +613,16 @@ export async function runModelCompletion(opts: {
         ? 1800
         : 3200;
 
+  const traceId = opts.traceId ?? crypto.randomUUID();
   const invokeOnce = async (model: string) => {
+    const fetcher = capturingAiFetch(
+      { trace_id: traceId, provider, model, source: opts.preferWorkerModel ? "worker" : "server" },
+      diagnosticLogSink,
+      [apiKey, ...Object.values(opts.settings.api_keys)].filter((key): key is string => typeof key === "string" && key.length > 0),
+    );
     if (provider === "anthropic") {
       return callAnthropic({
+        fetcher,
         baseUrl,
         apiKey: apiKey!,
         model,
@@ -622,6 +635,7 @@ export async function runModelCompletion(opts: {
     }
     if (provider === "gemini") {
       return callGemini({
+        fetcher,
         baseUrl,
         apiKey: apiKey!,
         model,
@@ -633,6 +647,7 @@ export async function runModelCompletion(opts: {
       });
     }
     return callOpenAiCompatible({
+      fetcher,
       provider,
       baseUrl,
       apiKey,
