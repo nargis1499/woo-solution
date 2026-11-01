@@ -279,8 +279,8 @@ async function callOpenAiCompatible(opts: {
   const rawCalls = choice?.tool_calls ?? [];
   const toolCalls: AiToolCall[] = rawCalls
     .filter((tc) => Boolean(tc.function?.name))
-    .map((tc, idx) => ({
-      id: tc.id || `call_${idx + 1}`,
+    .map((tc) => ({
+      id: tc.id || `call_${crypto.randomUUID()}`,
       name: tc.function!.name!,
       arguments: parseJsonObject(tc.function?.arguments),
     }));
@@ -399,7 +399,7 @@ async function callAnthropic(opts: {
       text += (text ? "\n" : "") + block.text;
     } else if (block.type === "tool_use" && block.name) {
       toolCalls.push({
-        id: block.id || `toolu_${toolCalls.length + 1}`,
+        id: block.id || `toolu_${crypto.randomUUID()}`,
         name: block.name,
         arguments: parseJsonObject(block.input),
       });
@@ -543,7 +543,7 @@ async function callGemini(opts: {
     }
     if (part.functionCall?.name) {
       toolCalls.push({
-        id: `gemini_call_${toolCalls.length + 1}`,
+        id: `gemini_call_${crypto.randomUUID()}`,
         name: part.functionCall.name,
         arguments: parseJsonObject(part.functionCall.args),
         thoughtSignature: part.thoughtSignature,

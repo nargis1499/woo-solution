@@ -1,3 +1,6 @@
+import { deduplicateToolInstructions } from "@/lib/ai/tool-results";
+import { catalogGroups, mergeToolCatalog, discoveryOnly, TOOL_DISCOVERY, TOOL_DISCOVERY_BRIEF } from "@/lib/ai/tool-catalog";
+import type { AgentGroup } from "@/lib/ai/request-context";
 import { readReportIntent, completedReadReport, supportsReportSummary } from "@/lib/ai/read-report-policy";
 import { createUsageCollector } from "@/lib/ai/usage";
 import { buildConversationPrompt, isSimpleConversation, planRequestContext } from "@/lib/ai/request-context";
@@ -7,6 +10,7 @@ import { AdminAuthError } from "@/lib/admin/auth";
 import {
   runModelCompletion,
   type AiToolCall,
+  type AiToolSpec,
   type AiTurnMessage,
 } from "@/lib/ai/client";
 import { CONTENT_PREVIEW_REPAIR, needsContentPreviewRepair } from "@/lib/ai/content-fields";
@@ -49,6 +53,8 @@ export async function POST(request: Request) {
       | {
           phase: "ollama_execute_tools";
           toolCalls: AiToolCall[];
+          catalogGroups?: AgentGroup[];
+          currentPath?: string;
         }
       | {
           phase: "apply_plan";
@@ -87,15 +93,18 @@ export async function POST(request: Request) {
       const allowReportOptimization = groups !== null && requestContext.history.length === 0 && !aiSettings.system_instructions?.trim();
       const reportIntent = allowReportOptimization ? readReportIntent(taskPrompt) : null;
       const context = simpleConversation ? null : (await loadStoreContextSummary(groups === null || groups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g)))).context;
-      const systemPrompt = context ? buildAgentSystemPrompt(aiSettings, context, body.currentPath, groups) : buildConversationPrompt(aiSettings);
+      const initialTools = selectAgentTools(taskPrompt, responsePolicy(aiSettings), groups, allowReportOptimization);
+      const initialGroups = initialTools.every(tool=>tool.name===TOOL_DISCOVERY.name) ? [] : groups ?? [];
+      const systemPrompt = context ? buildAgentSystemPrompt(aiSettings, context, body.currentPath, initialGroups) : buildConversationPrompt(aiSettings);
       return NextResponse.json({
         ok: true,
         systemPrompt,
-        tools: selectAgentTools(taskPrompt, responsePolicy(aiSettings), groups, allowReportOptimization),
+        tools: initialTools,
         history: requestContext.history,
         contextMode: requestContext.mode,
         simpleConversation,
         reportIntent,
+        catalogGroups: initialGroups,
         responsePolicy: responsePolicy(aiSettings),
         ollamaBaseUrl: aiSettings.ollama_base_url,
         model: aiSettings.primary_model,
@@ -114,6 +123,8 @@ export async function POST(request: Request) {
       const plans: AiActionPlan[] = [];
       const widgets: AiUiWidget[] = [];
       const completionSummaries: string[] = [];
+      let activeGroups = catalogGroups(body.catalogGroups ?? []);
+      let availableTools: AiToolSpec[] = [];
 
       for (const tc of body.toolCalls ?? []) {
         const out = await executeAgentToolCall({
@@ -132,6 +143,8 @@ export async function POST(request: Request) {
         if (out.plan) plans.push(out.plan);
         if (out.widget) widgets.push(out.widget);
         if (out.completionSummary) completionSummaries.push(out.completionSummary);
+        if (out.availableTools) availableTools = mergeToolCatalog(availableTools, out.availableTools);
+        if (out.loadedGroups) activeGroups = [...new Set([...activeGroups, ...out.loadedGroups])];
       }
 
       if (!aiSettings.require_confirmation && plans.length > 0) {
@@ -148,6 +161,9 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         toolResults,
+        availableTools,
+        catalogGroups: activeGroups,
+        ...(availableTools.length ? {systemPrompt:buildAgentSystemPrompt(aiSettings, context, body.currentPath, activeGroups)} : {}),
         completionSummaries,
         badges,
         plans,
@@ -179,7 +195,8 @@ export async function POST(request: Request) {
     const { toolPrompt: taskPrompt, groups } = requestContext;
     const allowReportOptimization = groups !== null && requestContext.history.length === 0 && !aiSettings.system_instructions?.trim();
     const reportIntent = allowReportOptimization ? readReportIntent(taskPrompt) : null;
-    const { context, money } = await loadStoreContextSummary(groups === null || groups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g)));
+    let categoriesLoaded = groups === null || groups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g));
+    let { context, money } = await loadStoreContextSummary(categoriesLoaded);
 
     const historyLimit =
       aiSettings.token_budget_mode === "economy"
@@ -193,13 +210,10 @@ export async function POST(request: Request) {
       .filter((h) => typeof h.content === "string" && h.content && (h.role === "user" || h.role === "assistant"))
       .map((h) => ({
         role: h.role,
-        content:
-          aiSettings.token_budget_mode === "economy"
-            ? h.content.slice(0, 600)
-            : h.content.slice(0, 2500),
+        content: h.content,
       }));
 
-    messages.push({ role: "user", content: prompt.slice(0, 4000) });
+    messages.push({ role: "user", content: prompt });
 
     const maxRounds =
       aiSettings.token_budget_mode === "economy"
@@ -209,7 +223,12 @@ export async function POST(request: Request) {
           : 6;
 
     const usage = createUsageCollector();
-    const usageContext = { contextMode: requestContext.mode, toolCount: selectAgentTools(taskPrompt, responsePolicy(aiSettings), groups, allowReportOptimization).length, historyMessages: messages.length - 1 };
+    let activeGroups: AgentGroup[] = groups ?? [];
+    let activeTools = selectAgentTools(taskPrompt, responsePolicy(aiSettings), groups, allowReportOptimization);
+    if (activeTools.every(tool=>tool.name===TOOL_DISCOVERY.name)) activeGroups = [];
+    let discoveryRounds = 0;
+    const toolInstructionsSeen = new Set<string>();
+    const usageContext = { contextMode: requestContext.mode, toolCount: activeTools.length, historyMessages: messages.length - 1 };
     const toolBadges: AiToolBadge[] = [];
     const plans: AiActionPlan[] = [];
     const widgets: AiUiWidget[] = [];
@@ -228,9 +247,9 @@ export async function POST(request: Request) {
       const completion = await runModelCompletion({
         traceId,
         settings: aiSettings,
-        systemPrompt: buildAgentSystemPrompt(aiSettings, context, body.currentPath, groups, responsePolicy(aiSettings, observedRate).summaryInstruction),
+        systemPrompt: buildAgentSystemPrompt(aiSettings, context, body.currentPath, activeGroups, responsePolicy(aiSettings, observedRate).summaryInstruction),
         messages,
-        tools: isLastAllowedRound || reportFinalization ? [] : selectAgentTools(taskPrompt, responsePolicy(aiSettings, observedRate), groups, allowReportOptimization),
+        tools: isLastAllowedRound || reportFinalization ? [] : activeTools,
       });
 
       for (const key of ["limitTokensPerMin", "remainingTokensPerMin", "limitRequests", "remainingRequests"] as const) {
@@ -284,12 +303,26 @@ export async function POST(request: Request) {
         if (exec.plan) plans.push(exec.plan);
         if (exec.widget) { widgets.push(exec.widget); roundWidgets.push(exec.widget); }
         if (exec.completionSummary) completionSummaries.push(exec.completionSummary);
+        if (exec.availableTools) activeTools = mergeToolCatalog(activeTools, [...exec.availableTools, TOOL_DISCOVERY_BRIEF]);
+        if (exec.loadedGroups) {
+          activeGroups = [...new Set([...activeGroups, ...exec.loadedGroups])];
+          if (!categoriesLoaded && activeGroups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g))) {
+            ({ context, money } = await loadStoreContextSummary());
+            categoriesLoaded = true;
+          }
+        }
         messages.push({
           role: "tool",
           toolCallId: tc.id,
           name: tc.name,
-          content: exec.toolOutputJson,
+          content: deduplicateToolInstructions(tc.name, exec.toolOutputJson, toolInstructionsSeen),
         });
+      }
+      // Schema discovery is planning, not a business-action round. Bound retries.
+      if (discoveryOnly(completion.toolCalls) && discoveryRounds < 3) {
+        discoveryRounds++;
+        round--;
+        continue;
       }
       // A successful simple read already has its factual answer and structured card.
       // Otherwise retain the agent; a language-only finalization needs no tool catalog.
@@ -314,12 +347,14 @@ export async function POST(request: Request) {
     }
 
     if (!finalReply) {
-      finalReply =
+      finalReply = toolBadges.length > 0 && toolBadges.every(b => b.name === TOOL_DISCOVERY.name)
+        ? "Capabilities were loaded, but no store read or change was completed. Please clarify the task."
+        :
         plans.length > 0
           ? "I've prepared a confirmation preview below. Review the matched items and click Apply All when ready."
           : autoAppliedTotal > 0
             ? `Done — automatically applied ${autoAppliedTotal} changes.`
-            : "Task completed.";
+            : "I couldn’t finish a final response in this turn. Review any results below, then ask me to continue.";
     }
 
     const payload: AiAgentTurnResponse = {

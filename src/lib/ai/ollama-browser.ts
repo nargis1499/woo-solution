@@ -1,3 +1,6 @@
+import { deduplicateToolInstructions } from "@/lib/ai/tool-results";
+import { mergeToolCatalog, discoveryOnly, LOAD_TOOL_GROUPS } from "@/lib/ai/tool-catalog";
+import type { AgentGroup } from "@/lib/ai/request-context";
 import { completedReadReport, supportsReportSummary, type ReadReportIntent } from "@/lib/ai/read-report-policy";
 import { capturingAiFetch, type LogSink } from "@/lib/logs/capture";
 import { createUsageCollector } from "@/lib/ai/usage";
@@ -112,7 +115,7 @@ function buildPromptToolsAddendum(tools: AiToolSpec[]): string {
   ].join("\n");
 }
 
-function parsePromptToolCalls(content: string, round: number): AiToolCall[] {
+function parsePromptToolCalls(content: string, batch: string): AiToolCall[] {
   const cleaned = content
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
@@ -132,7 +135,7 @@ function parsePromptToolCalls(content: string, round: number): AiToolCall[] {
         return parsed.tool_calls
           .filter((tc) => typeof tc.name === "string" && Boolean(tc.name.trim()))
           .map((tc, idx) => ({
-            id: `ollama_ptc_${round}_${idx}`,
+            id: `ollama_ptc_${batch}_${idx}`,
             name: tc.name!.trim(),
             arguments: parseArgs(tc.arguments),
           }));
@@ -327,7 +330,7 @@ export async function testBrowserOllamaConnection(opts: {
       Array.isArray(result.data.message?.tool_calls) &&
       result.data.message.tool_calls.length > 0;
     const promptVerified =
-      parsePromptToolCalls(result.data.message?.content ?? "", 0).length > 0;
+      parsePromptToolCalls(result.data.message?.content ?? "", "connection").length > 0;
 
     return {
       latencyMs: Date.now() - started,
@@ -356,6 +359,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
     systemPrompt: string;
     simpleConversation?: boolean;
     reportIntent?: ReadReportIntent | null;
+    catalogGroups?: AgentGroup[];
     history?: AiChatHistoryItem[];
     contextMode?: "greeting" | "scoped" | "full";
     responsePolicy: AiResponsePolicy;
@@ -371,21 +375,13 @@ export async function runBrowserOllamaAgentTurn(opts: {
   }
 
   const root = trimSlash(prepJson.ollamaBaseUrl || "http://localhost:11434").replace(/\/v1$/, "");
-  const ollamaTools = prepJson.tools.map((t) => ({
-    type: "function",
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
-    },
-  }));
-
-  let usePromptMode = prepJson.tools.length > 0 && getRememberedPromptToolsFlag();
-
-  const buildSystemContent = (promptMode: boolean) =>
-    promptMode && prepJson.tools.length > 0
-      ? `${prepJson.systemPrompt}\n${buildPromptToolsAddendum(prepJson.tools)}`
-      : prepJson.systemPrompt;
+  let activeTools = prepJson.tools;
+  let activeGroups = prepJson.catalogGroups ?? [];
+  let systemPrompt = prepJson.systemPrompt;
+  const ollamaTools = () => activeTools.map(t => ({ type: "function", function: { name:t.name, description:t.description, parameters:t.parameters } }));
+  let usePromptMode = activeTools.length > 0 && getRememberedPromptToolsFlag();
+  const buildSystemContent = (promptMode: boolean) => promptMode && activeTools.length > 0
+    ? `${systemPrompt}\n${buildPromptToolsAddendum(activeTools)}` : systemPrompt;
 
   const wireMessages: Array<Record<string, unknown>> = [
     { role: "system", content: buildSystemContent(usePromptMode) },
@@ -408,6 +404,8 @@ export async function runBrowserOllamaAgentTurn(opts: {
   let finalReply = "";
   let repairedContentPreview = false;
   let reportFinalization = false;
+  let discoveryRounds = 0;
+  const toolInstructionsSeen = new Set<string>();
 
   for (let round = 0; round <= 3; round++) {
     let turnResult: Awaited<ReturnType<typeof postOllamaChatWithRecovery>>;
@@ -417,7 +415,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
         root,
         model: prepJson.model,
         messages: wireMessages,
-        ollamaTools: !reportFinalization && !usePromptMode && round < 3 && ollamaTools.length > 0 ? ollamaTools : undefined,
+        ollamaTools: !reportFinalization && !usePromptMode && round < 3 && activeTools.length > 0 ? ollamaTools() : undefined,
         numCtx: prepJson.numCtx || 4096,
         disableThinking: prepJson.disableThinking,
         temperature: 0.2,
@@ -426,7 +424,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
       recordUsage(turnResult.data);
       // If native `tools` crashed on round 0 and recovered without prompt instructions yet,
       // re-run round 0 once with the JSON tool schema instructions in the system prompt!
-      if (prepJson.tools.length > 0 && turnResult.usedPromptToolsFallback && !usePromptMode && round === 0) {
+      if (activeTools.length > 0 && turnResult.usedPromptToolsFallback && !usePromptMode && round === 0) {
         usePromptMode = true;
         wireMessages[0] = { role: "system", content: buildSystemContent(true) };
         turnResult = await postOllamaChatWithRecovery({
@@ -451,10 +449,11 @@ export async function runBrowserOllamaAgentTurn(opts: {
       .trim();
 
     const rawNativeCalls = chatJson.message?.tool_calls ?? [];
+    const batch = crypto.randomUUID();
     let parsedCalls: AiToolCall[] = rawNativeCalls
       .filter((c) => Boolean(c.function?.name))
       .map((c, idx) => ({
-        id: `ollama_tc_${round}_${idx}`,
+        id: `ollama_tc_${batch}_${idx}`,
         name: c.function!.name!,
         arguments: parseArgs(c.function?.arguments),
       }));
@@ -465,7 +464,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
     }
 
     if (parsedCalls.length === 0 && round < 3) {
-      parsedCalls = parsePromptToolCalls(content, round);
+      parsedCalls = parsePromptToolCalls(content, batch);
     }
 
     if (parsedCalls.length === 0 && round < 3 && plans.length === 0 && !repairedContentPreview && needsContentPreviewRepair(opts.prompt, content)) {
@@ -502,12 +501,17 @@ export async function runBrowserOllamaAgentTurn(opts: {
       body: JSON.stringify({
         phase: "ollama_execute_tools",
         toolCalls: parsedCalls,
+        catalogGroups: activeGroups,
+        currentPath: opts.currentPath,
       }),
     });
     const execJson = (await execRes.json()) as {
       ok: boolean;
       error?: string;
       completionSummaries?: string[];
+      availableTools?: AiToolSpec[];
+      catalogGroups?: AgentGroup[];
+      systemPrompt?: string;
       toolResults: Array<{ toolCallId: string; name: string; content: string }>;
       badges: AiToolBadge[];
       plans: AiActionPlan[];
@@ -517,6 +521,10 @@ export async function runBrowserOllamaAgentTurn(opts: {
       throw new Error(execJson.error || "Failed to execute store tool call.");
     }
 
+    if (execJson.availableTools?.length) activeTools = mergeToolCatalog(activeTools, execJson.availableTools);
+    if (execJson.catalogGroups) activeGroups = execJson.catalogGroups;
+    if (execJson.systemPrompt) systemPrompt = execJson.systemPrompt;
+    if (!reportFinalization) wireMessages[0] = { role: "system", content: buildSystemContent(usePromptMode) };
     toolBadges.push(...execJson.badges);
     plans.push(...execJson.plans);
     if (execJson.widgets) widgets.push(...execJson.widgets);
@@ -527,29 +535,35 @@ export async function runBrowserOllamaAgentTurn(opts: {
     }
     if (reportFinalization && usePromptMode) {
       // Remove the fallback tool catalog as well as native tools for language-only completion.
-      wireMessages[0] = { role: "system", content: prepJson.systemPrompt };
+      wireMessages[0] = { role: "system", content: systemPrompt };
     }
     for (const tr of execJson.toolResults) {
+      const toolContent = deduplicateToolInstructions(tr.name, tr.content, toolInstructionsSeen);
       if (rawNativeCalls.length > 0 && !usePromptMode) {
         wireMessages.push({
           role: "tool",
           tool_name: tr.name,
-          content: tr.content,
+          content: toolContent,
         });
       } else {
         wireMessages.push({
           role: "user",
-          content: `[TOOL_RESULT name="${tr.name}"]: ${tr.content}`,
+          content: `[TOOL_RESULT name="${tr.name}"]: ${toolContent}`,
         });
       }
+    }
+    if (discoveryOnly(parsedCalls) && discoveryRounds < 3) {
+      discoveryRounds++;
+      round--;
     }
   }
 
   return {
     reply:
       finalReply ||
-      (plans.length > 0
-        ? "Let me know if you'd like to adjust any selections before applying!"
+      (toolBadges.length > 0 && toolBadges.every(b => b.name === LOAD_TOOL_GROUPS)
+        ? "Capabilities were loaded, but no store read or change was completed. Please clarify the task."
+        : plans.length > 0 ? "Let me know if you'd like to adjust any selections before applying!"
         : "Let me know if you'd like to adjust any catalog details!"),
     toolBadges,
     plans,

@@ -574,3 +574,5 @@ Use the **Customer intelligence** chat suggestion for customer analytics, then s
 Install [`20261057000000_customer_intelligence.sql`](supabase/migrations/20261057000000_customer_intelligence.sql) once. See [tool definitions, privacy, metrics and limitations](docs/customer-intelligence.md).
 
 Customer and Order Intelligence format financial values before model generation. Supported self-contained English reports can render a factual summary directly after the read, without another model request. See [shared report execution/token policy](docs/ai-report-execution.md) for scope, language/custom-instruction handling and limits.
+
+All Nemesis capabilities share [lazy tool-schema loading and compact model results](docs/ai-tool-token-policy.md). Uncertain/broad requests start from a small directory and load exact tool schemas instead of the whole toolbox; content reads can select exact fields and ambiguous searches avoid loading multiple full documents. Full copy, mutation arguments and approval data remain intact. Discovery may add a small planning request; actual savings depend on the task and provider logs.

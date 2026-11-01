@@ -13,36 +13,36 @@ import {
 const filterValues = ["all", "depletion", "dead", "overstock", "spike", "reorder"];
 const analysisProperties = {
   filter: { type: "string", enum: filterValues, description: "Signal to inspect; default all." },
-  categorySlug: { type: "string", description: "Exact category slug (optional)." },
-  search: { type: "string", description: "Product name or SKU substring (optional)." },
+  categorySlug: { type: "string", description: "Exact category slug." },
+  search: { type: "string", description: "Name/SKU substring." },
   status: { type: "string", enum: ["active", "draft", "all"], description: "Default active for reports, all for status previews." },
   windowDays: { type: "integer", description: "Sales velocity lookback, 7-365 days. Default 30." },
-  deadDays: { type: "integer", description: "No sales for this many days, 7-365. Only stocked products at least this old qualify. Default 90." },
+  deadDays: { type: "integer", description: "No-sales days 7-365; stocked products at least this old. Default 90." },
   overstockDays: { type: "integer", description: "Excess coverage threshold, 7-365 days. Default 90." },
-  leadTimeDays: { type: "integer", description: "Supplier delivery lead time, 0-180 days. Default 14; ask admin for actual supplier timing." },
+  leadTimeDays: { type: "integer", description: "Supplier lead time 0-180 days, default 14; actual timing is admin-supplied." },
   safetyDays: { type: "integer", description: "Safety buffer, 0-90 days. Default 7." },
   reviewDays: { type: "integer", description: "Extra replenishment cycle coverage, 1-180 days. Default 14." },
   depletionDays: { type: "integer", description: "Flag stockouts within 1-180 days. Default 14." },
   spikeDays: { type: "integer", description: "Recent spike window, 1-30 days. Default 7." },
-  baselineDays: { type: "integer", description: "Non-overlapping baseline BEFORE recent window, 7-180 days. Default 28." },
-  spikeMultiplier: { type: "number", description: "Recent daily sales / baseline daily sales threshold, 1.1-20. Default 2." },
+  baselineDays: { type: "integer", description: "Prior non-overlapping baseline 7-180 days; default 28." },
+  spikeMultiplier: { type: "number", description: "Recent/baseline daily-sales ratio 1.1-20; default 2." },
   minSpikeUnits: { type: "integer", description: "Minimum recent sales for a spike, 2-10000. Default 5." },
   limit: { type: "integer", description: "Maximum result/approval rows, 1-50. Default 20." },
 };
 export const INVENTORY_INTELLIGENCE_TOOLS: AiToolSpec[] = [
   {
     name: "analyze_inventory_intelligence",
-    description: "Inventory Intelligence: deterministically forecast stock depletion from sales velocity, identify dead inventory and overstock, detect sales spikes, and calculate suggested reorder quantities. Reads real orders and stock, including variation/SKU-level analysis. Returns a dashboard with concise findings; never guesses or saves stock. Use this instead of get_store_analytics/query_inventory for inventory predictions.",
+    description: "Compute depletion, dead/overstock, sales spikes and reorder advice from real stock/orders, including variations. Use for forecasts, not snapshot tools. Read-only; forecasts are not guarantees.",
     parameters: { type: "object", properties: analysisProperties },
   },
   {
     name: "preview_inventory_status_update",
-    description: "Inventory Intelligence: prepare an admin-approval card to bulk publish/hide products by a computed signal (dead, overstock, depletion, spike, reorder) or an explicit list of product IDs. Recalculates live analysis, targets parent products only, and never changes stock counts or places supplier orders. Requires filter other than all OR explicit productIds. Ask for target status rather than choosing to hide products yourself.",
+    description: "Mandatory-approval publication preview from recomputed signals or explicit parent IDs. Requires non-all filter OR productIds and requested targetStatus. Never changes stock, updates variations or places supplier orders.",
     parameters: {
       type: "object",
       properties: {
         ...analysisProperties,
-        productIds: { type: "array", items: { type: "string" }, description: "Explicit parent product UUIDs to update (up to 50); not variation IDs." },
+        productIds: { type: "array", items: { type: "string" }, description: "1-50 exact parent UUIDs, not variations." },
         targetStatus: { type: "string", enum: ["active", "draft"] },
       },
       required: ["targetStatus"],
