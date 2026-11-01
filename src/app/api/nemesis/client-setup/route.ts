@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertAdmin, AdminAuthError } from "@/lib/admin/auth";
+import { clientSetupExportError } from "@/lib/client-setup/errors";
 import { createClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
@@ -12,14 +13,20 @@ export async function GET(request: Request) {
     const { data, error } = await db
       .rpc("export_client_setup", { p_copy_settings: copy })
       .abortSignal(AbortSignal.timeout(30000));
-    if (error)
+    if (error) {
+      const diagnostic = clientSetupExportError(error);
       return NextResponse.json(
         {
-          error:
-            "Export could not be generated. Apply the client-setup export migration first. If the schema contains unsupported objects, use a reviewed pg_dump export; see README-CLIENT-SETUP.md.",
+          error: diagnostic.error,
+          diagnostic: diagnostic.kind,
+          code: error.code || "unknown",
         },
-        { status: 503, headers: { "Cache-Control": "no-store" } },
+        {
+          status: diagnostic.status,
+          headers: { "Cache-Control": "private, no-store" },
+        },
       );
+    }
     const result = data as {
       sql?: unknown;
       omitted_settings?: unknown;
