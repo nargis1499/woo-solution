@@ -29,3 +29,7 @@ Existing AI usage collectors still record actual provider-reported input/output 
 ## Verification constraints
 
 For this change: ESLint, TypeScript no-emit and diff checks only. No test suites, synthetic report executions, live AI requests, browser end-to-end runs or database mutations/migrations. Live provider token savings are therefore not measured here. All optional null-filter behavior, admin guards, identity separation and read-only customer restrictions remain intact.
+
+## Universal tool pipeline
+
+[The shared policy for all tool calling](ai-tool-token-policy.md) now extends schema loading, compact model-only results, instruction deduplication and content-field projection to every capability. Unknown requests no longer send every registered tool schema upfront; the model can load the groups it needs. This does not expand deterministic completion to arbitrary writes or drop multi-step requirements.
