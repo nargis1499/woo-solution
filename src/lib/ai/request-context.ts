@@ -1,7 +1,7 @@
 import type { AiSettingsServer } from "./providers";
 import type { AiChatHistoryItem } from "./types";
 
-export type AgentGroup = "inventory_intelligence" | "inventory_operations" | "store_analytics" | "pricing" | "content_seo" | "orders";
+export type AgentGroup = "inventory_intelligence" | "inventory_operations" | "store_analytics" | "pricing" | "content_seo" | "orders" | "customers";
 const REFERENCES = /\b(it|its|them|their|this|these|those|that|same|previous|above|again|instead|continue|also|here|current|selected|yes|no|apply|confirm|approve)\b/i;
 const ELLIPTICAL = /^(?:and\b|what about\b|only\b|more\b|less\b|sort\b|filter\b|next\b|previous\b|(?:for\s+)?(?:last|past)\s+\d+\s+(?:days?|weeks?|months?)\b)/i;
 
@@ -15,7 +15,8 @@ export function isSimpleConversation(prompt: string): boolean {
 
 function detectGroups(prompt: string): AgentGroup[] | null {
   const groups = new Set<AgentGroup>();
-  if (/\b(orders?|customers?|payments?|refunds?|shipments?|shipping|fulfill\w*|tracking|purchases?|buyers?|checkout|cancellations?)\b/i.test(prompt)) groups.add("orders");
+  if (/\b(customers?|buyers?|retention|loyalty|churn)\b/i.test(prompt)) groups.add("customers");
+  if (/\b(orders?|payments?|refunds?|shipments?|shipping|fulfill\w*|tracking|purchases?|checkout|cancellations?)\b/i.test(prompt)) groups.add("orders");
   if (/\b(inventory|stock|restock\w*|reorder\w*|overstock\w*|depletion|sales spikes?|dead inventory)\b/i.test(prompt)) {
     groups.add("inventory_intelligence"); groups.add("inventory_operations");
   }

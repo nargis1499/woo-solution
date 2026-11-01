@@ -1,6 +1,6 @@
 import { createUsageCollector } from "@/lib/ai/usage";
 import { buildConversationPrompt, isSimpleConversation, planRequestContext } from "@/lib/ai/request-context";
-import { responsePolicy, isStandaloneInventoryReport, isStandaloneOrderReport, type AiRateBudget } from "@/lib/ai/response-budget";
+import { responsePolicy, isStandaloneInventoryReport, isStandaloneOrderReport, isStandaloneCustomerReport, type AiRateBudget } from "@/lib/ai/response-budget";
 import { NextResponse } from "next/server";
 import { AdminAuthError } from "@/lib/admin/auth";
 import {
@@ -92,6 +92,7 @@ export async function POST(request: Request) {
         history: requestContext.history,
         contextMode: requestContext.mode,
         simpleConversation,
+        allowCustomerFastFinish: !aiSettings.system_instructions,
         responsePolicy: responsePolicy(aiSettings),
         ollamaBaseUrl: aiSettings.ollama_base_url,
         model: aiSettings.primary_model,
@@ -287,7 +288,8 @@ export async function POST(request: Request) {
       // request (and re-sending context/schemas) when the token/request budget is limited.
       if (responsePolicy(aiSettings, observedRate).mode === "compact" && completion.toolCalls.length === 1 &&
           ((isStandaloneInventoryReport(prompt) && completion.toolCalls[0].name === "analyze_inventory_intelligence") ||
-           (isStandaloneOrderReport(prompt) && completion.toolCalls[0].name === "query_order_intelligence")) &&
+           (isStandaloneOrderReport(prompt) && completion.toolCalls[0].name === "query_order_intelligence") ||
+           (isStandaloneCustomerReport(prompt) && !aiSettings.system_instructions && completion.toolCalls[0].name === "get_customer_analytics")) &&
           completionSummaries.length === completion.toolCalls.length && plans.length === 0 && aiSettings.default_language.toLowerCase().startsWith("en")) {
         finalReply = completionSummaries.slice(0, 2).join(" ");
         break;

@@ -21,6 +21,7 @@ import {
   ShoppingCartIcon,
   SparklesIcon,
   TagIcon,
+  UsersIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -76,6 +77,7 @@ type QuickPromptAction = {
 };
 
 const STARTER_PROMPTS: QuickPromptAction[] = [
+  { label: "Customer intelligence", prompt: "Analyze customer intelligence.", icon: UsersIcon },
   { label: "Order intelligence", prompt: "Analyze order intelligence.", icon: ShoppingCartIcon },
   {
     label: "Inventory intelligence",
@@ -109,6 +111,11 @@ const STARTER_PROMPTS: QuickPromptAction[] = [
 
 function getFollowUpActions(entry: Extract<ChatEntry, { role: "assistant" }>): QuickPromptAction[] {
   const toolNames = new Set(entry.toolBadges.map((b) => b.name));
+  if (entry.widgets.some(w => w.kind === "customer_intelligence")) return [
+    { label: "Top customers", prompt: "Show top customers by completed paid spending.", icon: UsersIcon },
+    { label: "Inactive buyers", prompt: "Show customers who have not purchased in 90 days.", icon: UsersIcon },
+    { label: "Repeat buyers", prompt: "Show repeat customers with at least two completed paid purchases.", icon: UsersIcon },
+  ];
 
   const report = entry.widgets.find((w) => w.kind === "inventory_intelligence");
   if (report?.kind === "inventory_intelligence") {

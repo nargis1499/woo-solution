@@ -157,3 +157,13 @@ export async function saveAiSettingsAction(
     return { ok: false, error: friendlyError(err) };
   }
 }
+
+/** Model-free customer browsing. Admin and RPC guards apply on every request. */
+export async function browseCustomerIntelligence(mode: import("@/lib/ai/customers/types").CustomerMode, filters: Record<string,unknown>) {
+  try {
+    const { readCustomers } = await import("@/lib/ai/customers/service");
+    return { ok:true as const, report:await readCustomers(filters,mode) };
+  } catch(error) {
+    return { ok:false as const, error:error instanceof Error?error.message:"Customer report unavailable." };
+  }
+}

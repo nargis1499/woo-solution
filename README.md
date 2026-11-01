@@ -566,3 +566,9 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 ## License
 
 MIT
+
+### Customer Intelligence in Nemesis AI
+
+Use the **Customer intelligence** chat suggestion for customer analytics, then search, inspect customer details/order history, or request top, inactive, repeat and newly converted buyers. Eight grouped read-only tools calculate full-cohort metrics in the database; card pagination and inspection do not make model calls. Qualifying purchases are **completed and paid**; new-buyer cohorts use first qualifying order dates, not signups. Registered/guest identities stay separate and contact details are excluded from model summaries.
+
+Install [`20261057000000_customer_intelligence.sql`](supabase/migrations/20261057000000_customer_intelligence.sql) once. See [tool definitions, privacy, metrics and limitations](docs/customer-intelligence.md).

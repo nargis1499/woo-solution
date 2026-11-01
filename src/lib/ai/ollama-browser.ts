@@ -1,6 +1,6 @@
 import { capturingAiFetch, type LogSink } from "@/lib/logs/capture";
 import { createUsageCollector } from "@/lib/ai/usage";
-import { isStandaloneInventoryReport, isStandaloneOrderReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
+import { isStandaloneInventoryReport, isStandaloneOrderReport, isStandaloneCustomerReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
 import { CONTENT_PREVIEW_REPAIR, needsContentPreviewRepair } from "@/lib/ai/content-fields";
 import type { AiToolCall, AiToolSpec } from "@/lib/ai/client";
 import type {
@@ -354,6 +354,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
     error?: string;
     systemPrompt: string;
     simpleConversation?: boolean;
+    allowCustomerFastFinish?: boolean;
     history?: AiChatHistoryItem[];
     contextMode?: "greeting" | "scoped" | "full";
     responsePolicy: AiResponsePolicy;
@@ -519,7 +520,8 @@ export async function runBrowserOllamaAgentTurn(opts: {
     if (execJson.widgets) widgets.push(...execJson.widgets);
     if (prepJson.responsePolicy.mode === "compact" && parsedCalls.length === 1 &&
         ((isStandaloneInventoryReport(opts.prompt) && parsedCalls[0].name === "analyze_inventory_intelligence") ||
-         (isStandaloneOrderReport(opts.prompt) && parsedCalls[0].name === "query_order_intelligence")) &&
+         (isStandaloneOrderReport(opts.prompt) && parsedCalls[0].name === "query_order_intelligence") ||
+         (isStandaloneCustomerReport(opts.prompt) && prepJson.allowCustomerFastFinish && parsedCalls[0].name === "get_customer_analytics")) &&
         execJson.completionSummaries?.length === parsedCalls.length && plans.length === 0 && prepJson.language.toLowerCase().startsWith("en")) {
       finalReply = execJson.completionSummaries.slice(0, 2).join(" ");
       break;

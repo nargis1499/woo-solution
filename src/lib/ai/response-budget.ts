@@ -51,3 +51,8 @@ export function isStandaloneInventoryReport(prompt: string): boolean {
 export function isStandaloneOrderReport(prompt: string): boolean {
   return /^(?:analyze|show|run) order intelligence(?: report)?[.!?]?$/i.test(prompt.trim());
 }
+
+/** Only the explicit read-only customer starter narrows to the analytics tool. */
+export function isStandaloneCustomerReport(prompt: string): boolean {
+  return /^(?:analyze|show|run) customer intelligence(?: report)?[.!?]?$/i.test(prompt.trim());
+}
