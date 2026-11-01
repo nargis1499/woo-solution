@@ -1,4 +1,5 @@
 import "server-only";
+import { reportMoneyForModel } from "@/lib/ai/report-money";
 import { assertAdmin } from "@/lib/admin/auth";
 import { UUID_RE } from "@/lib/admin/form";
 import { createClient } from "@/lib/supabase/server";
@@ -83,7 +84,7 @@ export async function executeOrderTool(call: AiToolCall, policy: AiResponsePolic
       ? `${report.total} orders reviewed; eligible paid revenue ${formatMoney(report.metrics.revenueMicros, USD_MONEY)} and paid-order AOV ${formatMoney(report.metrics.aovMicros, USD_MONEY)} (USD). ${insight}; no changes were made.`
       : undefined;
     return { badge, completionSummary, widget: { ...report, id: `orders_${call.id}`, kind: "order_intelligence", initialVisibleRows: policy.visibleRows },
-      toolOutputJson: JSON.stringify({
+      toolOutputJson: JSON.stringify(reportMoneyForModel({
         mode, generatedAt: report.generatedAt, filters: report.filters, total: report.total, hasMore: report.hasMore,
         metrics: report.metrics, baseCurrency: "USD", sample: report.rows.slice(0, policy.modelSampleRows).map(o => ({
           id: o.id, orderNumber: o.order_number, status: o.status, payment: o.payment_status, fulfillment: o.fulfillment_status,
@@ -94,8 +95,8 @@ export async function executeOrderTool(call: AiToolCall, policy: AiResponsePolic
         highestRevenueProducts: report.highestRevenueProducts.slice(0, policy.modelSampleRows),
         customers: report.customers.slice(0, policy.modelSampleRows).map(c => ({ name: c.name, customerOrderId: c.sample_order_id, purchases: c.purchases, spendingMicros: c.spending, cancellations: c.cancellations, refunds: c.refunds, lastPurchase: c.last_purchase, frequencyDays: c.frequency_days })),
         combinations: report.combinations.slice(0, policy.modelSampleRows),
-        instruction: policy.summaryInstruction + " Dashboard contains full loaded details and local pagination. Model item/customer/product examples are sampled, not complete lists. Totals cover all matching orders, not only the page. Revenue/AOV use paid non-cancelled orders only, in USD; line sales are gross item sales. Counts of refunded orders are not refund-amount accounting. Payment success/failure rates cannot be calculated without gateway attempt data; show recorded payment-status distribution only. Unknown legacy tax/discount/timestamps are not zero. Never expose addresses/payment transaction identifiers in summaries. Customer switches (inactiveOnly/repeatOnly/highRiskOnly) filter the customer list and exact full-cohort metrics, not the base order totals/rows. Use cohortSpendingMicros/cohortOrders/cohortPurchases for cohort questions; never sum just the top customer examples. Customer spending/frequency is limited to the displayed history window; lifetime only for all-history scope.",
-      }),
+        instruction: policy.summaryInstruction + " Dashboard contains full loaded details and local pagination. Model item/customer/product examples are sampled, not complete lists. Totals cover all matching orders, not only the page. Revenue/AOV use paid non-cancelled orders only, in USD; line sales are gross item sales. Counts of refunded orders are not refund-amount accounting. Payment success/failure rates cannot be calculated without gateway attempt data; show recorded payment-status distribution only. Unknown legacy tax/discount/timestamps are not zero. Never expose addresses/payment transaction identifiers in summaries. Customer switches (inactiveOnly/repeatOnly/highRiskOnly) filter the customer list and exact full-cohort metrics, not the base order totals/rows. Money is already formatted USD; never rescale it. Use cohortSpendingUSD/cohortOrders/cohortPurchases for cohort questions; never sum just the top customer examples. Customer spending/frequency is limited to the displayed history window; lifetime only for all-history scope.",
+      }, ["sales"])),
     };
   }
   const a = call.arguments;

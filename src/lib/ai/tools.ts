@@ -1,8 +1,9 @@
+import { readReportIntent } from "@/lib/ai/read-report-policy";
 import { CUSTOMER_INTELLIGENCE_TOOLS, executeCustomerTool } from "@/lib/ai/customers/tools";
 import "server-only";
 import { isSimpleConversation, isExplicitReadRequest, requestGroups, type AgentGroup } from "@/lib/ai/request-context";
 import { ORDER_INTELLIGENCE_TOOLS, executeOrderTool } from "@/lib/ai/orders/tools";
-import { responsePolicy, isStandaloneInventoryReport, isStandaloneOrderReport, isStandaloneCustomerReport, type AiResponsePolicy } from "@/lib/ai/response-budget";
+import { responsePolicy, type AiResponsePolicy } from "@/lib/ai/response-budget";
 import { INVENTORY_INTELLIGENCE_TOOLS, executeInventoryTool } from "@/lib/ai/inventory/tools";
 import { assertAdmin } from "@/lib/admin/auth";
 import { expireTag, revalidateStore, UUID_RE } from "@/lib/admin/form";
@@ -211,17 +212,14 @@ export const AGENT_TOOL_GROUPS = [
 ] as const;
 export const AGENT_TOOLS: AiToolSpec[] = AGENT_TOOL_GROUPS.flatMap((group) => group.tools);
 
-/** Small tool catalog for unambiguous read-only reports on constrained turns. */
-export function selectAgentTools(prompt: string, policy: AiResponsePolicy, scopedGroups?: AgentGroup[] | null): AiToolSpec[] {
+/** Narrow only self-contained reads; unknown/mixed requests retain capability groups. */
+export function selectAgentTools(prompt: string, policy: AiResponsePolicy, scopedGroups?: AgentGroup[] | null, allowReportNarrowing = true): AiToolSpec[] {
   if (isSimpleConversation(prompt)) return [];
   const groups = scopedGroups === undefined ? requestGroups(prompt) : scopedGroups;
-  const selected = policy.mode === "compact" && isStandaloneCustomerReport(prompt)
-    ? CUSTOMER_INTELLIGENCE_TOOLS.filter(t => t.name === "get_customer_analytics")
-    : policy.mode === "compact" && isStandaloneInventoryReport(prompt)
-    ? INVENTORY_INTELLIGENCE_TOOLS.filter((tool) => tool.name === "analyze_inventory_intelligence")
-    : policy.mode === "compact" && isStandaloneOrderReport(prompt)
-      ? ORDER_INTELLIGENCE_TOOLS.filter((tool) => tool.name === "query_order_intelligence")
-      : groups ? AGENT_TOOL_GROUPS.filter((group) => groups.includes(group.id)).flatMap((group) => group.tools) : AGENT_TOOLS;
+  const reportIntent = allowReportNarrowing && groups !== null ? readReportIntent(prompt) : null;
+  const reportTools = reportIntent ? AGENT_TOOL_GROUPS.filter(group => groups?.includes(group.id)).flatMap(group => group.tools).filter(tool => tool.name === reportIntent.tool) : [];
+  if (reportTools.length) return reportTools;
+  const selected = groups ? AGENT_TOOL_GROUPS.filter(group => groups.includes(group.id)).flatMap(group => group.tools) : AGENT_TOOLS;
   return groups && isExplicitReadRequest(prompt)
     ? selected.filter(tool => ["query_inventory", "get_store_analytics", "query_content", "query_order_intelligence", "analyze_inventory_intelligence", ...CUSTOMER_INTELLIGENCE_TOOLS.map(t => t.name)].includes(tool.name))
     : selected;
@@ -276,7 +274,7 @@ export function buildAgentSystemPrompt(
 
   return [
     `You are Nemesis AI, the store operations agent inside the "${store.storeName}" admin dashboard.`,
-    has("customers") ? `Customer Intelligence: use the eight customer tools for profiles, history, search, top/inactive/repeat/new buyers and analytics. Purchases/spending require completed AND paid, unlike broad paid-order reports. New buyers use their first lifetime qualifying ORDER DATE, not signup or a known conversion timestamp. Current statuses do not reconstruct historical status. Respect returned date/cohort definitions; never extrapolate samples. Use exact returned customer keys, never merge by name or combine guests with registered identities. Contact details are admin-card-only. No churn/fraud predictions, inferred demographic traits, messages, account edits or automatic discounts.` : "",
+    has("customers") ? `Customers: purchases/spending require completed AND paid; new buyers use first lifetime qualifying order date, not signup/conversion time. Dates use current statuses, not historical reconstruction. Never merge registered/guest identities or names. Use exact keys; ask if ambiguous. Contacts are UI-only. No churn/fraud prediction or customer edits. Null optional filters use defaults. Model money is formatted USD: copy it, never rescale. Totals cover all matches, rows are samples.` : "",
     has("orders") ? `Orders: use query_order_intelligence for investigation, search, paid revenue and order problems. Prefer Customer Intelligence tools for customer profiles/segments/history when available. "Analyze order intelligence" means mode=report. Defaults: reports 30 days, problems 90 days, customers all history. Use returned filters/totals; never extrapolate a page. Refunded is a payment status; unknown taxes/discounts/timestamps are not zero. Gateway success/failure rates need attempt records. Use preview_order_operations with explicit targets; approval is mandatory even with auto-apply. Refund requests do not transfer money; notifications are order-chat/in-app, not email/SMS. Notes are private. Never guess identity, merge by name or expose unnecessary contact/payment details. Bulk actions must clearly state the selected batch scope.` : "",
     has("inventory_intelligence") ? `Inventory: analyze_inventory_intelligence computes forecasts, dead/overstock, spikes and reorders from real history. Never guess numbers or guarantee forecasts. Briefly mention relevant lookback/lead time and missing/limited evidence. Recommendations neither order nor receive stock. Bulk publication changes use preview_inventory_status_update with the same filters/options, an explicit requested target status and mandatory approval. Parent/variation quantities overlap; never sum them.` : "",
     budgetInstruction,

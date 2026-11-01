@@ -1,6 +1,7 @@
+import { readReportIntent, completedReadReport, supportsReportSummary } from "@/lib/ai/read-report-policy";
 import { createUsageCollector } from "@/lib/ai/usage";
 import { buildConversationPrompt, isSimpleConversation, planRequestContext } from "@/lib/ai/request-context";
-import { responsePolicy, isStandaloneInventoryReport, isStandaloneOrderReport, isStandaloneCustomerReport, type AiRateBudget } from "@/lib/ai/response-budget";
+import { responsePolicy, type AiRateBudget } from "@/lib/ai/response-budget";
 import { NextResponse } from "next/server";
 import { AdminAuthError } from "@/lib/admin/auth";
 import {
@@ -83,16 +84,18 @@ export async function POST(request: Request) {
       const simpleConversation = isSimpleConversation(prompt);
       const requestContext = planRequestContext(prompt, body.history);
       const { toolPrompt: taskPrompt, groups } = requestContext;
+      const allowReportOptimization = groups !== null && requestContext.history.length === 0 && !aiSettings.system_instructions?.trim();
+      const reportIntent = allowReportOptimization ? readReportIntent(taskPrompt) : null;
       const context = simpleConversation ? null : (await loadStoreContextSummary(groups === null || groups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g)))).context;
       const systemPrompt = context ? buildAgentSystemPrompt(aiSettings, context, body.currentPath, groups) : buildConversationPrompt(aiSettings);
       return NextResponse.json({
         ok: true,
         systemPrompt,
-        tools: selectAgentTools(taskPrompt, responsePolicy(aiSettings), groups),
+        tools: selectAgentTools(taskPrompt, responsePolicy(aiSettings), groups, allowReportOptimization),
         history: requestContext.history,
         contextMode: requestContext.mode,
         simpleConversation,
-        allowCustomerFastFinish: !aiSettings.system_instructions,
+        reportIntent,
         responsePolicy: responsePolicy(aiSettings),
         ollamaBaseUrl: aiSettings.ollama_base_url,
         model: aiSettings.primary_model,
@@ -174,6 +177,8 @@ export async function POST(request: Request) {
     }
     const requestContext = planRequestContext(prompt, body.history);
     const { toolPrompt: taskPrompt, groups } = requestContext;
+    const allowReportOptimization = groups !== null && requestContext.history.length === 0 && !aiSettings.system_instructions?.trim();
+    const reportIntent = allowReportOptimization ? readReportIntent(taskPrompt) : null;
     const { context, money } = await loadStoreContextSummary(groups === null || groups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g)));
 
     const historyLimit =
@@ -204,7 +209,7 @@ export async function POST(request: Request) {
           : 6;
 
     const usage = createUsageCollector();
-    const usageContext = { contextMode: requestContext.mode, toolCount: selectAgentTools(taskPrompt, responsePolicy(aiSettings), groups).length, historyMessages: messages.length - 1 };
+    const usageContext = { contextMode: requestContext.mode, toolCount: selectAgentTools(taskPrompt, responsePolicy(aiSettings), groups, allowReportOptimization).length, historyMessages: messages.length - 1 };
     const toolBadges: AiToolBadge[] = [];
     const plans: AiActionPlan[] = [];
     const widgets: AiUiWidget[] = [];
@@ -216,6 +221,7 @@ export async function POST(request: Request) {
     let finalReply = "";
     let repairedContentPreview = false;
     const observedRate: AiRateBudget = {};
+    let reportFinalization = false;
 
     for (let round = 0; round <= maxRounds; round++) {
       const isLastAllowedRound = round === maxRounds;
@@ -224,7 +230,7 @@ export async function POST(request: Request) {
         settings: aiSettings,
         systemPrompt: buildAgentSystemPrompt(aiSettings, context, body.currentPath, groups, responsePolicy(aiSettings, observedRate).summaryInstruction),
         messages,
-        tools: isLastAllowedRound ? [] : selectAgentTools(taskPrompt, responsePolicy(aiSettings, observedRate), groups),
+        tools: isLastAllowedRound || reportFinalization ? [] : selectAgentTools(taskPrompt, responsePolicy(aiSettings, observedRate), groups, allowReportOptimization),
       });
 
       for (const key of ["limitTokensPerMin", "remainingTokensPerMin", "limitRequests", "remainingRequests"] as const) {
@@ -262,6 +268,7 @@ export async function POST(request: Request) {
       });
 
       const completionSummaries: string[] = [];
+      const roundWidgets: AiUiWidget[] = [];
       for (const tc of completion.toolCalls) {
         const exec = await executeAgentToolCall({
           call: tc,
@@ -275,7 +282,7 @@ export async function POST(request: Request) {
         });
         toolBadges.push(exec.badge);
         if (exec.plan) plans.push(exec.plan);
-        if (exec.widget) widgets.push(exec.widget);
+        if (exec.widget) { widgets.push(exec.widget); roundWidgets.push(exec.widget); }
         if (exec.completionSummary) completionSummaries.push(exec.completionSummary);
         messages.push({
           role: "tool",
@@ -284,14 +291,11 @@ export async function POST(request: Request) {
           content: exec.toolOutputJson,
         });
       }
-      // Pure read-only reports already have deterministic findings. Save another model
-      // request (and re-sending context/schemas) when the token/request budget is limited.
-      if (responsePolicy(aiSettings, observedRate).mode === "compact" && completion.toolCalls.length === 1 &&
-          ((isStandaloneInventoryReport(prompt) && completion.toolCalls[0].name === "analyze_inventory_intelligence") ||
-           (isStandaloneOrderReport(prompt) && completion.toolCalls[0].name === "query_order_intelligence") ||
-           (isStandaloneCustomerReport(prompt) && !aiSettings.system_instructions && completion.toolCalls[0].name === "get_customer_analytics")) &&
-          completionSummaries.length === completion.toolCalls.length && plans.length === 0 && aiSettings.default_language.toLowerCase().startsWith("en")) {
-        finalReply = completionSummaries.slice(0, 2).join(" ");
+      // A successful simple read already has its factual answer and structured card.
+      // Otherwise retain the agent; a language-only finalization needs no tool catalog.
+      reportFinalization = completedReadReport(reportIntent, completion.toolCalls, roundWidgets, plans.length > 0, completionSummaries);
+      if (reportFinalization && supportsReportSummary(aiSettings.default_language)) {
+        finalReply = completionSummaries[0];
         break;
       }
     }

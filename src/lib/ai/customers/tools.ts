@@ -1,4 +1,5 @@
 import "server-only";
+import { customerCompletionSummary, customerModelReport } from "./presentation";
 import type { AiToolCall, AiToolSpec } from "@/lib/ai/client";
 import type { AiResponsePolicy } from "@/lib/ai/response-budget";
 import type { AiCustomerIntelligenceWidget } from "./types";
@@ -7,48 +8,45 @@ import { isCustomerTool, readCustomers } from "./service";
 const parameterDefinitions = {
   customerKey: {
     type: "string",
-    description:
-      "Exact opaque key returned by customer search. Never invent it or merge by name.",
+    description: "Exact key from search; never invent or merge identities.",
   },
   customerId: {
     type: "string",
-    description: "Exact registered user UUID, if already known.",
+    description: "Exact registered user UUID.",
   },
   search: {
     type: "string",
-    description:
-      "Literal name/email substring, max 120 characters. Ambiguous matches stay separate.",
+    description: "Literal name/email substring, max 120 characters.",
   },
   from: {
     type: "string",
     description:
-      "Inclusive UTC order-placement date. Default all history; new/analytics default 30 days.",
+      "Inclusive UTC order date; new/analytics default 30 days, otherwise all history.",
   },
   to: {
     type: "string",
-    description:
-      "Exclusive UTC order-placement boundary, default now. Uses current recorded statuses, not historical status reconstruction.",
+    description: "Exclusive UTC order date; default now.",
   },
   limit: {
     type: "integer",
-    description: "Page size 1-50; default 10. UI pagination is model-free.",
+    description: "Rows 1-50; default 10.",
   },
   page: { type: "integer", description: "Page 1-10000." },
   inactiveDays: {
     type: "integer",
     description:
-      "Days since last completed/paid order date, default 90. Never-purchased accounts are not inactive buyers.",
+      "Days since last qualifying order; default 90, past buyers only.",
   },
   minPurchases: {
     type: "integer",
     description:
-      "Minimum completed AND paid purchases in the order-date window; repeat default 2.",
+      "Minimum qualifying window purchases; repeat minimum/default 2.",
   },
   sort: {
     type: "string",
     enum: ["spending", "purchases", "newest", "oldest", "name"],
     description:
-      "Spending/purchases use selected window; newest/oldest use lifetime first/last qualifying order dates.",
+      "Window spending/count; lifetime first/last purchase date; or name.",
   },
 };
 // Providers can emit explicit null for omitted optional arguments. Match the
@@ -61,27 +59,27 @@ const properties = Object.fromEntries(
       type: [definition.type, "null"],
       // JSON Schema enums constrain null too, independently of the type union.
       ...("enum" in definition ? { enum: [...definition.enum, null] } : {}),
-      description: `${definition.description} Omit or pass null when not supplied.`,
+      description: definition.description,
     },
   ]),
 );
 const descriptions: Record<keyof typeof CUSTOMER_TOOL_MODES, string> = {
   get_customer_details:
-    "Retrieve a selected customer's available profile, recorded contact details and purchase totals. Contacts render only in the admin card, not the model summary. Exact identity required; no authentication/payment secrets.",
+    "Available customer profile and purchase totals. Requires exact identity; search first if unknown. Contacts are UI-only.",
   get_customer_purchase_history:
-    "Retrieve a selected customer's paginated order history, all statuses. Completed AND paid eligibility is labelled per order. Exact identity required.",
+    "Paged orders, all statuses, for an exact customer. Search first if identity unknown.",
   search_customers:
-    "Search/filter registered customers and separately grouped guests, including registered accounts without purchases. Returns stable customer keys and exact full-match totals.",
+    "Search registered customers and separate guest groups, including never-buyers. Returns exact keys and full-match totals.",
   get_top_customers:
-    "Rank customers by recorded completed/paid spending in the selected order-date window, not predicted lifetime value or profit.",
+    "Rank by qualifying window spending, not predicted value or profit.",
   get_inactive_customers:
-    "Find past completed/paid buyers whose last qualifying order date is older than inactiveDays. Never-purchased accounts excluded. No churn prediction.",
+    "Past buyers whose last qualifying order predates inactiveDays; not never-buyers or predicted churn.",
   get_repeat_customers:
-    "Find customers with multiple completed AND paid purchases in the selected order-date window; default minimum 2.",
+    "At least two qualifying window purchases; configurable higher minimum.",
   get_new_customers:
-    "Find first-time converted buyers by their earliest lifetime completed/paid ORDER DATE within the window (default 30 days). Not new signups; actual conversion timestamps are not reconstructed.",
+    "First lifetime qualifying order date falls in window (default 30 days); not signups or verified conversion timestamps.",
   get_customer_analytics:
-    "Calculate exact full-cohort customer/buyer counts, completed/paid spending, AOV, new/returning/repeat/inactive counts. Default 30-day order-date window. Returns a structured chat dashboard.",
+    "Full-cohort counts, spending, AOV and new/returning/repeat/inactive metrics; default 30 days.",
 };
 const identity = {
   customerKey: properties.customerKey,
@@ -137,20 +135,7 @@ export async function executeCustomerTool(
       name: call.name,
       summary: `${call.name}(live read-only customer data)`,
     },
-    completionSummary: `Customer Intelligence is ready: ${report.metrics.customers} matching customer identities and ${report.metrics.purchases} completed, paid purchases in the selected order-date window.`,
-    toolOutputJson: JSON.stringify({
-      mode: report.mode,
-      filters: {
-        ...report.filters,
-        search: report.filters.search ? "[filter applied]" : "",
-      },
-      total: report.total,
-      metrics: report.metrics,
-      customers: report.rows.slice(0, policy.modelSampleRows),
-      history: report.history.slice(0, policy.modelSampleRows),
-      instruction:
-        policy.summaryInstruction +
-        " Figures cover the full matching cohort, not just sampled rows. Purchases/spending mean completed AND paid; all money is base USD micros, not profit or predicted lifetime value. Lifetime columns are labelled separately from window columns. New buyers use first lifetime qualifying order placement date, NOT signup or verified conversion timestamp. Statuses are current, not reconstructed as-of history. Guest email groups are heuristic; never merge with registered accounts or by name. Do not request/echo contact data. Details contacts are UI-only. Refund/cancellation counts are not fraud. Do not send messages, edit customers or offer automatic account actions.",
-    }),
+    completionSummary: customerCompletionSummary(report),
+    toolOutputJson: JSON.stringify(customerModelReport(report, policy)),
   };
 }

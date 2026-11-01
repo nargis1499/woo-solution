@@ -572,3 +572,5 @@ MIT
 Use the **Customer intelligence** chat suggestion for customer analytics, then search, inspect customer details/order history, or request top, inactive, repeat and newly converted buyers. Eight grouped read-only tools calculate full-cohort metrics in the database; card pagination and inspection do not make model calls. Qualifying purchases are **completed and paid**; new-buyer cohorts use first qualifying order dates, not signups. Registered/guest identities stay separate and contact details are excluded from model summaries.
 
 Install [`20261057000000_customer_intelligence.sql`](supabase/migrations/20261057000000_customer_intelligence.sql) once. See [tool definitions, privacy, metrics and limitations](docs/customer-intelligence.md).
+
+Customer and Order Intelligence format financial values before model generation. Supported self-contained English reports can render a factual summary directly after the read, without another model request. See [shared report execution/token policy](docs/ai-report-execution.md) for scope, language/custom-instruction handling and limits.
