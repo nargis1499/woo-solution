@@ -1,3 +1,4 @@
+import type { AiProductQueryWidget } from "./products/types";
 import type { AiCustomerIntelligenceWidget } from "@/lib/ai/customers/types";
 import type { AiOrderIntelligenceWidget } from "@/lib/ai/orders/types";
 import type { InventoryReport } from "@/lib/ai/inventory/intelligence";
@@ -190,6 +191,7 @@ export type AiInventoryIntelligenceWidget = InventoryReport & {
 };
 
 export type AiUiWidget =
+  | AiProductQueryWidget
   | AiCustomerIntelligenceWidget
   | AiOrderIntelligenceWidget
   | AiInventoryIntelligenceWidget

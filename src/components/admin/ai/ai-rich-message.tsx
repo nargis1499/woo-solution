@@ -1,4 +1,5 @@
 "use client";
+import { ProductQueryCard } from "./product-query-card";
 import { CustomerIntelligenceCard } from "./customer-intelligence-card";
 
 import { Fragment, useState, type ReactNode } from "react";
@@ -85,6 +86,7 @@ export function ToolOperationsAccordion({ badges }: { badges: AiToolBadge[] }) {
 /* ── 2. Structured Read-Tool Dashboard Widgets ───────────────────────────── */
 
 export function AiWidgetCard({ widget }: { widget: AiUiWidget }) {
+  if (widget.kind === "product_query") return <ProductQueryCard widget={widget} />;
   if (widget.kind === "customer_intelligence") return <CustomerIntelligenceCard widget={widget} />;
   if (widget.kind === "order_intelligence") return <OrderIntelligenceCard widget={widget} />;
   if (widget.kind === "inventory_intelligence") return <InventoryIntelligenceCard widget={widget} />;

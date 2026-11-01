@@ -53,3 +53,7 @@ Register new tools in `AGENT_TOOL_GROUPS`; new groups also extend `AgentGroup` a
 Existing diagnostic logs capture actual provider-bound bodies and usage collectors count all reported requests, including discovery. The UI's tool-count metadata describes the initial catalog, not the eventual union of lazily loaded tools. Model-free paging/details/approval remain model-free.
 
 Verification for this implementation: ESLint, TypeScript no-emit and diff checks. No test suites, connection tests, synthetic tool executions, live model requests, database mutations or end-to-end browser runs. Actual token savings and live provider compatibility are not runtime-measured here; use real per-turn logs after deployment, not estimated claims based on JSON character count.
+
+## Product/stock query extension
+
+`query_inventory` now loads one reusable comparison/filter schema, not separate per-sentence tools. General catalog routing no longer removes tools using an English read-prefix regex; existing lazy discovery and narrow report allowlists remain. Database queries return exact full-cohort metrics and bounded pages; the existing model-only `items` projection keeps only policy-sized examples, with loaded/shown counts and `sampleOnly`. Full UI pages and model-free pagination remain intact. The richer schema has a real token cost when loaded; no measured savings claim is made. See [product/stock query policy](product-stock-queries.md) for the applied read-only migration, supported operators, validation and verification scope.

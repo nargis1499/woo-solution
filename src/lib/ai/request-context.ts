@@ -109,8 +109,3 @@ export function buildConversationPrompt(settings: Pick<AiSettingsServer, "defaul
     settings.system_instructions ? `Store instructions: ${settings.system_instructions}` : "",
   ].filter(Boolean).join("\n");
 }
-
-export function isExplicitReadRequest(prompt: string): boolean {
-  return /^(?:please\s+)?(?:show|list|find|search|analy[sz]e|investigate|report|compare|calculate|which|what|how many|how much|give|tell|summari[sz]e|detect|identify)\b/i.test(prompt.trim())
-    && !/\b(update|change|set|add|send|notify|cancel|refund|prepare|draft|publish|hide|restock|apply|mark|rewrite|generate|translate|remove|delete|fix)\b/i.test(prompt);
-}
