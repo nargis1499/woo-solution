@@ -4,7 +4,7 @@ import type { AiResponsePolicy } from "@/lib/ai/response-budget";
 import type { AiCustomerIntelligenceWidget } from "./types";
 import { CUSTOMER_TOOL_MODES } from "./types";
 import { isCustomerTool, readCustomers } from "./service";
-const properties = {
+const parameterDefinitions = {
   customerKey: {
     type: "string",
     description:
@@ -51,6 +51,20 @@ const properties = {
       "Spending/purchases use selected window; newest/oldest use lifetime first/last qualifying order dates.",
   },
 };
+// Providers can emit explicit null for omitted optional arguments. Match the
+// service's null-as-absent behavior in the wire schema, before provider validation.
+const properties = Object.fromEntries(
+  Object.entries(parameterDefinitions).map(([name, definition]) => [
+    name,
+    {
+      ...definition,
+      type: [definition.type, "null"],
+      // JSON Schema enums constrain null too, independently of the type union.
+      ...("enum" in definition ? { enum: [...definition.enum, null] } : {}),
+      description: `${definition.description} Omit or pass null when not supplied.`,
+    },
+  ]),
+);
 const descriptions: Record<keyof typeof CUSTOMER_TOOL_MODES, string> = {
   get_customer_details:
     "Retrieve a selected customer's available profile, recorded contact details and purchase totals. Contacts render only in the admin card, not the model summary. Exact identity required; no authentication/payment secrets.",
