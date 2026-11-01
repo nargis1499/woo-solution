@@ -1,3 +1,4 @@
+import type { AiCustomerIntelligenceWidget } from "@/lib/ai/customers/types";
 import type { AiOrderIntelligenceWidget } from "@/lib/ai/orders/types";
 import type { InventoryReport } from "@/lib/ai/inventory/intelligence";
 import type { AiContentEntity } from "@/lib/ai/content-fields";
@@ -189,6 +190,7 @@ export type AiInventoryIntelligenceWidget = InventoryReport & {
 };
 
 export type AiUiWidget =
+  | AiCustomerIntelligenceWidget
   | AiOrderIntelligenceWidget
   | AiInventoryIntelligenceWidget
   | AiInventoryWidget
