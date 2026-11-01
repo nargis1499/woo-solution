@@ -32,8 +32,8 @@ export function responsePolicy(settings: Pick<AiSettingsServer, "token_budget_mo
     modelSampleRows: compact ? 3 : 12,
     visibleRows: compact ? 5 : 20,
     summaryInstruction: compact
-      ? "Budget-constrained response: give at most 2 short sentences (about 60 words). Report the main finding and next step only. The UI already displays product cards. Do not repeat products, calculations, assumptions sections or tables. Preserve critical missing-data warnings."
-      : "No constrained budget detected: provide fuller explanations when useful or explicitly requested, but do not duplicate dashboard rows. Keep routine dashboard summaries brief. Use plain-language calculations, not long formula dumps.",
+      ? "Budget-constrained: at most 2 short sentences (about 60 words), main finding and next step. The UI shows structured results; do not repeat rows, tables or assumptions sections. Preserve critical missing-data warnings."
+      : "Keep routine summaries brief; explain further when useful or requested. Do not duplicate dashboard rows. Use plain-language calculations, not formula dumps.",
   };
 }
 
@@ -50,9 +50,4 @@ export function isStandaloneInventoryReport(prompt: string): boolean {
 /** Only the known read-only order starter gets a narrowed catalog/fast finish. */
 export function isStandaloneOrderReport(prompt: string): boolean {
   return /^(?:analyze|show|run) order intelligence(?: report)?[.!?]?$/i.test(prompt.trim());
-}
-
-/** Only the explicit read-only customer starter narrows to the analytics tool. */
-export function isStandaloneCustomerReport(prompt: string): boolean {
-  return /^(?:analyze|show|run) customer intelligence(?: report)?[.!?]?$/i.test(prompt.trim());
 }
