@@ -16,8 +16,17 @@ export function AdvancedSettings() {
           { cache: "no-store" },
         );
         if (!response.ok) {
-          const body = (await response.json()) as { error?: string };
-          throw new Error(body.error || "Could not download setup SQL.");
+          const body = (await response.json()) as {
+            error?: string;
+            diagnostic?: string;
+            code?: string;
+          };
+          const reference = body.diagnostic
+            ? ` (${body.diagnostic}${body.code ? ` · ${body.code}` : ""})`
+            : "";
+          throw new Error(
+            (body.error || "Could not download setup SQL.") + reference,
+          );
         }
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
