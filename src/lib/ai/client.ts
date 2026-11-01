@@ -494,7 +494,9 @@ async function callGemini(opts: {
         functionDeclarations: opts.tools.map((t) => ({
           name: t.name,
           description: t.description,
-          parameters: t.parameters,
+          // Use the JSON Schema dialect for nullable unions (e.g. optional
+          // customer filters). Gemini's native Schema type expects a scalar type.
+          parametersJsonSchema: t.parameters,
         })),
       },
     ];
