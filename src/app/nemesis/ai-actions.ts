@@ -167,3 +167,11 @@ export async function browseCustomerIntelligence(mode: import("@/lib/ai/customer
     return { ok:false as const, error:error instanceof Error?error.message:"Customer report unavailable." };
   }
 }
+
+/** Model-free product pagination; admin authorization is checked on every page. */
+export async function browseProductQueries(filters: Record<string,unknown>) {
+  try {
+    const {readProducts}=await import("@/lib/ai/products/service");
+    return {ok:true as const,report:await readProducts(filters)};
+  }catch(error){return {ok:false as const,error:error instanceof Error?error.message:"Product query unavailable."};}
+}

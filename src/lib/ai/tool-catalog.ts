@@ -5,7 +5,7 @@ import type { AgentGroup } from "./request-context";
 export const TOOL_GROUP_DIRECTORY = {
   inventory_intelligence:
     "stock forecasts, dead/overstock, spikes, reorder advice, signal-based publication previews",
-  inventory_operations: "product search, stock/status/featured previews",
+  inventory_operations: "product/variation filters, numeric stock/price comparisons, full counts/pages; stock/status/featured previews",
   store_analytics: "store/catalog snapshot; exact paid metrics use orders",
   pricing: "category/product discount previews",
   content_seo:
