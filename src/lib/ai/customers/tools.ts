@@ -1,4 +1,5 @@
 import "server-only";
+import { reportMoneyForModel } from "@/lib/ai/report-money";
 import type { AiToolCall, AiToolSpec } from "@/lib/ai/client";
 import type { AiResponsePolicy } from "@/lib/ai/response-budget";
 import type { AiCustomerIntelligenceWidget } from "./types";
@@ -138,7 +139,7 @@ export async function executeCustomerTool(
       summary: `${call.name}(live read-only customer data)`,
     },
     completionSummary: `Customer Intelligence is ready: ${report.metrics.customers} matching customer identities and ${report.metrics.purchases} completed, paid purchases in the selected order-date window.`,
-    toolOutputJson: JSON.stringify({
+    toolOutputJson: JSON.stringify(reportMoneyForModel({
       mode: report.mode,
       filters: {
         ...report.filters,
@@ -150,7 +151,7 @@ export async function executeCustomerTool(
       history: report.history.slice(0, policy.modelSampleRows),
       instruction:
         policy.summaryInstruction +
-        " Figures cover the full matching cohort, not just sampled rows. Purchases/spending mean completed AND paid; all money is base USD micros, not profit or predicted lifetime value. Lifetime columns are labelled separately from window columns. New buyers use first lifetime qualifying order placement date, NOT signup or verified conversion timestamp. Statuses are current, not reconstructed as-of history. Guest email groups are heuristic; never merge with registered accounts or by name. Do not request/echo contact data. Details contacts are UI-only. Refund/cancellation counts are not fraud. Do not send messages, edit customers or offer automatic account actions.",
-    }),
+        " Figures cover the full matching cohort, not just sampled rows. Purchases/spending mean completed AND paid. Money is already formatted in USD; do not rescale it or describe it as profit/predicted lifetime value. Lifetime columns are labelled separately from window columns. New buyers use first lifetime qualifying order placement date, NOT signup or verified conversion timestamp. Statuses are current, not reconstructed as-of history. Guest email groups are heuristic; never merge with registered accounts or by name. Do not request/echo contact data. Details contacts are UI-only. Refund/cancellation counts are not fraud. Do not send messages, edit customers or offer automatic account actions.",
+    }, ["spending", "window_spending", "aov"])),
   };
 }
