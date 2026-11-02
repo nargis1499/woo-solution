@@ -1,3 +1,4 @@
+import type { Typography } from "./typography/catalog";
 import type { ThemeColors, ThemeGradientSets } from "@/lib/theme";
 import type { CurrencyCode } from "@/lib/money";
 import type { CryptoProtocol } from "@/lib/crypto-protocols";
@@ -403,6 +404,7 @@ export type SiteSettings = {
   theme_gradients: ThemeGradientSets;
   /** true = dark mode reuses the light palette */
   theme_sync: boolean;
+  typography: Typography;
 };
 
 export type SiteSettingsRow = SiteSettings & { updated_at: string | null };

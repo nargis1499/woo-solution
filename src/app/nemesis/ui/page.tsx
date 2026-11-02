@@ -1,3 +1,6 @@
+import { TypographyEditor } from "@/components/admin/typography/typography-editor";
+import { saveTypography } from "./typography-actions";
+import { DEFAULT_TYPOGRAPHY } from "@/lib/typography/catalog";
 import type { Metadata } from "next";
 import { adminGetSiteSettings, adminListCategories, adminListMenuItems, adminListPageOptions, isMissingMenuSchema, type PageOption } from "@/lib/admin/data";
 import { isMenuLocation } from "@/lib/menu-config";
@@ -69,6 +72,7 @@ export default async function AdminUiPage({ searchParams }: { searchParams: Sear
               )}
             </div>
           ),
+          typography: <TypographyEditor saved={settings?.typography ?? DEFAULT_TYPOGRAPHY} available={settings?.typographyMigrated ?? false} saveAction={saveTypography} />,
           extra: <ThemeEditor saved={theme} />,
         }}
       />

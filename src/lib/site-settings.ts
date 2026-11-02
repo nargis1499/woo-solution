@@ -1,3 +1,5 @@
+import { DEFAULT_TYPOGRAPHY, normaliseTypography } from "./typography/catalog";
+import { cache } from "react";
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
@@ -71,6 +73,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   // a fresh copy per read: the two modes must never share one gradient object
   theme_gradients: templateTheme().gradients,
   theme_sync: false,
+  typography: DEFAULT_TYPOGRAPHY,
 };
 
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -195,6 +198,7 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     theme_light: normaliseColors(row.theme_light),
     theme_dark: normaliseColors(row.theme_dark),
     theme_gradients: normaliseGradients(row.theme_gradients),
+    typography: normaliseTypography(row.typography),
     theme_sync: flag(row.theme_sync, false),
   };
 }
@@ -226,13 +230,12 @@ const getCachedSiteSettings = unstable_cache(
       return DEFAULT_SITE_SETTINGS;
     }
   },
-  ["site-settings"],
+  // Do not reuse a pre-typography normalized payload across deployments.
+  ["site-settings", "typography-v1"],
   { tags: [SITE_SETTINGS_TAG], revalidate: 3600 },
 );
 
-export async function getSiteSettings(): Promise<SiteSettings> {
-  return getCachedSiteSettings();
-}
+export const getSiteSettings = cache(async (): Promise<SiteSettings> => getCachedSiteSettings());
 
 /**
  * The same row, read on **every request** – the admin area uses this so a currency or
@@ -240,7 +243,7 @@ export async function getSiteSettings(): Promise<SiteSettings> {
  * and its prerendered shells are refreshed in the background, which can serve the previous
  * revision for a few seconds (stale-while-revalidate). Admin pages are dynamic anyway.
  */
-export async function getSiteSettingsFresh(): Promise<SiteSettings> {
+export const getSiteSettingsFresh = cache(async (): Promise<SiteSettings> => {
   try {
     const supabase = createPublicClient();
     const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
@@ -249,7 +252,7 @@ export async function getSiteSettingsFresh(): Promise<SiteSettings> {
   } catch {
     return DEFAULT_SITE_SETTINGS;
   }
-}
+});
 
 /** The display currency + rate for server components (`<MoneyProvider>` covers the client side). */
 export async function getMoney(): Promise<Money> {

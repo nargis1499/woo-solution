@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import { Suspense, type ReactNode } from "react";
 import { getMoney, getSiteSettings } from "@/lib/site-settings";
 import { ThemeCustomizationProvider } from "@/components/theme/theme-customization";
@@ -10,7 +9,6 @@ import { TopLoader } from "@/components/top-loader";
 import { AppToaster } from "@/components/app-toaster";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +40,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   };
   return (
     // suppressHydrationWarning: next-themes sets the `class`/`style` on <html> before React hydrates
-    <html lang="en" className={`${inter.variable} h-full font-sans`} suppressHydrationWarning>
+    <html lang="en" className="h-full font-sans" suppressHydrationWarning>
       <body className="flex min-h-full flex-col">
         <ThemeCustomizationProvider theme={theme}>
         <Providers>
