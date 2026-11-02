@@ -2,7 +2,11 @@
 
 Open **UI → Typography** (`/nemesis/ui?tab=typography`). Each scope has independent
 Title, Body and Button selectors, a searchable 23-family catalog, and live previews.
-Changes and resets are local until **Save changes**. Unsaved drafts are kept in the
+Each card also offers **Use these fonts for Admin/Store** to copy its current
+Title, Body and Button choices to the other scope. This is a one-time copy, not
+ongoing synchronization; both scopes remain independently editable. Matching
+selections disable the copy buttons. Copying, changes and resets are local until
+**Save changes**. Unsaved drafts are kept in the
 current browser tab; reload/close and link navigation are guarded. Draft recovery
 keeps local edited scopes while preserving newer saved values for untouched scopes.
 
@@ -46,7 +50,13 @@ See `public/fonts/README.md`, the pinned asset manifest, and
 weights. Assets are normal-style Latin subsets; other scripts use system fallbacks.
 No Google or other font CDN requests and no runtime font-package dependency.
 
-## Verification
+## Copy controls update
+
+The desktop capture `artifacts/typography-copy-desktop.png` shows the real updated
+editor in an isolated local dashboard preview. The temporary preview route was
+removed. No tests or test suites were run for this convenience update, as requested.
+
+## Verification (original typography implementation)
 
 - `npm run test:ai`: 431 isolated tests (35 typography-specific), covering defaults,
   all 23 families/assets/licenses, whitelist/injection rejection, scope-only saving,

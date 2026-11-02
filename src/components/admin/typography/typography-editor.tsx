@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   CheckIcon,
+  CopyIcon,
   RotateCcwIcon,
   SaveIcon,
   TypeIcon,
@@ -305,6 +306,18 @@ export function TypographyEditor({
     }));
     setError("");
   }
+  function copyFonts(source: TypographyScope) {
+    const target = source === "store" ? "admin" : "store";
+    setDraft((prev) => ({
+      ...prev,
+      [target]: { ...prev[source] },
+    }));
+    setError("");
+    toast.info(
+      `${source === "store" ? "Store" : "Admin"} fonts copied to ${target === "store" ? "Store" : "Admin"}. Save changes to apply.`,
+    );
+  }
+  const fontsMatch = ROLES.every((role) => draft.store[role] === draft.admin[role]);
   const activeFonts = [
     ...new Set([
       ...selectedFonts(draft.store),
@@ -446,11 +459,34 @@ export function TypographyEditor({
               ))}
             </div>
             <FontPreview scope={scope} roles={draft[scope]} />
-            <p className="mt-3 text-[11px] text-muted-foreground">
-              {scope === "store"
-                ? "Store changes never affect the Admin Dashboard."
-                : "Admin changes never affect the customer-facing Store."}
-            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+              <p
+                id={`typography-copy-${scope}-help`}
+                className="max-w-64 text-[11px] leading-relaxed text-muted-foreground"
+              >
+                {fontsMatch
+                  ? "Both use the same fonts. You can still edit each independently."
+                  : "Copy all three font choices. A one-time copy, not a permanent link."}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onPress={() => copyFonts(scope)}
+                isDisabled={busy || fontsMatch}
+                aria-describedby={`typography-copy-${scope}-help`}
+                className="gap-2 text-xs"
+              >
+                {fontsMatch ? (
+                  <CheckIcon className="size-3.5" />
+                ) : (
+                  <CopyIcon className="size-3.5" />
+                )}
+                {scope === "store"
+                  ? "Use these fonts for Admin"
+                  : "Use these fonts for Store"}
+              </Button>
+            </div>
           </article>
         ))}
       </div>
