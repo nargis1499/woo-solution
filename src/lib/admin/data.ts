@@ -467,7 +467,7 @@ export async function adminGetUser(id: string): Promise<ProfileWithOrders | null
  * the page can show a hint instead of failing on save; `homeMigrated` does the
  * same for the UI → Home page columns (`20261024000000_home_sections.sql`).
  */
-export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migrated: boolean; homeMigrated: boolean; currencyMigrated: boolean; media: SettingsMedia }) | null> {
+export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migrated: boolean; homeMigrated: boolean; currencyMigrated: boolean; typographyMigrated: boolean; media: SettingsMedia }) | null> {
   await requireAdmin();
   const supabase = await createClient();
   const { data, error } = await supabase.from("site_settings").select("*").eq("id", 1).maybeSingle();
@@ -492,6 +492,7 @@ export async function adminGetSiteSettings(): Promise<(SiteSettingsRow & { migra
     updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
     migrated: "manage_stock" in row,
     homeMigrated: "home_show_filter" in row, // 20261024000000_home_sections.sql
+    typographyMigrated: "typography" in row,
     currencyMigrated: "usd_to_bdt_rate" in row, // 20261025000000_currency.sql
     media,
   };

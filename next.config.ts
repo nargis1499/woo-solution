@@ -4,6 +4,12 @@ import { OPTIMIZED_IMAGE_HOSTS, supabaseImageHost } from "./src/lib/image-hosts"
 const supabaseHost = supabaseImageHost();
 
 const nextConfig: NextConfig = {
+  async headers() {
+    return [{
+      source: "/fonts/:asset(.*\\.woff2)",
+      headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+    }];
+  },
   serverExternalPackages: ["sharp"],
   turbopack: {
     rules: {

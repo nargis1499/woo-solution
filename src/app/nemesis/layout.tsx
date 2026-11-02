@@ -1,3 +1,5 @@
+import { preloadBodyFont } from "@/components/typography/preload-font";
+import { TypographyScope } from "@/components/typography/typography-scope";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { Suspense, type ReactNode } from "react";
@@ -56,6 +58,7 @@ async function AdminGate({ children }: { children: ReactNode }) {
     getSiteSettingsFresh(),
     adminGetAiSettings(),
   ]);
+  preloadBodyFont(settings.typography.admin);
   const { store_name } = settings;
   const money = moneyFromSettings(settings);
   // The sidebar component persists its open/collapsed state in this cookie.
@@ -64,25 +67,27 @@ async function AdminGate({ children }: { children: ReactNode }) {
   return (
     // Fresh per-request currency for the client components below (the admin price fields read it),
     // overriding the cached value the root layout provides for the storefront.
-    <MoneyProvider money={money}>
-      <NemesisAiProvider initialSettings={ai.client}>
-        <SidebarProvider defaultOpen={defaultOpen}>
-          <AdminSidebar user={user} storeName={store_name} />
-          <SidebarInset>
-            {/* the bell is a server island: unread count rendered here, streamed into the header */}
-            <AdminHeader
-              bell={
-                <Suspense fallback={<NotificationBellSkeleton />}>
-                  <NotificationBellGate basePath="/nemesis/notifications" />
-                </Suspense>
-              }
-            />
-            <div className="w-full flex-1 px-3 py-4 md:px-5 md:py-5">{children}</div>
-          </SidebarInset>
-        </SidebarProvider>
-        <NemesisAiDrawer />
-      </NemesisAiProvider>
-    </MoneyProvider>
+    <TypographyScope scope="admin" roles={settings.typography.admin}>
+      <MoneyProvider money={money}>
+        <NemesisAiProvider initialSettings={ai.client}>
+          <SidebarProvider defaultOpen={defaultOpen}>
+            <AdminSidebar user={user} storeName={store_name} />
+            <SidebarInset>
+              {/* the bell is a server island: unread count rendered here, streamed into the header */}
+              <AdminHeader
+                bell={
+                  <Suspense fallback={<NotificationBellSkeleton />}>
+                    <NotificationBellGate basePath="/nemesis/notifications" />
+                  </Suspense>
+                }
+              />
+              <div className="w-full flex-1 px-3 py-4 md:px-5 md:py-5">{children}</div>
+            </SidebarInset>
+          </SidebarProvider>
+          <NemesisAiDrawer />
+        </NemesisAiProvider>
+      </MoneyProvider>
+    </TypographyScope>
   );
 }
 

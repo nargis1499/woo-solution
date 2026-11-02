@@ -1,0 +1,260 @@
+{
+  "Inter": {
+    "package": "@fontsource-variable/inter",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/inter-3100e775e861.woff2",
+        "weight": "100 900"
+      }
+    ]
+  },
+  "Poppins": {
+    "package": "@fontsource/poppins",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/poppins-7d93459d8658.woff2",
+        "weight": "400"
+      },
+      {
+        "url": "/fonts/poppins-cd36de204aca.woff2",
+        "weight": "500"
+      },
+      {
+        "url": "/fonts/poppins-f4e80d9dfd37.woff2",
+        "weight": "600"
+      },
+      {
+        "url": "/fonts/poppins-9338e65fc077.woff2",
+        "weight": "700"
+      },
+      {
+        "url": "/fonts/poppins-60bf0aba6526.woff2",
+        "weight": "800"
+      },
+      {
+        "url": "/fonts/poppins-17ea10196a49.woff2",
+        "weight": "900"
+      }
+    ]
+  },
+  "Roboto": {
+    "package": "@fontsource-variable/roboto",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/roboto-1404ca348bd7.woff2",
+        "weight": "100 900"
+      }
+    ]
+  },
+  "DM Sans": {
+    "package": "@fontsource-variable/dm-sans",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/dm-sans-9fea608a947e.woff2",
+        "weight": "100 1000"
+      }
+    ]
+  },
+  "Montserrat": {
+    "package": "@fontsource-variable/montserrat",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/montserrat-06b16db7a969.woff2",
+        "weight": "100 900"
+      }
+    ]
+  },
+  "Plus Jakarta Sans": {
+    "package": "@fontsource-variable/plus-jakarta-sans",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/plus-jakarta-sans-153fc85b7029.woff2",
+        "weight": "200 800"
+      }
+    ]
+  },
+  "Open Sans": {
+    "package": "@fontsource-variable/open-sans",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/open-sans-d8e4fe0452aa.woff2",
+        "weight": "300 800"
+      }
+    ]
+  },
+  "Lato": {
+    "package": "@fontsource/lato",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/lato-918b7dc3e2e2.woff2",
+        "weight": "400"
+      },
+      {
+        "url": "/fonts/lato-c447dd7677b4.woff2",
+        "weight": "700"
+      },
+      {
+        "url": "/fonts/lato-08664859baab.woff2",
+        "weight": "900"
+      }
+    ]
+  },
+  "Playfair Display": {
+    "package": "@fontsource-variable/playfair-display",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/playfair-display-e0c764a8e9e1.woff2",
+        "weight": "400 900"
+      }
+    ]
+  },
+  "Manrope": {
+    "package": "@fontsource-variable/manrope",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/manrope-a30ddcd34970.woff2",
+        "weight": "200 800"
+      }
+    ]
+  },
+  "Outfit": {
+    "package": "@fontsource-variable/outfit",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/outfit-6c18d579fd87.woff2",
+        "weight": "100 900"
+      }
+    ]
+  },
+  "Nunito Sans": {
+    "package": "@fontsource-variable/nunito-sans",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/nunito-sans-29e389049684.woff2",
+        "weight": "200 1000"
+      }
+    ]
+  },
+  "Lora": {
+    "package": "@fontsource-variable/lora",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/lora-ddb8c6603510.woff2",
+        "weight": "400 700"
+      }
+    ]
+  },
+  "Source Sans 3": {
+    "package": "@fontsource-variable/source-sans-3",
+    "version": "5.3.1",
+    "files": [
+      {
+        "url": "/fonts/source-sans-3-19143dca0759.woff2",
+        "weight": "200 900"
+      }
+    ]
+  },
+  "Work Sans": {
+    "package": "@fontsource-variable/work-sans",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/work-sans-1dd49afc07fb.woff2",
+        "weight": "100 900"
+      }
+    ]
+  },
+  "Rubik": {
+    "package": "@fontsource-variable/rubik",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/rubik-691cd1d9b4c0.woff2",
+        "weight": "300 900"
+      }
+    ]
+  },
+  "Sora": {
+    "package": "@fontsource-variable/sora",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/sora-fa26406eeda9.woff2",
+        "weight": "100 800"
+      }
+    ]
+  },
+  "Space Grotesk": {
+    "package": "@fontsource-variable/space-grotesk",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/space-grotesk-0640890476fc.woff2",
+        "weight": "300 700"
+      }
+    ]
+  },
+  "Oswald": {
+    "package": "@fontsource-variable/oswald",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/oswald-bd73278ee0c5.woff2",
+        "weight": "200 700"
+      }
+    ]
+  },
+  "Merriweather": {
+    "package": "@fontsource-variable/merriweather",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/merriweather-4fbe8dd9c23b.woff2",
+        "weight": "300 900"
+      }
+    ]
+  },
+  "Geist": {
+    "package": "@fontsource-variable/geist",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/geist-19f9c92546aa.woff2",
+        "weight": "100 900"
+      }
+    ]
+  },
+  "IBM Plex Sans": {
+    "package": "@fontsource-variable/ibm-plex-sans",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/ibm-plex-sans-e2291e842cf5.woff2",
+        "weight": "100 700"
+      }
+    ]
+  },
+  "Public Sans": {
+    "package": "@fontsource-variable/public-sans",
+    "version": "5.3.0",
+    "files": [
+      {
+        "url": "/fonts/public-sans-5ed4d31c988e.woff2",
+        "weight": "100 900"
+      }
+    ]
+  }
+}
