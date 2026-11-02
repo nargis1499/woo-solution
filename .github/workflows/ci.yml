@@ -24,4 +24,5 @@ jobs:
       - run: npm install --legacy-peer-deps
       - run: npm run lint
       - run: npx tsc --noEmit
+      - run: npm run test:ai
       - run: npm run build

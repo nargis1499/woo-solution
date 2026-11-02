@@ -57,3 +57,7 @@ Verification for this implementation: ESLint, TypeScript no-emit and diff checks
 ## Product/stock query extension
 
 `query_inventory` now loads one reusable comparison/filter schema, not separate per-sentence tools. General catalog routing no longer removes tools using an English read-prefix regex; existing lazy discovery and narrow report allowlists remain. Database queries return exact full-cohort metrics and bounded pages; the existing model-only `items` projection keeps only policy-sized examples, with loaded/shown counts and `sampleOnly`. Full UI pages and model-free pagination remain intact. The richer schema has a real token cost when loaded; no measured savings claim is made. See [product/stock query policy](product-stock-queries.md) for the applied read-only migration, supported operators, validation and verification scope.
+
+## Missing-schema reliability and authorized smoke tests
+
+Directory guidance now distinguishes listed names from callable schemas. Known unloaded-tool provider rejections recover by loading the exact registered schema and regenerating within a two-retry bound; returned unloaded calls defer to schema-only loading before execution. Full catalogs, original messages, IDs, copy and approvals are preserved. Normal requests add no recovery round; failed recovery generations have unknown token cost. `npm run test:ai` provides isolated registry-wide adapter/schema/authorization checks and orchestration regressions, as newly authorized by the administrator. See [tool loading recovery and test limits](ai-tool-recovery.md).

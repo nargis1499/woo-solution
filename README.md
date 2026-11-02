@@ -580,3 +580,7 @@ All Nemesis capabilities share [lazy tool-schema loading and compact model resul
 ### Product and stock queries in Nemesis AI
 
 `query_inventory` supports reusable stock/price comparisons (`>`, `>=`, `<`, `<=`, equality, ranges), numeric OR groups, catalog filters, sorting and model-free pagination. Counts cover the full matching catalog, not the latest 500 products. Product, variation and purchasable-SKU scopes keep totals distinct; unknown stock is not zero. Natural wording is interpreted by the model rather than an English read-prefix gate. Install [`20261058000000_product_queries.sql`](supabase/migrations/20261058000000_product_queries.sql) on new client databases. See [query semantics, safeguards and limits](docs/product-stock-queries.md). Write capabilities and approvals are not expanded.
+
+### Lightweight AI tool checks
+
+Run `npm run test:ai` for registry-wide schema/discovery/authorization smoke tests and mocked wire-adapter checks across all eight providers, including recovery from calling a tool not yet in `request.tools`. Tests block real datastore/network access and never apply store changes. See [tool-loading safeguards, coverage and limits](docs/ai-tool-recovery.md).

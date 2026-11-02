@@ -1,3 +1,4 @@
+import { schemaFirstCall } from "@/lib/ai/tool-recovery";
 import { deduplicateToolInstructions } from "@/lib/ai/tool-results";
 import { catalogGroups, mergeToolCatalog, discoveryOnly, TOOL_DISCOVERY, TOOL_DISCOVERY_BRIEF } from "@/lib/ai/tool-catalog";
 import type { AgentGroup } from "@/lib/ai/request-context";
@@ -16,6 +17,8 @@ import {
 import { CONTENT_PREVIEW_REPAIR, needsContentPreviewRepair } from "@/lib/ai/content-fields";
 import { loadAiSettingsForAction } from "@/lib/ai/settings";
 import {
+  AGENT_TOOLS,
+  AGENT_TOOL_GROUPS,
   selectAgentTools,
   buildAgentSystemPrompt,
   executeAgentToolCall,
@@ -54,6 +57,7 @@ export async function POST(request: Request) {
           phase: "ollama_execute_tools";
           toolCalls: AiToolCall[];
           catalogGroups?: AgentGroup[];
+          loadedToolNames?: string[];
           currentPath?: string;
         }
       | {
@@ -125,10 +129,20 @@ export async function POST(request: Request) {
       const completionSummaries: string[] = [];
       let activeGroups = catalogGroups(body.catalogGroups ?? []);
       let availableTools: AiToolSpec[] = [];
+      if (body.loadedToolNames != null && (!Array.isArray(body.loadedToolNames) || body.loadedToolNames.length > AGENT_TOOLS.length + 1 || body.loadedToolNames.some(name => name !== TOOL_DISCOVERY.name && !AGENT_TOOLS.some(tool => tool.name === name)))) {
+        return NextResponse.json({ok:false,error:"Invalid loaded tool catalog."},{status:400});
+      }
+      // Schema state is a protocol hint, never an authorization/approval mechanism.
+      const suppliedTools = [TOOL_DISCOVERY_BRIEF, ...AGENT_TOOLS.filter(tool => body.loadedToolNames
+        ? body.loadedToolNames.includes(tool.name)
+        : AGENT_TOOL_GROUPS.some(group => activeGroups.includes(group.id) && group.tools.some(t => t.name === tool.name)))];
+      let schemaOnly = (body.toolCalls ?? []).length > 0;
 
       for (const tc of body.toolCalls ?? []) {
+        const dispatch = schemaFirstCall(tc, suppliedTools, AGENT_TOOLS);
+        schemaOnly = schemaOnly && dispatch.name === TOOL_DISCOVERY.name;
         const out = await executeAgentToolCall({
-          call: tc,
+          call: dispatch,
           aiSettings,
           store: context,
           money,
@@ -143,7 +157,9 @@ export async function POST(request: Request) {
         if (out.plan) plans.push(out.plan);
         if (out.widget) widgets.push(out.widget);
         if (out.completionSummary) completionSummaries.push(out.completionSummary);
-        if (out.availableTools) availableTools = mergeToolCatalog(availableTools, out.availableTools);
+        if (out.availableTools) {
+          availableTools = mergeToolCatalog(availableTools, out.availableTools);
+        }
         if (out.loadedGroups) activeGroups = [...new Set([...activeGroups, ...out.loadedGroups])];
       }
 
@@ -161,6 +177,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         toolResults,
+        schemaOnly,
         availableTools,
         catalogGroups: activeGroups,
         ...(availableTools.length ? {systemPrompt:buildAgentSystemPrompt(aiSettings, context, body.currentPath, activeGroups)} : {}),
@@ -250,6 +267,16 @@ export async function POST(request: Request) {
         systemPrompt: buildAgentSystemPrompt(aiSettings, context, body.currentPath, activeGroups, responsePolicy(aiSettings, observedRate).summaryInstruction),
         messages,
         tools: isLastAllowedRound || reportFinalization ? [] : activeTools,
+        toolRegistry: AGENT_TOOLS,
+        onToolsLoaded: async (additions, tools) => {
+          activeTools = tools;
+          activeGroups = [...new Set([...activeGroups, ...AGENT_TOOL_GROUPS.filter(group => group.tools.some(t => additions.some(a => a.name === t.name))).map(g => g.id)])];
+          if (!categoriesLoaded && activeGroups.some(g => ["inventory_intelligence", "inventory_operations", "pricing"].includes(g))) {
+            ({context, money} = await loadStoreContextSummary());
+            categoriesLoaded = true;
+          }
+          return buildAgentSystemPrompt(aiSettings, context, body.currentPath, activeGroups, responsePolicy(aiSettings, observedRate).summaryInstruction);
+        },
       });
 
       for (const key of ["limitTokensPerMin", "remainingTokensPerMin", "limitRequests", "remainingRequests"] as const) {
@@ -275,7 +302,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      if (completion.toolCalls.length === 0 || isLastAllowedRound) {
+      if (completion.toolCalls.length === 0 || isLastAllowedRound || reportFinalization) {
         finalReply = completion.text;
         break;
       }
@@ -288,9 +315,13 @@ export async function POST(request: Request) {
 
       const completionSummaries: string[] = [];
       const roundWidgets: AiUiWidget[] = [];
+      const suppliedToolsForRound = activeTools; // Snapshot: loading mid-batch cannot authorize sibling calls.
+      let schemaOnly = completion.toolCalls.length > 0;
       for (const tc of completion.toolCalls) {
+        const dispatch = schemaFirstCall(tc, suppliedToolsForRound, AGENT_TOOLS);
+        schemaOnly = schemaOnly && dispatch.name === TOOL_DISCOVERY.name;
         const exec = await executeAgentToolCall({
-          call: tc,
+          call: dispatch,
           aiSettings,
           store: context,
           money,
@@ -319,7 +350,7 @@ export async function POST(request: Request) {
         });
       }
       // Schema discovery is planning, not a business-action round. Bound retries.
-      if (discoveryOnly(completion.toolCalls) && discoveryRounds < 3) {
+      if ((schemaOnly || discoveryOnly(completion.toolCalls)) && discoveryRounds < 3) {
         discoveryRounds++;
         round--;
         continue;
