@@ -12,10 +12,12 @@ export function createUsageCollector() {
   let complete = true;
   const models = new Map<string, number>();
   return {
-    record(result: Pick<AiCompletionResult, "modelUsed" | "usage">) {
-      requests++;
+    record(result: Pick<AiCompletionResult, "modelUsed" | "usage" | "unreportedRequests">) {
+      const attempts = 1 + (result.unreportedRequests ?? 0);
+      requests += attempts;
+      // Failed attempts can use another fallback model; attribute only confirmed responses.
       models.set(result.modelUsed, (models.get(result.modelUsed) ?? 0) + 1);
-      complete = complete && result.usage.reported === true && [result.usage.promptTokens, result.usage.completionTokens, result.usage.totalTokens].every(n => Number.isFinite(n) && n >= 0);
+      complete = complete && !result.unreportedRequests && result.usage.reported === true && [result.usage.promptTokens, result.usage.completionTokens, result.usage.totalTokens].every(n => Number.isFinite(n) && n >= 0);
       input += result.usage.promptTokens;
       output += result.usage.completionTokens;
       total += result.usage.totalTokens;

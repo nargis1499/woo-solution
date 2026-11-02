@@ -1,3 +1,4 @@
+import { withToolSchemaRecovery } from "./tool-recovery";
 import "server-only";
 import { capturingAiFetch } from "@/lib/logs/capture";
 import { diagnosticLogSink } from "@/lib/logs/server";
@@ -50,6 +51,8 @@ export type AiRateLimitInfo = {
 };
 
 export type AiCompletionResult = {
+  /** Failed HTTP generations/retries have unknown token usage. */
+  unreportedRequests?: number;
   text: string;
   toolCalls: AiToolCall[];
   modelUsed: string;
@@ -241,7 +244,7 @@ async function callOpenAiCompatible(opts: {
   // If a provider/model rejects `reasoning_effort`, retry cleanly without it.
   if (!res.ok && res.status === 400 && isReasoningModel) {
     const firstErr = await res.text();
-    if (/reasoning_effort|unknown|unrecognized|not supported/i.test(firstErr)) {
+    if (/reasoning_effort/i.test(firstErr)) {
       res = await opts.fetcher(endpoint, {
         method: "POST",
         headers,
@@ -576,6 +579,9 @@ export async function runModelCompletion(opts: {
   messages: AiTurnMessage[];
   tools?: AiToolSpec[];
   preferWorkerModel?: boolean;
+  /** Explicit registered schemas only; absent on tool-free/sub-model calls. */
+  toolRegistry?: AiToolSpec[];
+  onToolsLoaded?: (additions: AiToolSpec[], tools: AiToolSpec[]) => Promise<string | void>;
   traceId?: string;
   overrideProvider?: AiProviderId;
   overrideModel?: string;
@@ -616,21 +622,28 @@ export async function runModelCompletion(opts: {
         : 3200;
 
   const traceId = opts.traceId ?? crypto.randomUUID();
-  const invokeOnce = async (model: string) => {
-    const fetcher = capturingAiFetch(
+  let activeTools = opts.tools ?? [];
+  let systemPrompt = opts.systemPrompt;
+  let providerRequests = 0;
+  const invokeOnce = async (model: string, tools: AiToolSpec[]) => {
+    const capturedFetch = capturingAiFetch(
       { trace_id: traceId, provider, model, source: opts.preferWorkerModel ? "worker" : "server" },
       diagnosticLogSink,
       [apiKey, ...Object.values(opts.settings.api_keys)].filter((key): key is string => typeof key === "string" && key.length > 0),
     );
+    const fetcher: typeof fetch = (input, init) => {
+      providerRequests++;
+      return capturedFetch(input, init);
+    };
     if (provider === "anthropic") {
       return callAnthropic({
         fetcher,
         baseUrl,
         apiKey: apiKey!,
         model,
-        systemPrompt: opts.systemPrompt,
+        systemPrompt,
         messages: opts.messages,
-        tools: opts.tools ?? [],
+        tools,
         temperature: opts.settings.temperature,
         maxTokens,
       });
@@ -641,9 +654,9 @@ export async function runModelCompletion(opts: {
         baseUrl,
         apiKey: apiKey!,
         model,
-        systemPrompt: opts.systemPrompt,
+        systemPrompt,
         messages: opts.messages,
-        tools: opts.tools ?? [],
+        tools,
         temperature: opts.settings.temperature,
         maxTokens,
       });
@@ -654,9 +667,9 @@ export async function runModelCompletion(opts: {
       baseUrl,
       apiKey,
       model,
-      systemPrompt: opts.systemPrompt,
+      systemPrompt,
       messages: opts.messages,
-      tools: opts.tools ?? [],
+      tools,
       temperature: opts.settings.temperature,
       reasoningEffort: opts.settings.reasoning_effort,
       maxTokens,
@@ -665,15 +678,27 @@ export async function runModelCompletion(opts: {
     });
   };
 
+  const invokeWithSchemas = async (model: string) => {
+    const recovered = await withToolSchemaRecovery({
+      tools: activeTools, registry: opts.toolRegistry ?? [],
+      run: tools => invokeOnce(model, tools),
+      onLoad: async (additions, tools) => {
+        activeTools = tools;
+        const refreshedPrompt = await opts.onToolsLoaded?.(additions, tools);
+        if (refreshedPrompt) systemPrompt = refreshedPrompt;
+      },
+    });
+    return { ...recovered.result, unreportedRequests: Math.max(0, providerRequests - 1) };
+  };
   try {
-    const res = await invokeOnce(chosenFirst);
+    const res = await invokeWithSchemas(chosenFirst);
     return { ...res, usedFallback: chosenFirst !== primaryModel };
   } catch (err) {
     const isRateOrOverload =
       err instanceof ProviderHttpError &&
       (err.status === 429 || err.status === 503 || err.status === 529);
     if (isRateOrOverload && chosenSecond) {
-      const retryRes = await invokeOnce(chosenSecond);
+      const retryRes = await invokeWithSchemas(chosenSecond);
       return { ...retryRes, usedFallback: true };
     }
     throw err;

@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "cf:build": "opennextjs-cloudflare build",
-    "cf:deploy": "opennextjs-cloudflare build && wrangler deploy"
+    "cf:deploy": "opennextjs-cloudflare build && wrangler deploy",
+    "test:ai": "vitest run"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -51,10 +52,12 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/sanitize-html": "^2.16.2",
+    "ajv": "^8.20.0",
     "eslint": "^9",
     "eslint-config-next": "^16.4.3",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "vitest": "^3.2.7",
     "wrangler": "^4.148.0"
   }
 }

@@ -475,7 +475,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
       continue;
     }
 
-    if (parsedCalls.length === 0 || round === 3) {
+    if (parsedCalls.length === 0 || round === 3 || reportFinalization) {
       finalReply = content;
       break;
     }
@@ -502,6 +502,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
         phase: "ollama_execute_tools",
         toolCalls: parsedCalls,
         catalogGroups: activeGroups,
+        loadedToolNames: activeTools.map(tool => tool.name),
         currentPath: opts.currentPath,
       }),
     });
@@ -509,6 +510,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
       ok: boolean;
       error?: string;
       completionSummaries?: string[];
+      schemaOnly?: boolean;
       availableTools?: AiToolSpec[];
       catalogGroups?: AgentGroup[];
       systemPrompt?: string;
@@ -552,7 +554,7 @@ export async function runBrowserOllamaAgentTurn(opts: {
         });
       }
     }
-    if (discoveryOnly(parsedCalls) && discoveryRounds < 3) {
+    if ((execJson.schemaOnly || discoveryOnly(parsedCalls)) && discoveryRounds < 3) {
       discoveryRounds++;
       round--;
     }

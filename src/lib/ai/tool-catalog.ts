@@ -18,7 +18,7 @@ export const TOOL_GROUP_DIRECTORY = {
 export const LOAD_TOOL_GROUPS = "load_tool_groups";
 export const TOOL_DISCOVERY: AiToolSpec = {
   name: LOAD_TOOL_GROUPS,
-  description: `Load only missing groups; schemas persist this turn. Include dependencies for mixed tasks. Loading is metadata only, not task execution. ${Object.entries(
+  description: `Only tools in request.tools are callable NOW. Directory names are NOT loaded tools. First call load_tool_groups with exact toolNames (or groups); wait for its result before calling them. Schemas persist this turn. Include dependencies for mixed tasks. Loading is metadata only, not task execution. ${Object.entries(
     TOOL_GROUP_DIRECTORY,
   )
     .map(([key, summary]) => `${key}: ${summary}`)
@@ -44,7 +44,7 @@ export const TOOL_DISCOVERY: AiToolSpec = {
 export const TOOL_DISCOVERY_BRIEF: AiToolSpec = {
   ...TOOL_DISCOVERY,
   description:
-    "Load missing capability groups/dependencies. Metadata only; existing schemas persist this turn.",
+    "Only currently supplied tool schemas are callable. First load missing toolNames/groups with load_tool_groups, wait for the result, then call them. Metadata only; schemas persist this turn.",
 };
 /** Name-only directory is much smaller than every parameter schema. The registry,
  * not model guesses, remains the allow-list used by the executor.
