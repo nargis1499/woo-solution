@@ -1,3 +1,4 @@
+import { sectionDesignClass, cellDesignClass } from "@/lib/pages/block-design";
 import { CalendarIcon } from "lucide-react";
 import { isCurrentUserAdmin } from "@/lib/admin/auth";
 import { getSimpleProductsByIds } from "@/lib/data/products";
@@ -88,7 +89,7 @@ export async function PageArticle({
     const [liveProducts, settings, isAdmin] = await Promise.all([
       ids.length > 0 ? getSimpleProductsByIds(ids) : Promise.resolve([]),
       getSiteSettings(),
-      isCurrentUserAdmin(),
+      ids.length > 0 ? isCurrentUserAdmin() : Promise.resolve(false),
     ]);
     for (const p of liveProducts) productsById.set(p.id, p);
     manageStock = settings.manage_stock;
@@ -228,6 +229,7 @@ export function StorefrontLayoutBlock({
       data-layout-cols={cols}
       className={cn(
         "my-6 grid",
+        sectionDesignClass(block),
         cols === 1 && "grid-cols-1",
         cols === 2 && "grid-cols-1 md:grid-cols-2",
         cols === 3 && "grid-cols-1 md:grid-cols-2 lg:grid-cols-3",
@@ -248,7 +250,7 @@ export function StorefrontLayoutBlock({
           <div
             key={`cell-${cellIdx}`}
             data-testid={`storefront-layout-cell-${cellIdx}`}
-            className="min-w-0 space-y-4"
+            className={block.designVersion === 1 ? cellDesignClass(block) : "min-w-0 space-y-4"}
           >
             {visibleBlocks.map((child, childIdx) =>
               child.type === "simple_product" ? (
@@ -264,7 +266,7 @@ export function StorefrontLayoutBlock({
               ) : (
                 <div
                   key={`${child.id}-${childIdx}`}
-                  className="rich-text rich-text-lg"
+                  className={child.designVersion === 1 ? undefined : "rich-text rich-text-lg"}
                   dangerouslySetInnerHTML={{
                     __html: cleanStorefrontHtml(
                       sanitizePageHtml(renderSingleBlockHtml(child, false)),
