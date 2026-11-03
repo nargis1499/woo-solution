@@ -57,3 +57,18 @@ No tests or test suites were run for this update, following the user's instructi
 Verification is limited to TypeScript, lint, build and code/schema review; an
 authenticated end-to-end homepage save, page lifecycle and browser SEO/performance
 smoke check remain deployment checks. No live homepage assignment was changed.
+
+## Homepage picker interface
+
+The homepage selector reuses the dashboard's accessible, themed combobox rather
+than the operating system's native dropdown. Search matches page names and URLs;
+options show a page icon, separate address, published badge and selected checkmark.
+The default storefront remains a first-class option. A selection summary shows
+what will appear at `/`, and the Save button enables only for a changed, valid
+selection. The search text is never submitted as a page ID: the existing explicit
+save action receives only the selected option through a hidden form field.
+
+`artifacts/homepage-picker-desktop.png` shows the real updated form in an isolated
+local desktop preview with sample page labels. No live homepage setting was
+changed; the temporary preview route was removed. No tests or test suites were
+run for this visual refinement.
