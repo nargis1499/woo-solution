@@ -1,3 +1,5 @@
+import { getHomepagePage } from "@/lib/data/pages";
+import { cmsPageMetadata } from "@/lib/pages/metadata";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -22,7 +24,7 @@ import {
   resolveHomeCategorySections,
 } from "@/lib/home-sections";
 import { getSiteSettings } from "@/lib/site-settings";
-import { canonicalFor } from "@/lib/seo";
+import { canonicalFor, pageJsonLd, serializeJsonLd } from "@/lib/seo";
 import { formatMoney, moneyFromSettings } from "@/lib/money";
 import type { Category, HomeCategoryBannerStyle } from "@/lib/types";
 import { CategoryCard } from "@/components/category-card";
@@ -34,7 +36,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { alternates: await canonicalFor("/") };
+  const settings = await getSiteSettings();
+  const page = await getHomepagePage(settings);
+  return page ? cmsPageMetadata(page, settings, true) : { alternates: await canonicalFor("/") };
 }
 
 function resolveCategorySectionIcon(category: Category): LucideIcon {
@@ -128,6 +132,25 @@ function bannerStyleTokens(style: HomeCategoryBannerStyle) {
  */
 export default async function HomePage() {
   const settings = await getSiteSettings();
+  const page = await getHomepagePage(settings);
+  if (page) {
+    // Keep the CMS renderer off the built-in storefront's server loading path.
+    // This is a server import, not a client-only fetch or hydration gate.
+    const { PageArticle } = await import("@/components/page-article");
+    return (
+      <>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(pageJsonLd(page, settings, "/")) }}
+        />
+        <PageArticle
+          page={page}
+          breadcrumbItems={[{ label: "Home" }]}
+          editHref={`/nemesis/pages/${page.id}`}
+        />
+      </>
+    );
+  }
   const { store_name } = settings;
   const heroTitle = settings.home_hero_title || defaultHomeHeroTitle(store_name);
   const heroSubtitle =

@@ -52,6 +52,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   payment_plisio_currencies: [],
   payment_crypto_enabled: true,
   payment_crypto_protocols: DEFAULT_CRYPTO_PROTOCOLS,
+  home_page_id: null,
   home_show_hero: true,
   home_hero_badge: DEFAULT_HOME_HERO_BADGE,
   home_hero_title: null,
@@ -146,6 +147,7 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
         ? row.payment_crypto_protocols
         : meta.payment_crypto_protocols,
     ),
+    home_page_id: typeof row.home_page_id === "string" && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(row.home_page_id) ? row.home_page_id : null,
     home_show_hero: flag(row.home_show_hero ?? meta.home_show_hero, true),
     home_hero_badge:
       "home_hero_badge" in row && row.home_hero_badge !== undefined
@@ -230,8 +232,8 @@ const getCachedSiteSettings = unstable_cache(
       return DEFAULT_SITE_SETTINGS;
     }
   },
-  // Do not reuse a pre-typography normalized payload across deployments.
-  ["site-settings", "typography-v1"],
+  // Do not reuse a normalized payload with the previous settings schema.
+  ["site-settings", "static-homepage-v1"],
   { tags: [SITE_SETTINGS_TAG], revalidate: 3600 },
 );
 

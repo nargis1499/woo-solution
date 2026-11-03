@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
+import { getSiteSettings } from "@/lib/site-settings";
 import { createPublicClient } from "@/lib/supabase/public";
 import { isExternalHref, menuItemHref } from "@/lib/menu-config";
 import type { MenuItemKind, MenuLocation, PageStatus } from "@/lib/types";
@@ -29,7 +30,7 @@ type Row = {
   url: string | null;
   open_in_new_tab: boolean;
   parent_id?: string | null;
-  page: { slug: string; status: PageStatus } | null;
+  page: { id: string; slug: string; status: PageStatus } | null;
   category: { slug: string } | null;
 };
 
@@ -44,9 +45,10 @@ export const getMenu = cache(async (location: MenuLocation): Promise<MenuLink[]>
     async (): Promise<MenuLink[]> => {
       try {
         const supabase = createPublicClient();
+        const settings = await getSiteSettings();
         const primaryRes = await supabase
           .from("menu_items")
-          .select("id, kind, title, url, open_in_new_tab, parent_id, page:pages(slug, status), category:categories(slug)")
+          .select("id, kind, title, url, open_in_new_tab, parent_id, page:pages(id, slug, status), category:categories(slug)")
           .eq("location", location)
           .order("sort_order", { ascending: true })
           .order("created_at", { ascending: true })
@@ -59,7 +61,7 @@ export const getMenu = cache(async (location: MenuLocation): Promise<MenuLink[]>
           usedLegacy = true;
           const legacyRes = await supabase
             .from("menu_items")
-            .select("id, kind, title, url, open_in_new_tab, page:pages(slug, status), category:categories(slug)")
+            .select("id, kind, title, url, open_in_new_tab, page:pages(id, slug, status), category:categories(slug)")
             .eq("location", location)
             .order("sort_order", { ascending: true })
             .order("created_at", { ascending: true })
@@ -92,7 +94,8 @@ export const getMenu = cache(async (location: MenuLocation): Promise<MenuLink[]>
           (data ?? []) as unknown as Row[]
         ).flatMap((item) => {
           if (item.kind === "page" && item.page?.status !== "published") return [];
-          const href = menuItemHref(item);
+          const href = item.kind === "page" && item.page?.id === settings.home_page_id
+            ? "/" : menuItemHref(item);
           if (!href) return [];
           const rawParentId =
             location === "header"
@@ -173,7 +176,7 @@ export const getMenu = cache(async (location: MenuLocation): Promise<MenuLink[]>
         return [];
       }
     },
-    ["menu", location],
+    ["menu", "static-homepage-v1", location],
     { tags: [MENU_TAG], revalidate: 3600 },
   )();
 });

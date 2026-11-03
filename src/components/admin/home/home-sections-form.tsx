@@ -385,10 +385,10 @@ export function HomeSectionsForm({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-1">
               <CardTitle className="text-xl font-bold tracking-tight">
-                Home page sections
+                Default storefront sections
               </CardTitle>
               <CardDescription>
-                Switch a section off and visitors no longer see it. Changes go live immediately.
+                These sections appear when using the default storefront. Save changes to publish.
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2.5">

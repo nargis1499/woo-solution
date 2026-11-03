@@ -1,12 +1,12 @@
+import { cmsPageMetadata } from "@/lib/pages/metadata";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getPublishedPage } from "@/lib/data/pages";
-import { isReservedSlug, PAGE_SLUG_RE, pageHref, pageSeo } from "@/lib/pages/shared";
+import { isReservedSlug, PAGE_SLUG_RE, pageHref } from "@/lib/pages/shared";
 import {
   breadcrumbJsonLd,
   NOINDEX,
   pageJsonLd,
-  robotsFor,
   serializeJsonLd,
 } from "@/lib/seo";
 import { getSiteSettings, resolveSiteUrl } from "@/lib/site-settings";
@@ -43,38 +43,15 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const [page, settings] = await Promise.all([load(slug), getSiteSettings()]);
   if (!page) return { title: "Page not found", robots: NOINDEX };
 
-  const seo = pageSeo(page, resolveSiteUrl(settings), settings.seo_indexing);
-  const image = seo.ogImage ?? settings.seo_og_image_url ?? undefined;
-  return {
-    title: seo.title,
-    description: seo.description ?? undefined,
-    alternates: seo.canonical ? { canonical: seo.canonical } : undefined,
-    robots: robotsFor(seo.robots),
-    openGraph: {
-      type: "article",
-      title: seo.ogTitle,
-      description: seo.ogDescription ?? undefined,
-      url: seo.canonical ?? undefined,
-      siteName: settings.store_name,
-      publishedTime: page.published_at ?? undefined,
-      modifiedTime: page.updated_at,
-      tags: page.tags?.map((t) => t.name),
-      images: image ? [{ url: image, alt: page.og_image?.alt ?? page.featured_image?.alt ?? seo.ogTitle }] : undefined,
-    },
-    twitter: {
-      card: image ? "summary_large_image" : "summary",
-      site: settings.seo_twitter ? `@${settings.seo_twitter}` : undefined,
-      title: seo.ogTitle,
-      description: seo.ogDescription ?? undefined,
-      images: image ? [image] : undefined,
-    },
-  };
+  return cmsPageMetadata(page, settings, page.id === settings.home_page_id);
 }
 
 export default async function DynamicPage({ params }: { params: Params }) {
   const { slug } = await params;
   const [page, settings] = await Promise.all([load(slug), getSiteSettings()]);
   if (!page) notFound();
+  // Temporary redirect: homepage assignments can change, so never cache a 308.
+  if (page.id === settings.home_page_id) redirect("/");
 
   const base = resolveSiteUrl(settings);
   const path = pageHref(page.slug);

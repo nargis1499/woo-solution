@@ -380,6 +380,8 @@ export type SiteSettings = {
   payment_plisio_currencies: PlisioCurrency[];
   payment_crypto_enabled: boolean;
   payment_crypto_protocols: CryptoProtocol[];
+  /** Published CMS page shown at /; null = built-in storefront. */
+  home_page_id: string | null;
   // Home page (UI → Home page): which sections the storefront home renders + hero content
   home_show_hero: boolean;
   home_hero_badge: string | null;
