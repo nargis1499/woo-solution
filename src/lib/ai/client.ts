@@ -587,6 +587,9 @@ export async function runModelCompletion(opts: {
   overrideModel?: string;
   overrideApiKey?: string | null;
   overrideBaseUrl?: string | null;
+  /** Optional caller-owned deadline/cancellation; applies to every provider attempt. */
+  signal?: AbortSignal;
+  maxOutputTokens?: number;
 }): Promise<AiCompletionResult> {
   const provider = opts.overrideProvider ?? opts.settings.provider;
   const providerMeta = AI_PROVIDERS[provider];
@@ -614,12 +617,13 @@ export async function runModelCompletion(opts: {
         ? primaryModel
         : null;
 
-  const maxTokens =
+  const maxTokens = opts.maxOutputTokens === undefined ? (
     opts.settings.token_budget_mode === "economy"
       ? 900
       : opts.settings.token_budget_mode === "standard"
         ? 1800
-        : 3200;
+        : 3200
+  ) : Math.max(256, Math.min(8000, Math.round(opts.maxOutputTokens)));
 
   const traceId = opts.traceId ?? crypto.randomUUID();
   let activeTools = opts.tools ?? [];
@@ -633,7 +637,7 @@ export async function runModelCompletion(opts: {
     );
     const fetcher: typeof fetch = (input, init) => {
       providerRequests++;
-      return capturedFetch(input, init);
+      return capturedFetch(input, { ...init, signal: opts.signal ?? init?.signal });
     };
     if (provider === "anthropic") {
       return callAnthropic({
