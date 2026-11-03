@@ -238,7 +238,7 @@ The settings live in `site_settings` (migration 11); the storefront reads them t
 
 #### Colors & Gradients
 
-`/nemesis/ui?tab=colors` → **Colors** restyles the whole store – storefront *and* dashboard – without touching code. The **UI** sidebar entry (directly above *Settings*) opens the page on *Menu*; the tab's own address is `/nemesis/ui?tab=colors`. Legacy `/nemesis/ui?tab=extra` links and a typed `/nemesis/extra` redirect there.
+`/nemesis/ui?tab=colors` → **Colors** restyles the whole store – storefront *and* dashboard – without touching code. The **UI** sidebar entry (directly above *Settings*) opens the page on *Menu*; the tab's own address is `/nemesis/ui?tab=colors`. `/nemesis/ui?tab=extra` is a separate **Extra** tab reserved for future UI settings; a typed `/nemesis/extra` redirects to that tab.
 
 | Control | What it does |
 | --- | --- |

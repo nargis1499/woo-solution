@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * route keeps a typed-in `/nemesis/extra` (or a bookmark) working.
  */
 export default function AdminExtraPage() {
-  redirect("/nemesis/ui?tab=colors");
+  redirect("/nemesis/ui?tab=extra");
 }
