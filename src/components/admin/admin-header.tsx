@@ -16,7 +16,7 @@ export function AdminHeader({ bell }: { bell?: ReactNode }) {
   const pathname = usePathname();
   const { setOpen: setAiOpen } = useNemesisAi();
   const section = ADMIN_NAV.find((n) => (n.exact ? pathname === n.href : pathname.startsWith(n.href.split("?")[0])));
-  // a nav href may carry a query (?tab=extra) – the root of the section is still its path
+  // a nav href may carry a query (?tab=colors) – the root of the section is still its path
   const isSectionRoot = section ? pathname === section.href.split("?")[0] : false;
 
   return (
