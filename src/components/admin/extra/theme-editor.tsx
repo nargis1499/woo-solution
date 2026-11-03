@@ -86,7 +86,7 @@ function SmoothCollapse({ open, children }: { open: boolean; children: ReactNode
 }
 
 /**
- * Extra → Theme Customization.
+ * Colors → Colors & Gradients.
  *
  * One form holds the whole theme (both modes + gradients + the sync switch) and
  * saves it in one go; everything the admin does is previewed live by the
@@ -131,7 +131,7 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
   const [headerFooterOpen, setHeaderFooterOpen] = useState(false);
   const [gradientsOpen, setGradientsOpen] = useState(false);
 
-  // Also sync when switching into the Extra tab inside /nemesis/ui (where TabsContent uses shouldForceMount).
+  // Also sync when switching into the Colors tab inside /nemesis/ui (where TabsContent uses shouldForceMount).
   useEffect(() => {
     const panel = formRef.current?.closest('[role="tabpanel"]');
     if (!panel) return;
@@ -248,8 +248,8 @@ export function ThemeEditor({ saved }: { saved: ThemeCustomization }) {
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-1">
-                  <CardTitle className="text-xl font-bold tracking-tight">Theme Customization</CardTitle>
-                  <CardDescription>Colours and gradients of the whole store.</CardDescription>
+                  <CardTitle className="text-xl font-bold tracking-tight">Colors &amp; Gradients</CardTitle>
+                  <CardDescription>Customize colors and gradients across your store and dashboard.</CardDescription>
                 </div>
                 <div className="flex flex-col items-end gap-1.5">
                   <div className="flex flex-wrap items-center gap-2.5">
