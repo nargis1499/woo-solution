@@ -1,5 +1,3 @@
-import { renderDesignedBlockHtml, type SectionStyle, type CellStyle } from "./block-design";
-
 /*
  * Structured modular block engine for CMS Pages.
  *
@@ -40,10 +38,6 @@ export type LayoutValign = "top" | "center" | "stretch";
 export type PageBlock = {
   id: string;
   type: BlockType;
-  /** Trusted, precompiled Tailwind templates; never model-authored CSS. */
-  designVersion?: 1;
-  sectionStyle?: SectionStyle;
-  cellStyle?: CellStyle;
   /** Rich inline HTML for heading, paragraph, callout, quote */
   html?: string;
   // Layout (Rows × Columns Grid)
@@ -358,8 +352,6 @@ export function renderSingleBlockHtml(block: PageBlock, includeJsonMeta = true):
   const idAttr = includeJsonMeta
     ? ` data-block-id="${escapeAttr(block.id)}" data-block-type="${escapeAttr(block.type)}"${metaAttr}`
     : "";
-  const designed = renderDesignedBlockHtml(block, idAttr);
-  if (designed !== null) return designed;
   const alignStyle =
     block.align && block.align !== "left" ? ` style="text-align: ${block.align}"` : "";
 

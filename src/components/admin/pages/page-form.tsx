@@ -17,7 +17,6 @@ import { useFormToast } from "../flash-toast";
 import { MediaRefField } from "../media/media-ref-field";
 import { BlockEditorCanvas, BlockSettingsInspector, useBlockEditorState } from "./block-editor";
 import { PageStatusBadge } from "./page-status-badge";
-import { AiPageBuilder } from "./ai-page-builder";
 import { SeoSettings } from "./seo-settings";
 import { TagInput } from "./tag-input";
 import { useUnsavedChanges } from "./use-unsaved-changes";
@@ -210,7 +209,6 @@ function PageFields({
 
               <Field data-invalid={Boolean(err.content) || undefined}>
                 <FieldLabel>Page content</FieldLabel>
-                <AiPageBuilder controller={blockController} title={title} disabled={isPending} />
                 <BlockEditorCanvas
                   controller={blockController}
                   simpleProducts={simpleProducts}
