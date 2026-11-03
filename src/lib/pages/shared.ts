@@ -227,6 +227,7 @@ export function pageSeo(
   },
   siteUrl: string | null,
   indexingEnabled = true,
+  canonicalPath?: string,
 ): PageSeo {
   const title = pick(page.seo_title, page.title) ?? page.title;
   const description = pick(page.seo_description, page.excerpt) ?? (page.content ? excerptFromHtml(page.content) || null : null);
@@ -234,7 +235,9 @@ export function pageSeo(
   return {
     title,
     description,
-    canonical: pick(page.canonical_url) ?? (siteUrl ? `${siteUrl}${pageHref(page.slug)}` : null),
+    canonical: canonicalPath !== undefined
+      ? (siteUrl ? `${siteUrl}${canonicalPath}` : null)
+      : pick(page.canonical_url) ?? (siteUrl ? `${siteUrl}${pageHref(page.slug)}` : null),
     robots: { index: indexingEnabled && page.robots_index, follow: indexingEnabled && page.robots_follow },
     ogTitle: pick(page.og_title) ?? title,
     ogDescription: pick(page.og_description) ?? description,

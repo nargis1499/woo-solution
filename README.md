@@ -228,6 +228,8 @@ On the storefront the page of a variable product shows one dropdown per attribut
 
 #### Home page
 
+Under **UI → Home page → Homepage**, choose the built-in storefront or any published CMS page to display directly at `/`. Save with **Save homepage**; section settings stay intact. See [static homepage behavior, SEO and caching](docs/static-homepage.md).
+
 `/nemesis/ui?tab=home` → **Home page** decides which sections the storefront home page shows below the hero, in the order they appear on the page. One switch each, one **Save changes**, live immediately:
 
 - **Shop by category** – the category tiles (on by default).

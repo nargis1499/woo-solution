@@ -1,3 +1,4 @@
+import { HomepageForm } from "@/components/admin/home/homepage-form";
 import { TypographyEditor } from "@/components/admin/typography/typography-editor";
 import { saveTypography } from "./typography-actions";
 import { DEFAULT_TYPOGRAPHY } from "@/lib/typography/catalog";
@@ -57,6 +58,7 @@ export default async function AdminUiPage({ searchParams }: { searchParams: Sear
           ),
           home: (
             <div className="space-y-5">
+              {settings && <HomepageForm selected={settings.home_page_id} pages={pages} available={settings.homepageMigrated} />}
               {settings && !settings.homeMigrated && (
                 <Alert variant="destructive">
                   <AlertTitle>Database update required</AlertTitle>

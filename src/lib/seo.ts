@@ -2,7 +2,7 @@ import "server-only";
 import type { Metadata } from "next";
 import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
-import { getPublishedPagesForSitemap } from "@/lib/data/pages";
+import { getHomepagePage, getPublishedPagesForSitemap } from "@/lib/data/pages";
 import { getPublishedPostsForSitemap } from "@/lib/data/posts";
 import { parseProductFeatures } from "@/lib/home-sections";
 import { slidesFor } from "@/lib/media/shared";
@@ -155,12 +155,17 @@ const getCachedSitemapEntries = unstable_cache(
 
     try {
       const supabase = createPublicClient();
-      const [categories, products, pages, posts] = await Promise.all([
+      const [categories, products, pages, posts, home] = await Promise.all([
         supabase.from("categories").select("slug").order("sort_order", { ascending: true }),
         supabase.from("products").select("slug, updated_at").eq("is_active", true).eq("robots_index", true).order("created_at", { ascending: false }).limit(5000),
         getPublishedPagesForSitemap(),
         getPublishedPostsForSitemap(),
+        getSiteSettings().then(getHomepagePage),
       ]);
+      if (home) {
+        if (!home.robots_index) entries.splice(0, 1);
+        else entries[0].lastModified = home.updated_at;
+      }
       for (const c of categories.data ?? []) {
         entries.push({ path: `/shop?category=${encodeURIComponent(c.slug)}`, changeFrequency: "weekly", priority: 0.7 });
       }
@@ -168,6 +173,7 @@ const getCachedSitemapEntries = unstable_cache(
         entries.push({ path: `/products/${encodeURIComponent(p.slug)}`, lastModified: p.updated_at ?? undefined, changeFrequency: "weekly", priority: 0.8 });
       }
       for (const page of pages) {
+        if (page.id === home?.id) continue; // represented once, at /
         entries.push({ path: `/${encodeURIComponent(page.slug)}`, lastModified: page.updated_at, changeFrequency: "monthly", priority: 0.6 });
       }
       for (const post of posts) {
@@ -178,7 +184,7 @@ const getCachedSitemapEntries = unstable_cache(
     }
     return entries;
   },
-  ["sitemap-entries"],
+  ["sitemap-entries", "static-homepage-v1"],
   { tags: [SITEMAP_TAG], revalidate: 3600 },
 );
 
@@ -365,9 +371,9 @@ export function productJsonLd(product: Product, settings: SiteSettings): Record<
 }
 
 /** Schema.org `WebPage` JSON-LD for published CMS pages (`/[slug]`). */
-export function pageJsonLd(page: Page, settings: SiteSettings): Record<string, unknown> {
+export function pageJsonLd(page: Page, settings: SiteSettings, canonicalPath?: string): Record<string, unknown> {
   const base = resolveSiteUrl(settings);
-  const seo = pageSeo(page, base, settings.seo_indexing);
+  const seo = pageSeo(page, base, settings.seo_indexing, canonicalPath);
   const url = seo.canonical ?? (base ? `${base}${pageHref(page.slug)}` : undefined);
   const hero = featuredImage(page);
   const imageUrl = seo.ogImage ?? hero?.src ?? undefined;
