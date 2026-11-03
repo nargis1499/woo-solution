@@ -14,6 +14,8 @@ import { createClient } from "@/lib/supabase/server";
 export type AdminFormState = {
   error?: string;
   success?: string;
+  /** Confirmed homepage assignment returned by the unified home settings save. */
+  homePageId?: string | null;
   fieldErrors?: Record<string, string>;
   /** Echo of the submitted values so the form keeps them after a failed submit. */
   values?: Record<string, string>;

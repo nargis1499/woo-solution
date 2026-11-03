@@ -1,6 +1,15 @@
 "use client";
 
-import { createElement, startTransition, useActionState, useId, useState } from "react";
+import {
+  createElement,
+  startTransition,
+  useActionState,
+  useId,
+  useState,
+} from "react";
+import { useRouter } from "next/navigation";
+import type { PageOption } from "@/lib/admin/data";
+import { HomepagePicker } from "./homepage-form";
 import {
   DndContext,
   MouseSensor,
@@ -30,7 +39,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { updateHomeSections, type AdminFormState } from "@/app/nemesis/actions";
-import { CATEGORY_ICON_BY_ID, DEFAULT_CATEGORY_ICON } from "@/lib/category-icons";
+import {
+  CATEGORY_ICON_BY_ID,
+  DEFAULT_CATEGORY_ICON,
+} from "@/lib/category-icons";
 import { FREE_SHIPPING_THRESHOLD_MICROS } from "@/lib/config";
 import {
   DEFAULT_HOME_HERO_BADGE,
@@ -63,7 +75,12 @@ import type {
 import { useFormToast } from "@/components/admin/flash-toast";
 import { SubmitButton, SwitchRow } from "@/components/admin/form-bits";
 import { buttonVariants } from "@/components/ui/button-variants";
-import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardTitle,
+} from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -264,7 +281,9 @@ function SortableCategorySectionRow({
         <Switch
           aria-label={`Show ${row.category.name} section on home page`}
           isSelected={row.enabled}
-          onChange={(checked) => onUpdate(row.category_id, { enabled: checked })}
+          onChange={(checked) =>
+            onUpdate(row.category_id, { enabled: checked })
+          }
           data-testid={`home-category-toggle-${row.category.slug}`}
         />
       </div>
@@ -282,12 +301,48 @@ function SortableCategorySectionRow({
 export function HomeSectionsForm({
   settings,
   categories = [],
+  pages,
+  homepageAvailable = true,
 }: {
   settings: SiteSettings;
   categories?: Category[];
+  pages: PageOption[];
+  homepageAvailable?: boolean;
 }) {
+  const router = useRouter();
+  const serverHomepage = settings.home_page_id ?? "";
+  const [homepage, setHomepage] = useState(serverHomepage);
+  const [savedHomepage, setSavedHomepage] = useState(serverHomepage);
+  const [seenSettings, setSeenSettings] = useState(settings);
+  const [sectionEdits, setSectionEdits] = useState(false);
+  // Follow fresh server props without discarding an unsaved selection.
+  if (seenSettings !== settings) {
+    setSeenSettings(settings);
+    setSavedHomepage(serverHomepage);
+    if (homepage === savedHomepage) setHomepage(serverHomepage);
+  }
   const [state, dispatch, isPending] = useActionState<AdminFormState, FormData>(
-    updateHomeSections,
+    async (previous, data) => {
+      let result: AdminFormState;
+      try {
+        result = await updateHomeSections(previous, data);
+      } catch {
+        return {
+          error:
+            "Could not confirm the save. Your edits are still here. Retry, or refresh to check the current saved settings.",
+        };
+      }
+      if (result?.success && "homePageId" in result) {
+        const confirmed = result.homePageId ?? "";
+        // Acknowledge the committed value locally: router.refresh preserves
+        // useState, so revalidation alone cannot reset a mounted picker.
+        setHomepage(confirmed);
+        setSavedHomepage(confirmed);
+        if (!confirmed) setSectionEdits(false);
+        router.refresh();
+      }
+      return result;
+    },
     null,
   );
   useFormToast(state);
@@ -297,7 +352,9 @@ export function HomeSectionsForm({
   const dndId = useId();
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 150, tolerance: 5 },
+    }),
   );
 
   const fallbackTitle = defaultHomeHeroTitle(settings.store_name);
@@ -321,11 +378,13 @@ export function HomeSectionsForm({
   );
 
   function handleDefaultLayoutChange(nextLayout: HomeCategoryDisplayMode) {
+    setSectionEdits(true);
     setDefaultLayout(nextLayout);
     setCategoryRows((rows) => rows.map((r) => ({ ...r, layout: nextLayout })));
   }
 
   function handleDefaultBannerStyleChange(nextStyle: HomeCategoryBannerStyle) {
+    setSectionEdits(true);
     setBannerStyle(nextStyle);
     setCategoryRows((rows) =>
       rows.map((r) => ({ ...r, banner_style: nextStyle })),
@@ -341,6 +400,7 @@ export function HomeSectionsForm({
       banner_style: HomeCategoryBannerStyle;
     }>,
   ) {
+    setSectionEdits(true);
     setCategoryRows((rows) =>
       rows.map((r) => (r.category_id === categoryId ? { ...r, ...patch } : r)),
     );
@@ -349,8 +409,11 @@ export function HomeSectionsForm({
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
+    setSectionEdits(true);
     setCategoryRows((rows) => {
-      const oldIndex = rows.findIndex((r) => r.category_id === String(active.id));
+      const oldIndex = rows.findIndex(
+        (r) => r.category_id === String(active.id),
+      );
       const newIndex = rows.findIndex((r) => r.category_id === String(over.id));
       if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return rows;
       return arrayMove(rows, oldIndex, newIndex);
@@ -358,353 +421,470 @@ export function HomeSectionsForm({
   }
 
   const serializedSections = JSON.stringify(
-    categoryRows.map(({ category_id, enabled, limit, layout, banner_style }) => ({
-      category_id,
-      enabled,
-      limit,
-      layout,
-      banner_style,
-    })),
+    categoryRows.map(
+      ({ category_id, enabled, limit, layout, banner_style }) => ({
+        category_id,
+        enabled,
+        limit,
+        layout,
+        banner_style,
+      }),
+    ),
   );
+
+  const missingHomepage = Boolean(
+    homepage &&
+    !pages.some((page) => page.id === homepage && page.status === "published"),
+  );
+  const dirty = homepage !== savedHomepage || (!homepage && sectionEdits);
 
   return (
     <form
       noValidate
+      className="space-y-5"
+      aria-busy={isPending}
+      onChangeCapture={(event) => {
+        if ((event.target as HTMLElement).closest("[data-home-sections]"))
+          setSectionEdits(true);
+      }}
       onSubmit={(e) => {
         if (e.target !== e.currentTarget) return;
         e.preventDefault();
+        if (isPending || !homepageAvailable || missingHomepage) return;
         const formData = new FormData(e.currentTarget);
         startTransition(() => dispatch(formData));
       }}
     >
-      <Card className="gap-0 overflow-visible py-0">
-        <div
-          className="sticky top-14 z-20 rounded-t-xl border-b bg-card/95 px-6 py-5 backdrop-blur supports-[backdrop-filter]:bg-card/85"
-          data-testid="home-sections-sticky-header"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-1">
-              <CardTitle className="text-xl font-bold tracking-tight">
-                Default storefront sections
-              </CardTitle>
-              <CardDescription>
-                These sections appear when using the default storefront. Save changes to publish.
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <SubmitButton pendingLabel="Saving…" pending={isPending}>
-                Save changes
-              </SubmitButton>
-              <a
-                href="/"
-                target="_blank"
-                rel="noreferrer"
-                className={buttonVariants({ variant: "outline", size: "default" })}
-              >
-                View home page <ExternalLinkIcon />
-              </a>
-            </div>
-          </div>
-          {state?.error && (
-            <div className="mt-2">
-              <FieldError>{state.error}</FieldError>
-            </div>
-          )}
+      <div className="sticky top-14 z-20 flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card/95 px-6 py-5 backdrop-blur">
+        <div className="space-y-1">
+          <h2 className="text-xl font-bold tracking-tight">
+            Home page settings
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Save your homepage choice and its storefront settings together.
+          </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <a
+            href="/"
+            target="_blank"
+            rel="noreferrer"
+            className={buttonVariants({ variant: "outline", size: "default" })}
+          >
+            View home page <ExternalLinkIcon />
+          </a>
+          <SubmitButton
+            pendingLabel="Saving…"
+            pending={isPending}
+            disabled={!homepageAvailable || missingHomepage}
+          >
+            Save changes
+          </SubmitButton>
+        </div>
+      </div>
+      <HomepagePicker
+        value={homepage}
+        onChange={setHomepage}
+        dirty={dirty}
+        pending={isPending}
+        pages={pages}
+        available={homepageAvailable}
+      />
+      {state?.error && (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/20 bg-destructive/5 p-4"
+        >
+          <FieldError>{state.error}</FieldError>
+        </div>
+      )}
+      {/* Keep drafts mounted when changing the selection, but hidden and excluded
+          from submission for static pages. There is no nested form or second save. */}
+      <fieldset
+        data-home-sections
+        hidden={Boolean(homepage)}
+        disabled={Boolean(homepage) || isPending}
+        inert={Boolean(homepage) || isPending}
+        className="min-w-0"
+      >
+        <input type="hidden" name="home_sections_present" value="on" />
+        <Card className="gap-0 overflow-visible py-0">
+          <div className="rounded-t-xl border-b px-6 py-5">
+            <CardTitle className="text-xl font-bold tracking-tight">
+              Default storefront sections
+            </CardTitle>
+            <CardDescription>
+              These sections appear on your default homepage. Use Save changes
+              above to publish.
+            </CardDescription>
+          </div>
 
-        <CardContent className="space-y-3 pt-5 pb-6" data-testid="home-sections">
-          <input
-            type="hidden"
-            name="home_category_default_layout"
-            value={defaultLayout}
-          />
-          <input
-            type="hidden"
-            name="home_category_banner_style"
-            value={bannerStyle}
-          />
-          <input
-            type="hidden"
-            name="home_category_sections_json"
-            value={serializedSections}
-          />
+          <CardContent
+            className="space-y-3 pt-5 pb-6"
+            data-testid="home-sections"
+          >
+            <input
+              type="hidden"
+              name="home_category_default_layout"
+              value={defaultLayout}
+            />
+            <input
+              type="hidden"
+              name="home_category_banner_style"
+              value={bannerStyle}
+            />
+            <input
+              type="hidden"
+              name="home_category_sections_json"
+              value={serializedSections}
+            />
 
-          {HOME_SECTIONS.map((section) => (
-            <SwitchRow
-              key={section.id}
-              id={section.id}
-              name={section.id}
-              label={section.label}
-              description={section.description}
-              defaultSelected={settings[section.id]}
-            >
-              {section.id === "home_show_hero" && (
-                <div className="space-y-4" data-testid="home-hero-fields">
-                  <div className="grid gap-4 sm:grid-cols-[220px_1fr]">
-                    <Field data-invalid={Boolean(err.home_hero_badge) || undefined}>
-                      <FieldLabel htmlFor="home_hero_badge">Badge text</FieldLabel>
-                      <Input
-                        id="home_hero_badge"
-                        name="home_hero_badge"
-                        maxLength={HOME_HERO_BADGE_MAX}
-                        placeholder={DEFAULT_HOME_HERO_BADGE}
-                        defaultValue={v.home_hero_badge ?? settings.home_hero_badge ?? ""}
-                        aria-invalid={Boolean(err.home_hero_badge) || undefined}
-                      />
-                      <FieldError>{err.home_hero_badge}</FieldError>
-                    </Field>
-
-                    <Field data-invalid={Boolean(err.home_hero_title) || undefined}>
-                      <FieldLabel htmlFor="home_hero_title">Hero heading</FieldLabel>
-                      <Input
-                        id="home_hero_title"
-                        name="home_hero_title"
-                        maxLength={HOME_HERO_TITLE_MAX}
-                        placeholder={fallbackTitle}
-                        defaultValue={
-                          v.home_hero_title ?? settings.home_hero_title ?? fallbackTitle
-                        }
-                        aria-invalid={Boolean(err.home_hero_title) || undefined}
-                      />
-                      <FieldError>{err.home_hero_title}</FieldError>
-                    </Field>
-                  </div>
-
-                  <Field data-invalid={Boolean(err.home_hero_subtitle) || undefined}>
-                    <FieldLabel htmlFor="home_hero_subtitle">Hero description</FieldLabel>
-                    <Textarea
-                      id="home_hero_subtitle"
-                      name="home_hero_subtitle"
-                      rows={2}
-                      maxLength={HOME_HERO_SUBTITLE_MAX}
-                      placeholder={fallbackSubtitle}
-                      defaultValue={
-                        v.home_hero_subtitle ?? settings.home_hero_subtitle ?? fallbackSubtitle
-                      }
-                      aria-invalid={Boolean(err.home_hero_subtitle) || undefined}
-                    />
-                    <FieldError>{err.home_hero_subtitle}</FieldError>
-                  </Field>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field data-invalid={Boolean(err.home_hero_primary_cta_text) || undefined}>
-                      <FieldLabel htmlFor="home_hero_primary_cta_text">
-                        Primary button text
-                      </FieldLabel>
-                      <Input
-                        id="home_hero_primary_cta_text"
-                        name="home_hero_primary_cta_text"
-                        maxLength={HOME_HERO_CTA_TEXT_MAX}
-                        placeholder={DEFAULT_HOME_HERO_PRIMARY_CTA_TEXT}
-                        defaultValue={
-                          v.home_hero_primary_cta_text ??
-                          settings.home_hero_primary_cta_text ??
-                          ""
-                        }
-                        aria-invalid={Boolean(err.home_hero_primary_cta_text) || undefined}
-                      />
-                      <FieldError>{err.home_hero_primary_cta_text}</FieldError>
-                    </Field>
-
-                    <Field data-invalid={Boolean(err.home_hero_primary_cta_href) || undefined}>
-                      <FieldLabel htmlFor="home_hero_primary_cta_href">
-                        Primary button link
-                      </FieldLabel>
-                      <Input
-                        id="home_hero_primary_cta_href"
-                        name="home_hero_primary_cta_href"
-                        maxLength={HOME_HERO_CTA_HREF_MAX}
-                        placeholder={DEFAULT_HOME_HERO_PRIMARY_CTA_HREF}
-                        defaultValue={
-                          v.home_hero_primary_cta_href ??
-                          settings.home_hero_primary_cta_href ??
-                          DEFAULT_HOME_HERO_PRIMARY_CTA_HREF
-                        }
-                        aria-invalid={Boolean(err.home_hero_primary_cta_href) || undefined}
-                      />
-                      <FieldError>{err.home_hero_primary_cta_href}</FieldError>
-                    </Field>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field data-invalid={Boolean(err.home_hero_secondary_cta_text) || undefined}>
-                      <FieldLabel htmlFor="home_hero_secondary_cta_text">
-                        Secondary link text
-                      </FieldLabel>
-                      <Input
-                        id="home_hero_secondary_cta_text"
-                        name="home_hero_secondary_cta_text"
-                        maxLength={HOME_HERO_CTA_TEXT_MAX}
-                        placeholder={DEFAULT_HOME_HERO_SECONDARY_CTA_TEXT}
-                        defaultValue={
-                          v.home_hero_secondary_cta_text ??
-                          settings.home_hero_secondary_cta_text ??
-                          ""
-                        }
-                        aria-invalid={Boolean(err.home_hero_secondary_cta_text) || undefined}
-                      />
-                      <FieldError>{err.home_hero_secondary_cta_text}</FieldError>
-                    </Field>
-
-                    <Field data-invalid={Boolean(err.home_hero_secondary_cta_href) || undefined}>
-                      <FieldLabel htmlFor="home_hero_secondary_cta_href">
-                        Secondary link URL
-                      </FieldLabel>
-                      <Input
-                        id="home_hero_secondary_cta_href"
-                        name="home_hero_secondary_cta_href"
-                        maxLength={HOME_HERO_CTA_HREF_MAX}
-                        placeholder={DEFAULT_HOME_HERO_SECONDARY_CTA_HREF}
-                        defaultValue={
-                          v.home_hero_secondary_cta_href ??
-                          settings.home_hero_secondary_cta_href ??
-                          DEFAULT_HOME_HERO_SECONDARY_CTA_HREF
-                        }
-                        aria-invalid={Boolean(err.home_hero_secondary_cta_href) || undefined}
-                      />
-                      <FieldError>{err.home_hero_secondary_cta_href}</FieldError>
-                    </Field>
-                  </div>
-                </div>
-              )}
-
-              {section.id === "home_show_category_sections" && (
-                <div className="space-y-5" data-testid="home-category-showcase-config">
-                  {/* Top controls: Default Display Layout + Default Banner Background Style */}
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field>
-                      <FieldLabel>Default Display Layout</FieldLabel>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <button
-                          type="button"
-                          onClick={() => handleDefaultLayoutChange("list")}
-                          aria-pressed={defaultLayout === "list"}
-                          data-testid="default-layout-list"
-                          className={cn(
-                            "inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                            defaultLayout === "list"
-                              ? "border-primary bg-primary/12 text-primary shadow-2xs"
-                              : "border-border bg-background/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                          )}
-                        >
-                          <ListIcon className="size-4" /> List View
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDefaultLayoutChange("grid")}
-                          aria-pressed={defaultLayout === "grid"}
-                          data-testid="default-layout-grid"
-                          className={cn(
-                            "inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                            defaultLayout === "grid"
-                              ? "border-primary bg-primary/12 text-primary shadow-2xs"
-                              : "border-border bg-background/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                          )}
-                        >
-                          <LayoutGridIcon className="size-4" /> Grid View
-                        </button>
-                      </div>
-                    </Field>
-
-                    <Field>
-                      <FieldLabel htmlFor="home_category_banner_style_select">
-                        Default Banner Background Style
-                      </FieldLabel>
-                      <Select
-                        selectedKey={bannerStyle}
-                        onSelectionChange={(key) =>
-                          handleDefaultBannerStyleChange(
-                            String(key) as HomeCategoryBannerStyle,
-                          )
-                        }
-                        aria-label="Default Banner Background Style"
+            {HOME_SECTIONS.map((section) => (
+              <SwitchRow
+                key={section.id}
+                id={section.id}
+                name={section.id}
+                label={section.label}
+                description={section.description}
+                defaultSelected={settings[section.id]}
+              >
+                {section.id === "home_show_hero" && (
+                  <div className="space-y-4" data-testid="home-hero-fields">
+                    <div className="grid gap-4 sm:grid-cols-[220px_1fr]">
+                      <Field
+                        data-invalid={Boolean(err.home_hero_badge) || undefined}
                       >
-                        <SelectTrigger
-                          id="home_category_banner_style_select"
-                          className="h-10 w-full"
-                          data-testid="banner-style-select"
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {HOME_CATEGORY_BANNER_STYLES.map((style) => (
-                            <SelectItem key={style.id} id={style.id}>
-                              {style.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  </div>
+                        <FieldLabel htmlFor="home_hero_badge">
+                          Badge text
+                        </FieldLabel>
+                        <Input
+                          id="home_hero_badge"
+                          name="home_hero_badge"
+                          maxLength={HOME_HERO_BADGE_MAX}
+                          placeholder={DEFAULT_HOME_HERO_BADGE}
+                          defaultValue={
+                            v.home_hero_badge ?? settings.home_hero_badge ?? ""
+                          }
+                          aria-invalid={
+                            Boolean(err.home_hero_badge) || undefined
+                          }
+                        />
+                        <FieldError>{err.home_hero_badge}</FieldError>
+                      </Field>
 
-                  {/* Per-category reorderable list */}
-                  <div className="space-y-3 border-t pt-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
-                        Manage Category Sections &amp; Item Limits
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        Drag handle or cards to reorder sections
-                      </span>
+                      <Field
+                        data-invalid={Boolean(err.home_hero_title) || undefined}
+                      >
+                        <FieldLabel htmlFor="home_hero_title">
+                          Hero heading
+                        </FieldLabel>
+                        <Input
+                          id="home_hero_title"
+                          name="home_hero_title"
+                          maxLength={HOME_HERO_TITLE_MAX}
+                          placeholder={fallbackTitle}
+                          defaultValue={
+                            v.home_hero_title ??
+                            settings.home_hero_title ??
+                            fallbackTitle
+                          }
+                          aria-invalid={
+                            Boolean(err.home_hero_title) || undefined
+                          }
+                        />
+                        <FieldError>{err.home_hero_title}</FieldError>
+                      </Field>
                     </div>
 
-                    <DndContext
-                      id={dndId}
-                      sensors={sensors}
-                      collisionDetection={closestCenter}
-                      modifiers={[restrictToVerticalAxis]}
-                      onDragEnd={handleDragEnd}
+                    <Field
+                      data-invalid={
+                        Boolean(err.home_hero_subtitle) || undefined
+                      }
                     >
-                      <SortableContext
-                        items={categoryRows.map((r) => r.category_id)}
-                        strategy={verticalListSortingStrategy}
+                      <FieldLabel htmlFor="home_hero_subtitle">
+                        Hero description
+                      </FieldLabel>
+                      <Textarea
+                        id="home_hero_subtitle"
+                        name="home_hero_subtitle"
+                        rows={2}
+                        maxLength={HOME_HERO_SUBTITLE_MAX}
+                        placeholder={fallbackSubtitle}
+                        defaultValue={
+                          v.home_hero_subtitle ??
+                          settings.home_hero_subtitle ??
+                          fallbackSubtitle
+                        }
+                        aria-invalid={
+                          Boolean(err.home_hero_subtitle) || undefined
+                        }
+                      />
+                      <FieldError>{err.home_hero_subtitle}</FieldError>
+                    </Field>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field
+                        data-invalid={
+                          Boolean(err.home_hero_primary_cta_text) || undefined
+                        }
                       >
-                        <div
-                          className="space-y-2.5"
-                          data-testid="home-category-section-rows"
-                        >
-                          {categoryRows.map((row, idx) => {
-                            const enabledOrder = categoryRows
-                              .slice(0, idx + 1)
-                              .filter((r) => r.enabled).length;
-                            const sectionBadge = row.enabled
-                              ? `Section ${String(enabledOrder).padStart(2, "0")}`
-                              : "Hidden";
+                        <FieldLabel htmlFor="home_hero_primary_cta_text">
+                          Primary button text
+                        </FieldLabel>
+                        <Input
+                          id="home_hero_primary_cta_text"
+                          name="home_hero_primary_cta_text"
+                          maxLength={HOME_HERO_CTA_TEXT_MAX}
+                          placeholder={DEFAULT_HOME_HERO_PRIMARY_CTA_TEXT}
+                          defaultValue={
+                            v.home_hero_primary_cta_text ??
+                            settings.home_hero_primary_cta_text ??
+                            ""
+                          }
+                          aria-invalid={
+                            Boolean(err.home_hero_primary_cta_text) || undefined
+                          }
+                        />
+                        <FieldError>
+                          {err.home_hero_primary_cta_text}
+                        </FieldError>
+                      </Field>
 
-                            return (
-                              <SortableCategorySectionRow
-                                key={row.category_id}
-                                row={row}
-                                sectionBadge={sectionBadge}
-                                onUpdate={updateCategoryRow}
-                              />
-                            );
-                          })}
-                        </div>
-                      </SortableContext>
-                    </DndContext>
+                      <Field
+                        data-invalid={
+                          Boolean(err.home_hero_primary_cta_href) || undefined
+                        }
+                      >
+                        <FieldLabel htmlFor="home_hero_primary_cta_href">
+                          Primary button link
+                        </FieldLabel>
+                        <Input
+                          id="home_hero_primary_cta_href"
+                          name="home_hero_primary_cta_href"
+                          maxLength={HOME_HERO_CTA_HREF_MAX}
+                          placeholder={DEFAULT_HOME_HERO_PRIMARY_CTA_HREF}
+                          defaultValue={
+                            v.home_hero_primary_cta_href ??
+                            settings.home_hero_primary_cta_href ??
+                            DEFAULT_HOME_HERO_PRIMARY_CTA_HREF
+                          }
+                          aria-invalid={
+                            Boolean(err.home_hero_primary_cta_href) || undefined
+                          }
+                        />
+                        <FieldError>
+                          {err.home_hero_primary_cta_href}
+                        </FieldError>
+                      </Field>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field
+                        data-invalid={
+                          Boolean(err.home_hero_secondary_cta_text) || undefined
+                        }
+                      >
+                        <FieldLabel htmlFor="home_hero_secondary_cta_text">
+                          Secondary link text
+                        </FieldLabel>
+                        <Input
+                          id="home_hero_secondary_cta_text"
+                          name="home_hero_secondary_cta_text"
+                          maxLength={HOME_HERO_CTA_TEXT_MAX}
+                          placeholder={DEFAULT_HOME_HERO_SECONDARY_CTA_TEXT}
+                          defaultValue={
+                            v.home_hero_secondary_cta_text ??
+                            settings.home_hero_secondary_cta_text ??
+                            ""
+                          }
+                          aria-invalid={
+                            Boolean(err.home_hero_secondary_cta_text) ||
+                            undefined
+                          }
+                        />
+                        <FieldError>
+                          {err.home_hero_secondary_cta_text}
+                        </FieldError>
+                      </Field>
+
+                      <Field
+                        data-invalid={
+                          Boolean(err.home_hero_secondary_cta_href) || undefined
+                        }
+                      >
+                        <FieldLabel htmlFor="home_hero_secondary_cta_href">
+                          Secondary link URL
+                        </FieldLabel>
+                        <Input
+                          id="home_hero_secondary_cta_href"
+                          name="home_hero_secondary_cta_href"
+                          maxLength={HOME_HERO_CTA_HREF_MAX}
+                          placeholder={DEFAULT_HOME_HERO_SECONDARY_CTA_HREF}
+                          defaultValue={
+                            v.home_hero_secondary_cta_href ??
+                            settings.home_hero_secondary_cta_href ??
+                            DEFAULT_HOME_HERO_SECONDARY_CTA_HREF
+                          }
+                          aria-invalid={
+                            Boolean(err.home_hero_secondary_cta_href) ||
+                            undefined
+                          }
+                        />
+                        <FieldError>
+                          {err.home_hero_secondary_cta_href}
+                        </FieldError>
+                      </Field>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {section.id === "home_show_filter" && (
-                <Field data-invalid={Boolean(err.home_filter_title) || undefined}>
-                  <FieldLabel htmlFor="home_filter_title">Section title</FieldLabel>
-                  <Input
-                    id="home_filter_title"
-                    name="home_filter_title"
-                    maxLength={HOME_FILTER_TITLE_MAX}
-                    placeholder={HOME_FILTER_TITLE_PLACEHOLDER}
-                    defaultValue={v.home_filter_title ?? settings.home_filter_title ?? ""}
-                    aria-invalid={Boolean(err.home_filter_title) || undefined}
-                  />
-                  <FieldError>{err.home_filter_title}</FieldError>
-                </Field>
-              )}
-            </SwitchRow>
-          ))}
-        </CardContent>
-      </Card>
+                {section.id === "home_show_category_sections" && (
+                  <div
+                    className="space-y-5"
+                    data-testid="home-category-showcase-config"
+                  >
+                    {/* Top controls: Default Display Layout + Default Banner Background Style */}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field>
+                        <FieldLabel>Default Display Layout</FieldLabel>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => handleDefaultLayoutChange("list")}
+                            aria-pressed={defaultLayout === "list"}
+                            data-testid="default-layout-list"
+                            className={cn(
+                              "inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                              defaultLayout === "list"
+                                ? "border-primary bg-primary/12 text-primary shadow-2xs"
+                                : "border-border bg-background/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                            )}
+                          >
+                            <ListIcon className="size-4" /> List View
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDefaultLayoutChange("grid")}
+                            aria-pressed={defaultLayout === "grid"}
+                            data-testid="default-layout-grid"
+                            className={cn(
+                              "inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                              defaultLayout === "grid"
+                                ? "border-primary bg-primary/12 text-primary shadow-2xs"
+                                : "border-border bg-background/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                            )}
+                          >
+                            <LayoutGridIcon className="size-4" /> Grid View
+                          </button>
+                        </div>
+                      </Field>
+
+                      <Field>
+                        <FieldLabel htmlFor="home_category_banner_style_select">
+                          Default Banner Background Style
+                        </FieldLabel>
+                        <Select
+                          selectedKey={bannerStyle}
+                          onSelectionChange={(key) =>
+                            handleDefaultBannerStyleChange(
+                              String(key) as HomeCategoryBannerStyle,
+                            )
+                          }
+                          aria-label="Default Banner Background Style"
+                        >
+                          <SelectTrigger
+                            id="home_category_banner_style_select"
+                            className="h-10 w-full"
+                            data-testid="banner-style-select"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {HOME_CATEGORY_BANNER_STYLES.map((style) => (
+                              <SelectItem key={style.id} id={style.id}>
+                                {style.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    </div>
+
+                    {/* Per-category reorderable list */}
+                    <div className="space-y-3 border-t pt-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
+                          Manage Category Sections &amp; Item Limits
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Drag handle or cards to reorder sections
+                        </span>
+                      </div>
+
+                      <DndContext
+                        id={dndId}
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        modifiers={[restrictToVerticalAxis]}
+                        onDragEnd={handleDragEnd}
+                      >
+                        <SortableContext
+                          items={categoryRows.map((r) => r.category_id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div
+                            className="space-y-2.5"
+                            data-testid="home-category-section-rows"
+                          >
+                            {categoryRows.map((row, idx) => {
+                              const enabledOrder = categoryRows
+                                .slice(0, idx + 1)
+                                .filter((r) => r.enabled).length;
+                              const sectionBadge = row.enabled
+                                ? `Section ${String(enabledOrder).padStart(2, "0")}`
+                                : "Hidden";
+
+                              return (
+                                <SortableCategorySectionRow
+                                  key={row.category_id}
+                                  row={row}
+                                  sectionBadge={sectionBadge}
+                                  onUpdate={updateCategoryRow}
+                                />
+                              );
+                            })}
+                          </div>
+                        </SortableContext>
+                      </DndContext>
+                    </div>
+                  </div>
+                )}
+
+                {section.id === "home_show_filter" && (
+                  <Field
+                    data-invalid={Boolean(err.home_filter_title) || undefined}
+                  >
+                    <FieldLabel htmlFor="home_filter_title">
+                      Section title
+                    </FieldLabel>
+                    <Input
+                      id="home_filter_title"
+                      name="home_filter_title"
+                      maxLength={HOME_FILTER_TITLE_MAX}
+                      placeholder={HOME_FILTER_TITLE_PLACEHOLDER}
+                      defaultValue={
+                        v.home_filter_title ?? settings.home_filter_title ?? ""
+                      }
+                      aria-invalid={Boolean(err.home_filter_title) || undefined}
+                    />
+                    <FieldError>{err.home_filter_title}</FieldError>
+                  </Field>
+                )}
+              </SwitchRow>
+            ))}
+          </CardContent>
+        </Card>
+      </fieldset>
     </form>
   );
 }

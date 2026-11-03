@@ -3,6 +3,7 @@
 import { sanitizePageHtml, mediaIdsFromHtml, isBlankHtml } from "@/lib/pages/sanitize";
 import { isValidCanonical, isValidImageUrl, PAGE_CONTENT_MAX, SEO_TITLE_MAX, SEO_DESCRIPTION_MAX } from "@/lib/pages/shared";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/constants";
 import { MAX_PRODUCT_GALLERY, brandingFileProblem, mediaUrl, type BrandingRole } from "@/lib/media/shared";
 import { SITE_SETTINGS_TAG, getSiteSettingsFresh } from "@/lib/site-settings";
@@ -1281,11 +1282,13 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
             ? "20261036000000_shipping_settings.sql"
             : /currency|bdt_rate/i.test(errMsg)
               ? "20261025000000_currency.sql"
-              : /home_/i.test(errMsg)
-                ? "20261024000000_home_sections.sql"
-                : /media_id/i.test(errMsg)
-                  ? "20261020000000_single_media_bucket.sql"
-                  : "20261018000000_settings_tabs.sql";
+              : /home_page_id/i.test(errMsg)
+                ? "20261060000000_static_homepage.sql"
+                : /home_/i.test(errMsg)
+                  ? "20261024000000_home_sections.sql"
+                  : /media_id/i.test(errMsg)
+                    ? "20261020000000_single_media_bucket.sql"
+                    : "20261018000000_settings_tabs.sql";
         return `The database is missing the new settings columns – run supabase/migrations/${migration} in the Supabase SQL Editor.`;
       }
     } else {
@@ -1512,25 +1515,113 @@ export async function savePaymentSettings(input: {
 }
 
 /**
- * UI → Home page: which sections the storefront home renders + the heading of the
- * filtered-products section. Lives on the single `site_settings` row, so the home page
- * (static shell, tagged) picks the change up immediately.
+ * UI → Home page: save the homepage assignment and, for the default storefront,
+ * its sections together. One settings update commits the visible configuration;
+ * hidden fallback fields are preserved when saving a static page.
  */
-export async function updateHomeSections(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
+export async function updateHomeSections(
+  _prev: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
   const values = echo(formData);
+  const hasHomepage = formData.has("home_page_id");
+  const rawHomepage = formData.get("home_page_id");
+  const homePageId =
+    typeof rawHomepage === "string" && rawHomepage ? rawHomepage : null;
+  async function persistHome(
+    patch: Record<string, unknown>,
+  ): Promise<AdminFormState> {
+    const problem = await saveSiteSettings(patch);
+    if (problem) return { error: problem, values };
+    if (hasHomepage) {
+      expireTag(MENU_TAG);
+      revalidatePath("/nemesis/ui");
+    }
+    return {
+      success: "Home page settings saved.",
+      values,
+      ...(hasHomepage ? { homePageId } : {}),
+    };
+  }
+  if (hasHomepage) {
+    if (
+      typeof rawHomepage !== "string" ||
+      (rawHomepage !== "" && !UUID_RE.test(rawHomepage))
+    ) {
+      return {
+        error: "Choose the default storefront or a published page.",
+        values,
+      };
+    }
+    try {
+      const { supabase } = await adminClient();
+      if (homePageId) {
+        const { data, error } = await supabase
+          .from("pages")
+          .select("id")
+          .eq("id", homePageId)
+          .eq("status", "published")
+          .abortSignal(AbortSignal.timeout(10000))
+          .maybeSingle();
+        if (error) throw error;
+        if (!data)
+          return {
+            error:
+              "That page is no longer published. Choose another page or the default storefront.",
+            values,
+          };
+      }
+      // A static homepage never submits or overwrites fallback section settings.
+      // Also preserve compatibility with the old assignment-only form.
+      if (homePageId || !formData.has("home_sections_present")) {
+        return await persistHome({ home_page_id: homePageId });
+      }
+    } catch (error) {
+      return { error: friendlyError(error), values };
+    }
+  }
+
   const heroBadge = str(formData, "home_hero_badge", HOME_HERO_BADGE_MAX + 1);
   const heroTitle = str(formData, "home_hero_title", HOME_HERO_TITLE_MAX + 1);
-  const heroSubtitle = str(formData, "home_hero_subtitle", HOME_HERO_SUBTITLE_MAX + 1);
-  const primaryCtaText = str(formData, "home_hero_primary_cta_text", HOME_HERO_CTA_TEXT_MAX + 1);
-  const primaryCtaHref = str(formData, "home_hero_primary_cta_href", HOME_HERO_CTA_HREF_MAX + 1);
-  const secondaryCtaText = str(formData, "home_hero_secondary_cta_text", HOME_HERO_CTA_TEXT_MAX + 1);
-  const secondaryCtaHref = str(formData, "home_hero_secondary_cta_href", HOME_HERO_CTA_HREF_MAX + 1);
+  const heroSubtitle = str(
+    formData,
+    "home_hero_subtitle",
+    HOME_HERO_SUBTITLE_MAX + 1,
+  );
+  const primaryCtaText = str(
+    formData,
+    "home_hero_primary_cta_text",
+    HOME_HERO_CTA_TEXT_MAX + 1,
+  );
+  const primaryCtaHref = str(
+    formData,
+    "home_hero_primary_cta_href",
+    HOME_HERO_CTA_HREF_MAX + 1,
+  );
+  const secondaryCtaText = str(
+    formData,
+    "home_hero_secondary_cta_text",
+    HOME_HERO_CTA_TEXT_MAX + 1,
+  );
+  const secondaryCtaHref = str(
+    formData,
+    "home_hero_secondary_cta_href",
+    HOME_HERO_CTA_HREF_MAX + 1,
+  );
   const title = str(formData, "home_filter_title", HOME_FILTER_TITLE_MAX + 1);
   const rawDefaultLayout = str(formData, "home_category_default_layout", 20);
-  const defaultLayout = isHomeCategoryDisplayMode(rawDefaultLayout) ? rawDefaultLayout : "grid";
+  const defaultLayout = isHomeCategoryDisplayMode(rawDefaultLayout)
+    ? rawDefaultLayout
+    : "grid";
   const rawBannerStyle = str(formData, "home_category_banner_style", 40);
-  const bannerStyle = isHomeCategoryBannerStyle(rawBannerStyle) ? rawBannerStyle : "soft";
-  const rawCategorySectionsJson = str(formData, "home_category_sections_json", 50000);
+  const bannerStyle = isHomeCategoryBannerStyle(rawBannerStyle)
+    ? rawBannerStyle
+    : "soft";
+  const rawCategorySectionsJson = str(
+    formData,
+    "home_category_sections_json",
+    50000,
+  );
   let categorySections = normaliseHomeCategorySections([], bannerStyle);
   if (rawCategorySectionsJson) {
     try {
@@ -1568,11 +1659,15 @@ export async function updateHomeSections(_prev: AdminFormState, formData: FormDa
   if (title.length > HOME_FILTER_TITLE_MAX) {
     fieldErrors.home_filter_title = `Keep the title under ${HOME_FILTER_TITLE_MAX} characters.`;
   }
-  if (Object.keys(fieldErrors).length) return { error: "Please fix the highlighted fields.", fieldErrors, values };
+  if (Object.keys(fieldErrors).length)
+    return { error: "Please fix the highlighted fields.", fieldErrors, values };
 
   try {
-    const problem = await saveSiteSettings({
-      home_show_hero: formData.has("home_show_hero") ? bool(formData, "home_show_hero") : true,
+    return await persistHome({
+      ...(hasHomepage ? { home_page_id: homePageId } : {}),
+      home_show_hero: formData.has("home_show_hero")
+        ? bool(formData, "home_show_hero")
+        : true,
       home_hero_badge: heroBadge || null,
       home_hero_title: heroTitle || null,
       home_hero_subtitle: heroSubtitle || null,
@@ -1581,7 +1676,9 @@ export async function updateHomeSections(_prev: AdminFormState, formData: FormDa
       home_hero_secondary_cta_text: secondaryCtaText || null,
       home_hero_secondary_cta_href: secondaryCtaHref || null,
       home_show_categories: bool(formData, "home_show_categories"),
-      home_show_category_sections: formData.has("home_show_category_sections") ? bool(formData, "home_show_category_sections") : true,
+      home_show_category_sections: formData.has("home_show_category_sections")
+        ? bool(formData, "home_show_category_sections")
+        : true,
       home_category_default_layout: defaultLayout,
       home_category_banner_style: bannerStyle,
       home_category_sections: categorySections,
@@ -1589,8 +1686,6 @@ export async function updateHomeSections(_prev: AdminFormState, formData: FormDa
       home_show_filter: bool(formData, "home_show_filter"),
       home_filter_title: title || null,
     });
-    if (problem) return { error: problem, values };
-    return { success: "Home page sections saved.", values };
   } catch (e) {
     return { error: friendlyError(e), values };
   }
