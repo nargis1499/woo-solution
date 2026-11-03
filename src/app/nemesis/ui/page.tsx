@@ -35,7 +35,7 @@ export default async function AdminUiPage({ searchParams }: { searchParams: Sear
   if (menuData) [items, pages, categories] = menuData;
   else missingSchema = true;
 
-  // Extra → Theme Customization: the palette lives on the settings row; without the row
+  // Colors → Colors & Gradients: the palette lives on the settings row; without the row
   // (settings migration not run) the editor still opens on the template defaults.
   const theme = settings
     ? { light: settings.theme_light, dark: settings.theme_dark, gradients: settings.theme_gradients, sync: settings.theme_sync }
