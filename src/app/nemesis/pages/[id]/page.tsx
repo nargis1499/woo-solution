@@ -3,10 +3,7 @@ import { notFound } from "next/navigation";
 import { adminGetPage, adminListSimpleProducts, adminListTags } from "@/lib/admin/data";
 import { getSiteSettingsFresh, resolveSiteUrl } from "@/lib/site-settings";
 import { safeListReturn } from "@/lib/admin/pagination";
-import { deletePage } from "@/app/nemesis/pages/actions";
 import { PageForm } from "@/components/admin/pages/page-form";
-import { DeleteButton } from "@/components/admin/form-bits";
-import { PageHeader } from "@/components/admin/ui";
 
 export const metadata: Metadata = { title: "Edit page" };
 
@@ -24,13 +21,6 @@ export default async function EditPagePage({ params, searchParams }: { params: P
 
   return (
     <>
-      <PageHeader
-        title={page.title}
-        description={page.status === "published" ? `Live at /${page.slug}` : "Draft – not visible to visitors yet."}
-        backHref={backHref}
-        backLabel="Pages"
-        actions={<DeleteButton action={deletePage} id={page.id} returnTo={backHref} label="Delete page" size="default" title={`Delete "${page.title}"?`} description={`The page and its public URL /${page.slug} are removed permanently. This cannot be undone.`} />}
-      />
       {/* No remount key: the editor is fully controlled and redraws itself from the fresh row
           after a save – remounting would close the SEO panel and the editor mid-edit. */}
       <PageForm
