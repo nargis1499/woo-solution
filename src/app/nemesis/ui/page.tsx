@@ -2,7 +2,6 @@ import { TypographyEditor } from "@/components/admin/typography/typography-edito
 import { saveTypography } from "./typography-actions";
 import { DEFAULT_TYPOGRAPHY } from "@/lib/typography/catalog";
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import { adminGetSiteSettings, adminListCategories, adminListMenuItems, adminListPageOptions, isMissingMenuSchema, type PageOption } from "@/lib/admin/data";
 import { isMenuLocation } from "@/lib/menu-config";
 import type { Category, MenuItem } from "@/lib/types";
@@ -20,17 +19,6 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 export default async function AdminUiPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  const tab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
-  if (tab === "extra") {
-    // Canonicalize old bookmarks without losing other query parameters.
-    const canonical = new URLSearchParams();
-    for (const [key, value] of Object.entries(params)) {
-      if (Array.isArray(value)) value.forEach((entry) => canonical.append(key, entry));
-      else if (value !== undefined) canonical.set(key, value);
-    }
-    canonical.set("tab", "colors");
-    redirect(`/nemesis/ui?${canonical.toString()}`);
-  }
   const locationParam = Array.isArray(params.location) ? params.location[0] : params.location;
   const location = isMenuLocation(locationParam) ? locationParam : "header";
 
@@ -87,6 +75,14 @@ export default async function AdminUiPage({ searchParams }: { searchParams: Sear
           ),
           typography: <TypographyEditor saved={settings?.typography ?? DEFAULT_TYPOGRAPHY} available={settings?.typographyMigrated ?? false} saveAction={saveTypography} />,
           colors: <ThemeEditor saved={theme} />,
+          extra: (
+            <section aria-labelledby="extra-settings-title" className="rounded-xl border bg-card p-6">
+              <h2 id="extra-settings-title" className="text-xl font-bold tracking-tight">Extra</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Reserved for future UI settings. There are no additional settings here yet.
+              </p>
+            </section>
+          ),
         }}
       />
     </>

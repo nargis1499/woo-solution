@@ -13,8 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export function UiTabs({ panels }: { panels: Record<UiTabId, ReactNode> }) {
   const searchParams = useSearchParams();
   const param = searchParams.get("tab") ?? undefined;
-  // Recognize old bookmarks during client-side history navigation too.
-  const urlTab: UiTabId = param === "extra" ? "colors" : isUiTab(param) ? param : "menu";
+  const urlTab: UiTabId = isUiTab(param) ? param : "menu";
   const [tab, setTab] = useState<Key>(urlTab);
   const [seenUrlTab, setSeenUrlTab] = useState<UiTabId>(urlTab);
   if (seenUrlTab !== urlTab) {
