@@ -1,6 +1,5 @@
 import "server-only";
 import sanitizeHtml from "sanitize-html";
-import { DESIGN_ALLOWED_CLASSES } from "./block-design";
 import { isUuid } from "@/lib/media/shared";
 
 /*
@@ -37,7 +36,7 @@ const OPTIONS: sanitizeHtml.IOptions = {
     "*": ["style", "data-block-id", "data-block-type", "data-block-json", "class"],
   },
   allowedClasses: {
-    "*": [/^page-[a-z0-9-]+$/, /^language-[a-z0-9-]+$/, ...DESIGN_ALLOWED_CLASSES],
+    "*": [/^page-[a-z0-9-]+$/, /^language-[a-z0-9-]+$/],
   },
   allowedStyles: {
     "*": {

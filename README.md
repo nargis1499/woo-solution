@@ -345,10 +345,6 @@ The triggers are the only writer, which is why the browser can never fabricate a
 | SEO | A collapsible **Search engine settings** panel per page: SEO title (defaults to the page title, counts towards the 60-character guide), meta description (160-character guide), **canonical URL**, *Allow indexing* / *Follow links* switches, Open Graph title / description and a share image picked from the Media Library (or an external URL) – with a live **Google result preview**. Published, indexable pages are listed in `/sitemap.xml` and get canonical, robots, Open Graph (`type=article`) and Twitter card tags |
 | Rendering | Content is sanitised on save **and** again on render (`src/lib/pages/sanitize.ts`: allow-listed tags / attributes, `http(s)` / `mailto` / `tel` links only, images only from the configured hosts, external links get `rel="noopener noreferrer"`), then styled by the `.rich-text` rules in `src/app/globals.css` (no typography plugin). Published pages are cached and tag-invalidated (`pages`, `page:<slug>`) whenever an admin saves, so edits appear immediately while visitors are served from the cache. Drafts and unknown slugs are a real 404 |
 
-#### AI-assisted page design
-
-Every page editor includes **Build with AI**: describe sections, generate a validated preview with the connected hosted model or local Ollama, then append or explicitly replace the body as editable blocks. Supported styles are precompiled Tailwind presets; titles, slugs, featured images, tags and SEO settings are protected. Applying never saves or publishes automatically. See [AI page builder: workflow, supported blocks, limits and security](docs/ai-page-builder.md).
-
 ### Media
 
 `/nemesis/media` (sidebar → **Media**, just above Settings) is a WordPress-style media library backed by the public `media` Storage bucket and the `public.media` table. **It is the only Storage bucket the app uses** – product images, galleries, the favicon and the share image all live there (branding files in the *Branding* folder).

@@ -3,6 +3,7 @@ import { adminListSimpleProducts, adminListTags } from "@/lib/admin/data";
 import { getSiteSettingsFresh, resolveSiteUrl } from "@/lib/site-settings";
 import { safeListReturn } from "@/lib/admin/pagination";
 import { PageForm } from "@/components/admin/pages/page-form";
+import { PageHeader } from "@/components/admin/ui";
 
 export const metadata: Metadata = { title: "New page" };
 
@@ -16,6 +17,7 @@ export default async function NewPagePage({ searchParams }: { searchParams: Prom
   ]);
   return (
     <>
+      <PageHeader title="New page" description="Write it, save it as a draft or publish it right away." backHref={backHref} backLabel="Pages" />
       <PageForm
         tagSuggestions={tags.map((t) => t.name)}
         simpleProducts={simpleProducts}

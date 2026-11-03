@@ -68,8 +68,6 @@ import { formatMoney } from "@/lib/money";
 import { mediaUrl } from "@/lib/media/shared";
 import type { MediaItem, Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { PageSectionCanvas } from "./page-section-canvas";
-import { sectionDesignClass, DESIGN_CLASSES, type SectionStyle, type CellStyle } from "@/lib/pages/block-design";
 import {
   Combobox,
   ComboboxContent,
@@ -127,7 +125,6 @@ export type BlockEditorController = {
   closePicker: () => void;
   pickerOpen: boolean;
   html: string;
-  replaceBlocks: (blocks: PageBlock[]) => void;
 };
 
 function collectAllBlockIds(list: PageBlock[]): Set<string> {
@@ -141,21 +138,6 @@ function collectAllBlockIds(list: PageBlock[]): Set<string> {
     }
   }
   return used;
-}
-
-/** Advanced manual presentation controls keep their legacy behavior. AI never supplies these. */
-function patchEditorBlock(block: PageBlock, patch: Partial<PageBlock>): PageBlock {
-  const next = { ...block, ...patch };
-  if (block.designVersion === 1 && block.type !== "layout" &&
-      ["tone", "imageLayout", "imageWidth", "imageHeight", "imageMaxHeight", "dividerStyle"].some(key => Object.prototype.hasOwnProperty.call(patch, key))) {
-    next.designVersion = undefined;
-  }
-  if (block.type === "image" && patch.src !== undefined && patch.src !== block.src) {
-    // A replacement image must not inherit another asset's intrinsic dimensions.
-    next.imageWidth = patch.imageWidth ?? null;
-    next.imageHeight = patch.imageHeight ?? null;
-  }
-  return next;
 }
 
 export function useBlockEditorState({
@@ -199,7 +181,7 @@ export function useBlockEditorState({
       commit((prev) =>
         prev.map((b) => {
           if (b.id === id) {
-            const updated = patchEditorBlock(b, patch);
+            const updated = { ...b, ...patch };
             if (updated.type === "layout") {
               const rows = Math.max(1, Math.min(12, updated.layoutRows ?? 1));
               const cols = Math.max(1, Math.min(6, updated.layoutCols ?? 2));
@@ -215,7 +197,7 @@ export function useBlockEditorState({
               cell.map((child) => {
                 if (child.id !== id) return child;
                 changed = true;
-                return patchEditorBlock(child, patch);
+                return { ...child, ...patch };
               }),
             );
             return changed ? { ...b, layoutCells: nextCells } : b;
@@ -530,12 +512,6 @@ export function useBlockEditorState({
     closePicker,
     pickerOpen,
     html,
-    replaceBlocks: (next) => {
-      commit(() => next);
-      setActiveBlockId(next[0]?.id ?? "");
-      setTargetLayoutCell(null);
-      setPickerOpen(false);
-    },
   };
 }
 
@@ -1330,14 +1306,12 @@ export function BlockEditorCanvas({
   onFocusInspector,
   name,
   invalid,
-  presentation = "default",
 }: {
   controller: BlockEditorController;
   simpleProducts?: Product[];
   onFocusInspector?: () => void;
   name: string;
   invalid?: boolean;
-  presentation?: "default" | "sections";
 }) {
   const [pinnedToolbarBlockId, setPinnedToolbarBlockId] = useState<string | null>(null);
   const [inlineToolbarVisible, setInlineToolbarVisible] = useState(false);
@@ -1372,8 +1346,8 @@ export function BlockEditorCanvas({
       data-block-canvas="true"
       aria-invalid={invalid || undefined}
       className={cn(
-        "relative transition-colors",
-        presentation === "sections" ? "min-h-64" : ["rounded-2xl border bg-background/60", hasBlocks ? "px-4 pt-9 pb-5 sm:px-6 sm:pt-10 sm:pb-6" : "p-8 sm:p-12"],
+        "relative rounded-2xl border bg-background/60 transition-colors",
+        hasBlocks ? "px-4 pt-9 pb-5 sm:px-6 sm:pt-10 sm:pb-6" : "p-8 sm:p-12",
         invalid ? "border-destructive" : "border-border/80",
       )}
     >
@@ -1387,12 +1361,7 @@ export function BlockEditorCanvas({
         onVisibilityChange={setInlineToolbarVisible}
       />
 
-      {hasBlocks && presentation === "sections" && <PageSectionCanvas controller={controller} onFocusInspector={onFocusInspector} renderEditor={(block, index) => <BlockItemEditor
-        block={block} index={index} totalSiblings={controller.blocks.length} controller={controller} productsById={productsById}
-        inlineToolbarVisible={inlineToolbarVisible} pinnedToolbarBlockId={pinnedToolbarBlockId} setPinnedToolbarBlockId={setPinnedToolbarBlockId}
-        setMediaPickerBlockId={setMediaPickerBlockId} onFocusInspector={onFocusInspector}
-      />} />}
-      {hasBlocks && presentation === "default" && (
+      {hasBlocks && (
         <div className="space-y-3.5">
           {controller.blocks.map((block, index) => (
             <BlockItemEditor
@@ -1413,7 +1382,7 @@ export function BlockEditorCanvas({
       )}
 
       {/* Centered "+ Add new block or press /" trigger */}
-      <div className={cn("flex justify-center", hasBlocks && "mt-4")}>
+      <div className={cn("flex justify-center", hasBlocks && "mt-6")}>
         <button
           type="button"
           data-testid="add-block-trigger"
@@ -1422,11 +1391,11 @@ export function BlockEditorCanvas({
               controller.blocks[controller.blocks.length - 1]?.id ?? null,
             )
           }
-          className={cn("inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-xs font-medium transition-colors hover:border-primary/50 hover:text-primary", presentation === "sections" ? "w-full border-dashed border-primary/30 bg-primary/5 text-primary" : "border-border/80 bg-card/70 text-muted-foreground shadow-xs")}
+          className="inline-flex items-center gap-2 rounded-lg border border-border/80 bg-card/70 px-4 py-2 text-xs font-medium text-muted-foreground shadow-xs transition-colors hover:border-primary/50 hover:bg-card hover:text-foreground"
         >
           <PlusIcon className="size-3.5" />
-          <span>{presentation === "sections" ? "Add block" : "Add new block or press"}</span>
-          <kbd className={cn(presentation === "sections" && "sr-only", "rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground")}>
+          <span>Add new block or press</span>
+          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
             /
           </kbd>
         </button>
@@ -2013,7 +1982,7 @@ function LayoutBlockCanvasView({
   const cells = normalizeLayoutCells(rows, cols, block.layoutCells);
 
   return (
-    <div className={cn("space-y-3", sectionDesignClass(block))} data-testid="layout-block-canvas">
+    <div className="space-y-3" data-testid="layout-block-canvas">
       {/* Top inline header bar for quick Row & Column adjustments */}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/25 px-3 py-1.5 text-xs">
         <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
@@ -2421,24 +2390,6 @@ export function BlockSettingsInspector({
       </div>
 
       <hr className="border-border/70" />
-
-      {block.type === "layout" && (
-        <div className="space-y-3">
-          <label className="block space-y-1 text-xs font-medium">
-            <span>Section appearance</span>
-            <select className="w-full rounded-md border border-border bg-background p-2 text-foreground" value={block.designVersion === 1 ? block.sectionStyle ?? "plain" : "legacy"} onChange={e => controller.updateBlock(block.id, e.target.value === "legacy" ? { designVersion: undefined, sectionStyle: undefined } : { designVersion: 1, sectionStyle: e.target.value as SectionStyle })}>
-              <option value="legacy">Default editor style</option>
-              {Object.keys(DESIGN_CLASSES.section).map(style => <option key={style} value={style}>{style[0].toUpperCase() + style.slice(1)}</option>)}
-            </select>
-          </label>
-          {block.designVersion === 1 && <label className="block space-y-1 text-xs font-medium">
-            <span>Column appearance</span>
-            <select className="w-full rounded-md border border-border bg-background p-2 text-foreground" value={block.cellStyle ?? "plain"} onChange={e => controller.updateBlock(block.id, { cellStyle: e.target.value as CellStyle })}>
-              <option value="plain">Plain</option><option value="card">Cards</option>
-            </select>
-          </label>}
-        </div>
-      )}
 
       {/* Row & Column Layout Settings */}
       {block.type === "layout" && (
