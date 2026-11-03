@@ -1,10 +1,12 @@
 # Published page as homepage
 
 Go to **UI → Home page → Homepage**, choose **Default storefront** or a published
-CMS page, and click **Save homepage**. The separate homepage form changes only the
-assignment; existing storefront sections, colors, typography and other settings
-are preserved. The section controls below still edit the built-in fallback and
-become visible on the storefront again when the default is restored.
+CMS page, and click the single **Save changes** button. Selecting **Default
+storefront** shows its section editor; selecting a static page hides it. Saving
+the default writes the assignment and section settings atomically in one update.
+Saving a static page changes only the assignment, preserving fallback sections,
+colors, typography and other settings. Section drafts stay mounted when switching
+between choices, but hidden controls are disabled and excluded from static saves.
 
 ## Rendering and failure behavior
 
@@ -64,11 +66,27 @@ The homepage selector reuses the dashboard's accessible, themed combobox rather
 than the operating system's native dropdown. Search matches page names and URLs;
 options show a page icon, separate address, published badge and selected checkmark.
 The default storefront remains a first-class option. A selection summary shows
-what will appear at `/`, and the Save button enables only for a changed, valid
-selection. The search text is never submitted as a page ID: the existing explicit
-save action receives only the selected option through a hidden form field.
+what will appear at `/`, and one Save button applies the selection and default
+storefront settings. The homepage ID comes from the selected option through a
+hidden form field, never from freeform search text.
 
-`artifacts/homepage-picker-desktop.png` shows the real updated form in an isolated
-local desktop preview with sample page labels. No live homepage setting was
+`artifacts/homepage-picker-desktop.png` shows the earlier picker-only layout in an
+isolated local desktop preview with sample page labels. No live homepage setting was
 changed; the temporary preview route was removed. No tests or test suites were
 run for this visual refinement.
+
+## Unified save and dashboard synchronization
+
+The Home page tab now has one parent form and one sticky **Save changes** button.
+The picker is controlled by that parent, not a separate action/state container.
+The server response acknowledges the committed homepage ID; the client immediately
+updates its selection and saved baseline, then calls `router.refresh()` to refresh
+server props without a full reload. Fresh server settings are synchronized without
+discarding an unsaved local selection. Failed saves retain drafts and display the
+shared error rather than marking them saved.
+
+The same server action validates published pages, writes default settings and the
+homepage assignment in a single settings update, and invalidates settings, menu,
+sitemap and router caches. Legacy assignment-only and section-only callers retain
+their existing behavior. No schema or SEO changes were needed. No tests or screenshot
+captures were run for this fix, as requested.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useId, useMemo, useState } from "react";
+import { useId, useMemo } from "react";
 import Link from "next/link";
 import { Text, Label } from "react-aria-components";
 import {
@@ -10,9 +10,6 @@ import {
   HouseIcon,
   LayoutTemplateIcon,
 } from "lucide-react";
-import { saveHomepage } from "@/app/nemesis/ui/homepage-actions";
-import { useFormToast } from "@/components/admin/flash-toast";
-import { SubmitButton } from "@/components/admin/form-bits";
 import {
   Card,
   CardContent,
@@ -38,20 +35,24 @@ type HomepageChoice = {
   kind: "default" | "page" | "missing";
 };
 
-export function HomepageForm({
-  selected,
+/** Controlled picker: the parent owns the single form, save action and baseline. */
+export function HomepagePicker({
+  value,
+  onChange,
+  dirty,
+  pending,
   pages,
   available,
 }: {
-  selected: string | null;
+  value: string;
+  onChange: (value: string) => void;
+  dirty: boolean;
+  pending: boolean;
   pages: PageOption[];
   available: boolean;
 }) {
-  const [state, action, pending] = useActionState(saveHomepage, null);
-  const [value, setValue] = useState(selected ?? "");
   const anchor = useComboboxAnchor();
   const helpId = useId();
-  useFormToast(state);
   const published = useMemo(
     () => pages.filter((page) => page.status === "published"),
     [pages],
@@ -59,7 +60,6 @@ export function HomepageForm({
   const missing = Boolean(
     value && !published.some((page) => page.id === value),
   );
-  const dirty = value !== (selected ?? "");
   const choices = useMemo<HomepageChoice[]>(
     () => [
       {
@@ -120,12 +120,12 @@ export function HomepageForm({
           {pending
             ? "Saving…"
             : dirty
-              ? "Unsaved selection"
-              : "Saved selection"}
+              ? "Unsaved changes"
+              : "All changes saved"}
         </span>
       </CardHeader>
       <CardContent className="px-6 py-6">
-        <form action={action} className="space-y-5" aria-busy={pending}>
+        <div className="space-y-5">
           {/* Only a selected option is submitted, never the search query. */}
           <input type="hidden" name="home_page_id" value={value} />
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:gap-8">
@@ -135,12 +135,12 @@ export function HomepageForm({
                 defaultItems={choices}
                 disabledKeys={missing ? [value] : []}
                 onSelectionChange={(key) => {
-                  if (key === DEFAULT_KEY) setValue("");
+                  if (key === DEFAULT_KEY) onChange("");
                   else if (
                     typeof key === "string" &&
                     published.some((page) => page.id === key)
                   )
-                    setValue(key);
+                    onChange(key);
                 }}
                 defaultFilter={(text, input) =>
                   text.toLowerCase().includes(input.toLowerCase())
@@ -265,14 +265,6 @@ export function HomepageForm({
               restore the built-in homepage.
             </p>
           )}
-          {state?.error && (
-            <p
-              role="alert"
-              className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive"
-            >
-              {state.error}
-            </p>
-          )}
           <div className="flex flex-wrap items-center justify-between gap-4 border-t pt-5">
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
               Changes stay local until saved. Your storefront section settings
@@ -285,15 +277,9 @@ export function HomepageForm({
               >
                 Manage pages <ArrowUpRightIcon className="size-3.5" />
               </Link>
-              <SubmitButton
-                pending={pending}
-                disabled={!available || missing || !dirty}
-              >
-                Save homepage
-              </SubmitButton>
             </div>
           </div>
-        </form>
+        </div>
       </CardContent>
     </Card>
   );
