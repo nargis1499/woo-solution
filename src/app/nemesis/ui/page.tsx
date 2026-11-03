@@ -2,6 +2,7 @@ import { TypographyEditor } from "@/components/admin/typography/typography-edito
 import { saveTypography } from "./typography-actions";
 import { DEFAULT_TYPOGRAPHY } from "@/lib/typography/catalog";
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { adminGetSiteSettings, adminListCategories, adminListMenuItems, adminListPageOptions, isMissingMenuSchema, type PageOption } from "@/lib/admin/data";
 import { isMenuLocation } from "@/lib/menu-config";
 import type { Category, MenuItem } from "@/lib/types";
@@ -15,11 +16,23 @@ import { DEFAULT_THEME } from "@/lib/theme";
 
 export const metadata: Metadata = { title: "UI" };
 
-type SearchParams = Promise<{ tab?: string; location?: string }>;
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 export default async function AdminUiPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  const location = isMenuLocation(params.location) ? params.location : "header";
+  const tab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
+  if (tab === "extra") {
+    // Canonicalize old bookmarks without losing other query parameters.
+    const canonical = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (Array.isArray(value)) value.forEach((entry) => canonical.append(key, entry));
+      else if (value !== undefined) canonical.set(key, value);
+    }
+    canonical.set("tab", "colors");
+    redirect(`/nemesis/ui?${canonical.toString()}`);
+  }
+  const locationParam = Array.isArray(params.location) ? params.location[0] : params.location;
+  const location = isMenuLocation(locationParam) ? locationParam : "header";
 
   let items: MenuItem[] = [];
   let pages: PageOption[] = [];
@@ -73,7 +86,7 @@ export default async function AdminUiPage({ searchParams }: { searchParams: Sear
             </div>
           ),
           typography: <TypographyEditor saved={settings?.typography ?? DEFAULT_TYPOGRAPHY} available={settings?.typographyMigrated ?? false} saveAction={saveTypography} />,
-          extra: <ThemeEditor saved={theme} />,
+          colors: <ThemeEditor saved={theme} />,
         }}
       />
     </>

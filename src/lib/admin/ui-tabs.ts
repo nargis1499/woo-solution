@@ -5,7 +5,7 @@ export const UI_TABS = [
   { id: "menu", label: "Menu", icon: MenuIcon },
   { id: "home", label: "Home page", icon: HouseIcon },
   { id: "typography", label: "Typography", icon: TypeIcon },
-  { id: "extra", label: "Colors", icon: PaintbrushIcon },
+  { id: "colors", label: "Colors", icon: PaintbrushIcon },
 ] as const;
 
 export type UiTabId = (typeof UI_TABS)[number]["id"];
