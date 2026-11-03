@@ -36,9 +36,7 @@ export function MediaRefField({
   allowUrl = false,
   onChange,
   extra,
-  compact = false,
 }: {
-  compact?: boolean;
   name: string;
   label: string;
   /** URL as stored in the database (shown when the file is not a library item any more). */
@@ -48,16 +46,7 @@ export function MediaRefField({
   error?: string;
   /** square = favicon-ish thumbnail, wide = 1200 × 630 social preview */
   shape?: "square" | "wide";
-  picker: Pick<
-    MediaPickerProps,
-    | "kind"
-    | "accept"
-    | "acceptFile"
-    | "uploadFolderName"
-    | "title"
-    | "description"
-    | "confirmLabel"
-  >;
+  picker: Pick<MediaPickerProps, "kind" | "accept" | "acceptFile" | "uploadFolderName" | "title" | "description" | "confirmLabel">;
   chooseLabel?: string;
   removeLabel?: string;
   /** Offer "Use a URL" next to the picker (the server action must accept `<name>_url`). */
@@ -89,22 +78,10 @@ export function MediaRefField({
     setUrl(currentUrl && !currentMedia ? currentUrl : "");
   }
 
-  const active: MediaRef | null =
-    mode === "media" ? picked : mode === "keep" ? currentMedia : null;
+  const active: MediaRef | null = mode === "media" ? picked : mode === "keep" ? currentMedia : null;
   const typedUrl = url.trim();
   const previewUrl =
-    mode === "remove"
-      ? null
-      : mode === "url"
-        ? typedUrl || null
-        : active
-          ? (mediaPreviewUrl(
-              active,
-              shape === "wide" ? "medium" : "thumbnail",
-            ) ?? mediaUrl(active.path))
-          : mode === "keep"
-            ? currentUrl
-            : null;
+    mode === "remove" ? null : mode === "url" ? typedUrl || null : active ? (mediaPreviewUrl(active, shape === "wide" ? "medium" : "thumbnail") ?? mediaUrl(active.path)) : mode === "keep" ? currentUrl : null;
   const caption = active
     ? `${active.name}${active.width && active.height ? ` · ${active.width} × ${active.height}` : ""} · ${formatBytes(active.size)}`
     : previewUrl
@@ -117,172 +94,21 @@ export function MediaRefField({
   // "Remove icon" switch under it.
   const hasImage = Boolean(previewUrl);
 
-  if (compact)
-    return (
-      <Field
-        data-invalid={Boolean(error) || undefined}
-        data-testid={`media-ref-${name}`}
-        className="min-w-0 gap-2"
-      >
-        <input type="hidden" name={`${name}_mode`} value={mode} />
-        <input
-          type="hidden"
-          name={`${name}_media_id`}
-          value={mode === "media" ? (picked?.id ?? "") : ""}
-        />
-        {!showUrlInput && <input type="hidden" name={`${name}_url`} value="" />}
-        <FieldLabel className="text-xs">{label}</FieldLabel>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            aria-label={`Choose ${label.toLowerCase()}`}
-            className="grid size-9 shrink-0 place-items-center overflow-hidden rounded border border-border bg-muted text-muted-foreground"
-          >
-            {previewUrl && broken !== previewUrl ? (
-              <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={previewUrl}
-                  alt=""
-                  className="size-full object-cover"
-                  onError={() => setBroken(previewUrl)}
-                  data-testid={`${name}-preview`}
-                />
-              </>
-            ) : (
-              <ImageIcon className="size-4" />
-            )}
-          </button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="min-w-0 flex-1 px-2 text-xs"
-            onPress={() => setOpen(true)}
-            data-testid={`choose-${name}`}
-          >
-            {previewUrl ? "Change image" : "Choose image"}
-          </Button>
-          <details className="relative shrink-0">
-            <summary
-              className="cursor-pointer rounded border border-border px-2 py-2 text-xs"
-              aria-label={`${label} options`}
-            >
-              ⋯
-            </summary>
-            <div className="absolute right-0 top-full z-30 mt-1 w-44 space-y-1 rounded-lg border border-border bg-popover p-2 shadow-lg">
-              {allowUrl && (
-                <button
-                  type="button"
-                  className="block w-full rounded p-2 text-left text-xs hover:bg-muted"
-                  onClick={() => {
-                    setMode("url");
-                    setPicked(null);
-                    setUrl("");
-                    onChange?.(false);
-                  }}
-                >
-                  Use an image URL
-                </button>
-              )}
-              {(previewUrl || showUrlInput) && (
-                <button
-                  type="button"
-                  className="block w-full rounded p-2 text-left text-xs text-destructive hover:bg-muted"
-                  onClick={() => {
-                    setMode("remove");
-                    setPicked(null);
-                    setUrl("");
-                    onChange?.(false);
-                  }}
-                >
-                  Remove image
-                </button>
-              )}
-              {!allowUrl && !previewUrl && (
-                <p className="p-2 text-xs text-muted-foreground">
-                  Choose an image first.
-                </p>
-              )}
-            </div>
-          </details>
-        </div>
-        {showUrlInput && (
-          <Input
-            type="url"
-            name={`${name}_url`}
-            value={url}
-            placeholder="https://…"
-            aria-label={`${label} URL`}
-            onChange={(e) => {
-              setUrl(e.target.value);
-              setMode("url");
-              onChange?.(Boolean(e.target.value.trim()));
-            }}
-          />
-        )}
-        {broken === previewUrl && previewUrl && (
-          <p className="text-xs text-destructive">Image could not be loaded.</p>
-        )}
-        {mode === "remove" && (
-          <p className="text-xs text-muted-foreground">
-            Removed — save to apply.
-          </p>
-        )}
-        <FieldError>{error}</FieldError>
-        <MediaPickerDialog
-          isOpen={open}
-          onOpenChange={setOpen}
-          kind="image"
-          {...picker}
-          onSelect={(items) => {
-            if (!items[0]) return;
-            setPicked(items[0]);
-            setMode("media");
-            onChange?.(true);
-          }}
-        />
-      </Field>
-    );
-
   return (
-    <Field
-      data-invalid={Boolean(error) || undefined}
-      data-testid={`media-ref-${name}`}
-    >
+    <Field data-invalid={Boolean(error) || undefined} data-testid={`media-ref-${name}`}>
       <input type="hidden" name={`${name}_mode`} value={mode} />
-      <input
-        type="hidden"
-        name={`${name}_media_id`}
-        value={mode === "media" ? (picked?.id ?? "") : ""}
-      />
+      <input type="hidden" name={`${name}_media_id`} value={mode === "media" ? (picked?.id ?? "") : ""} />
       {!showUrlInput && <input type="hidden" name={`${name}_url`} value="" />}
       <FieldLabel>{label}</FieldLabel>
       {/* container query: the wide preview sits beside the buttons only when the field itself is wide enough (settings), and stacks in narrow sidebars (page form) */}
-      <div
-        className={cn(
-          "flex gap-4 @container",
-          shape === "wide"
-            ? "flex-col @md:flex-row @md:items-start"
-            : "items-start",
-        )}
-      >
-        <div
-          className={cn(
-            "relative shrink-0 overflow-hidden rounded-lg border border-dashed bg-muted",
-            shape === "wide" ? "aspect-[1200/630] w-full @md:w-64" : "size-24",
-          )}
-        >
+      <div className={cn("flex gap-4 @container", shape === "wide" ? "flex-col @md:flex-row @md:items-start" : "items-start")}>
+        <div className={cn("relative shrink-0 overflow-hidden rounded-lg border border-dashed bg-muted", shape === "wide" ? "aspect-[1200/630] w-full @md:w-64" : "size-24")}>
           {previewUrl && broken !== previewUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={previewUrl}
               alt=""
-              className={cn(
-                "h-full w-full",
-                shape === "wide" ? "object-cover" : "object-contain p-2",
-              )}
+              className={cn("h-full w-full", shape === "wide" ? "object-cover" : "object-contain p-2")}
               onError={() => setBroken(previewUrl)}
               data-testid={`${name}-preview`}
             />
@@ -294,13 +120,7 @@ export function MediaRefField({
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onPress={() => setOpen(true)}
-              data-testid={`choose-${name}`}
-            >
+            <Button type="button" variant="outline" size="sm" onPress={() => setOpen(true)} data-testid={`choose-${name}`}>
               <ImagesIcon /> {previewUrl ? "Change" : chooseLabel}
             </Button>
             {allowUrl && !showUrlInput && (
@@ -356,23 +176,12 @@ export function MediaRefField({
             />
           )}
           {caption && broken !== previewUrl && (
-            <p
-              className="truncate text-xs text-muted-foreground"
-              title={caption}
-            >
+            <p className="truncate text-xs text-muted-foreground" title={caption}>
               {caption}
             </p>
           )}
-          {previewUrl && broken === previewUrl && (
-            <p className="text-xs text-destructive">
-              That image could not be loaded – check the URL.
-            </p>
-          )}
-          {mode === "remove" && (
-            <p className="text-xs text-muted-foreground">
-              Removed – save to apply.
-            </p>
-          )}
+          {previewUrl && broken === previewUrl && <p className="text-xs text-destructive">That image could not be loaded – check the URL.</p>}
+          {mode === "remove" && <p className="text-xs text-muted-foreground">Removed – save to apply.</p>}
           <FieldError>{error}</FieldError>
         </div>
       </div>

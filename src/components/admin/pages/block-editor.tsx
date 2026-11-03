@@ -68,7 +68,6 @@ import { formatMoney } from "@/lib/money";
 import { mediaUrl } from "@/lib/media/shared";
 import type { MediaItem, Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { PageSectionCanvas } from "./page-section-canvas";
 import { sectionDesignClass, DESIGN_CLASSES, type SectionStyle, type CellStyle } from "@/lib/pages/block-design";
 import {
   Combobox,
@@ -1330,14 +1329,12 @@ export function BlockEditorCanvas({
   onFocusInspector,
   name,
   invalid,
-  presentation = "default",
 }: {
   controller: BlockEditorController;
   simpleProducts?: Product[];
   onFocusInspector?: () => void;
   name: string;
   invalid?: boolean;
-  presentation?: "default" | "sections";
 }) {
   const [pinnedToolbarBlockId, setPinnedToolbarBlockId] = useState<string | null>(null);
   const [inlineToolbarVisible, setInlineToolbarVisible] = useState(false);
@@ -1372,8 +1369,8 @@ export function BlockEditorCanvas({
       data-block-canvas="true"
       aria-invalid={invalid || undefined}
       className={cn(
-        "relative transition-colors",
-        presentation === "sections" ? "min-h-64" : ["rounded-2xl border bg-background/60", hasBlocks ? "px-4 pt-9 pb-5 sm:px-6 sm:pt-10 sm:pb-6" : "p-8 sm:p-12"],
+        "relative rounded-2xl border bg-background/60 transition-colors",
+        hasBlocks ? "px-4 pt-9 pb-5 sm:px-6 sm:pt-10 sm:pb-6" : "p-8 sm:p-12",
         invalid ? "border-destructive" : "border-border/80",
       )}
     >
@@ -1387,12 +1384,7 @@ export function BlockEditorCanvas({
         onVisibilityChange={setInlineToolbarVisible}
       />
 
-      {hasBlocks && presentation === "sections" && <PageSectionCanvas controller={controller} onFocusInspector={onFocusInspector} renderEditor={(block, index) => <BlockItemEditor
-        block={block} index={index} totalSiblings={controller.blocks.length} controller={controller} productsById={productsById}
-        inlineToolbarVisible={inlineToolbarVisible} pinnedToolbarBlockId={pinnedToolbarBlockId} setPinnedToolbarBlockId={setPinnedToolbarBlockId}
-        setMediaPickerBlockId={setMediaPickerBlockId} onFocusInspector={onFocusInspector}
-      />} />}
-      {hasBlocks && presentation === "default" && (
+      {hasBlocks && (
         <div className="space-y-3.5">
           {controller.blocks.map((block, index) => (
             <BlockItemEditor
@@ -1413,7 +1405,7 @@ export function BlockEditorCanvas({
       )}
 
       {/* Centered "+ Add new block or press /" trigger */}
-      <div className={cn("flex justify-center", hasBlocks && "mt-4")}>
+      <div className={cn("flex justify-center", hasBlocks && "mt-6")}>
         <button
           type="button"
           data-testid="add-block-trigger"
@@ -1422,11 +1414,11 @@ export function BlockEditorCanvas({
               controller.blocks[controller.blocks.length - 1]?.id ?? null,
             )
           }
-          className={cn("inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-xs font-medium transition-colors hover:border-primary/50 hover:text-primary", presentation === "sections" ? "w-full border-dashed border-primary/30 bg-primary/5 text-primary" : "border-border/80 bg-card/70 text-muted-foreground shadow-xs")}
+          className="inline-flex items-center gap-2 rounded-lg border border-border/80 bg-card/70 px-4 py-2 text-xs font-medium text-muted-foreground shadow-xs transition-colors hover:border-primary/50 hover:bg-card hover:text-foreground"
         >
           <PlusIcon className="size-3.5" />
-          <span>{presentation === "sections" ? "Add block" : "Add new block or press"}</span>
-          <kbd className={cn(presentation === "sections" && "sr-only", "rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground")}>
+          <span>Add new block or press</span>
+          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
             /
           </kbd>
         </button>

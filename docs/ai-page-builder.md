@@ -1,16 +1,16 @@
 # AI page builder
 
-Every new/edit CMS page has a persistent **Build with AI** panel beside the visual block canvas on desktop (stacked on smaller screens). No database migration is needed. Existing manual editing, title, slug, featured image, tags, SEO settings and explicit publishing remain unchanged.
+Every new/edit CMS page has **Build with AI → Generate page with AI** above the existing block canvas. No database migration is needed. Existing manual editing, title, slug, featured image, tags, SEO settings and explicit publishing remain unchanged.
 
 ## Admin workflow
 
 1. Enable/configure a provider and primary model in **Settings → AI**.
-2. Open a page and describe the desired sections in the right-hand **Build with AI** panel. Include verified business facts, exact links and the language to use. Ask for a small number of sections, especially with economy mode or a small local model.
+2. Open a page, expand **Build with AI**, and describe the desired sections. Include verified business facts, exact links and the language to use. Ask for a small number of sections, especially with economy mode or a small local model.
 3. **Generate preview** does not change the editor, save a draft or publish anything. Review the proposed content, images, heading structure and links. Generation can be cancelled; stale/cancelled responses cannot apply themselves.
-4. Suggested sections appear as thumbnail cards; expand **Inspect full design preview** for the server-sanitized preview. **Apply sections** appends editable blocks by default. **Replace page content** requires confirmation when content exists. Neither mode changes metadata or the shared site shell.
-5. The canvas displays visual section cards with **Edit / Done**, **Duplicate**, **Delete**, drag handles and keyboard-accessible move buttons. Edit opens the existing detailed editor for that section; click a section title to open its inspector. Visual cards use safe React text summaries rather than injecting saved HTML, so inline rich formatting may be simplified. The saved-page Preview remains the storefront reference. Drag handles support pointer and keyboard sorting. Other editors keep their existing canvas presentation. Layouts have **Section appearance** (plain, soft, accent, contrast) and **Column appearance** (plain/cards). These settings also work for manually created layouts. Changing advanced manual controls (custom image dimensions, callout tone or divider style) switches that individual block back to the standard renderer so those existing controls continue to work. Replacing an image clears stale intrinsic dimensions.
+4. **Append editable blocks** is the default. **Replace page content** requires confirmation when content exists. Neither mode changes metadata or the shared site shell.
+5. Edit/reorder/duplicate/delete the resulting blocks using the existing canvas and inspector. Layouts have **Section appearance** (plain, soft, accent, contrast) and **Column appearance** (plain/cards). These settings also work for manually created layouts. Changing advanced manual controls (custom image dimensions, callout tone or divider style) switches that individual block back to the standard renderer so those existing controls continue to work. Replacing an image clears stale intrinsic dimensions.
 6. **Undo last apply** restores the pre-apply document only while the body still matches the just-applied document. It is disabled after further body edits to avoid discarding newer work. One local undo snapshot is kept; this is not persistent revision history.
-7. Use **Save draft**, **Publish** or **Update** in the editor header explicitly. Compact title, slug and featured-image controls stay above **Blocks / Page settings** tabs. Tags, SEO, page details, live link and page deletion are under **Page settings**. Both tab panels stay mounted so tab changes do not lose drafts or omit form fields during saving. The AI status reports configuration readiness, not an unperformed live connectivity check. Applying AI to an already published page does not change the live page until Update.
+7. Use the existing **Save draft**, **Publish** or **Update** actions explicitly. Applying AI to an already published page does not change the live page until Update.
 
 ## Supported designs and boundaries
 
