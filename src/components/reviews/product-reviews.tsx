@@ -317,7 +317,7 @@ function ReviewCard({
             </p>
             <p className="text-xs text-slate-500">{formatDate(review.created_at)}</p>
           </div>
-          <Stars value={review.rating} className="ml-auto" starClassName="size-3.5" />
+          <Stars value={review.rating} className="ml-auto shrink-0 self-start pt-0.5" starClassName="size-3.5" />
         </header>
 
         {review.title ? <h3 className="mt-3 font-semibold text-slate-100">{review.title}</h3> : null}
