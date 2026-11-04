@@ -24,14 +24,14 @@ export function Stars({
     // inside a %-width clip. Without them the flex row takes the clip's
     // width and the SVGs shrink to fit it, so 4/5 stars rendered as five
     // tiny gold stars squeezed next to full-size grey ones.
-    <div className="flex w-max shrink-0 gap-0.5" aria-hidden>
+    <span className="flex w-max shrink-0 gap-0.5" aria-hidden>
       {Array.from({ length: 5 }, (_, i) => (
         <StarIcon
           key={i}
           className={cn("shrink-0", starClassName, filled ? "fill-amber-400 text-amber-400" : "fill-current text-current opacity-25")}
         />
       ))}
-    </div>
+    </span>
   );
   return (
     <span className={cn("inline-flex shrink-0 items-center gap-1.5", className)} role="img" aria-label={`Rated ${formatRating(clamped)} out of 5 stars`}>
