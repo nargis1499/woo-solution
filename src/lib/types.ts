@@ -432,6 +432,8 @@ export type SiteSettings = {
   shipping_enabled: boolean;
   /** Flat checkout shipping rate in USD micro-dollars */
   shipping_rate_micros: number;
+  /** Store-wide Ratings & Reviews feature switch (E-commerce → General). */
+  reviews_enabled: boolean;
   // WooCommerce → Payment
   payment_cod_enabled: boolean;
   payment_plisio_enabled: boolean;

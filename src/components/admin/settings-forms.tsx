@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useEffect, useState, type ReactNode } from "react";
-import { SaveIcon, SearchIcon, StoreIcon, TruckIcon } from "lucide-react";
+import { SaveIcon, SearchIcon, StarIcon, StoreIcon, TruckIcon } from "lucide-react";
 import { updateGeneralSettings, updateSeoSettings, updateShopSettings, type AdminFormState } from "@/app/nemesis/actions";
 import {
   CURRENCIES,
@@ -344,6 +344,8 @@ function ShopSettingsBody({ settings, v, err }: { settings: SiteSettings; v: Rec
       />
       <p className="text-xs text-muted-foreground">Each product can override this default in its pricing and inventory section. Existing products retain their selected setting.</p>
       <FieldSeparator />
+      <ReviewsFields settings={settings} v={v} />
+      <FieldSeparator />
       <CurrencyFields
         currency={currency}
         onCurrencyChange={setCurrency}
@@ -354,6 +356,70 @@ function ShopSettingsBody({ settings, v, err }: { settings: SiteSettings; v: Rec
       <FieldSeparator />
       <ShippingFields settings={settings} money={activeMoney} v={v} err={err} />
     </FieldGroup>
+  );
+}
+
+/** Store-wide Ratings & Reviews switch (E-commerce → General). */
+function ReviewsFields({ settings, v }: { settings: SiteSettings; v: Record<string, string> }) {
+  const defaultEnabled = v.reviews_enabled ? v.reviews_enabled === "on" : settings.reviews_enabled;
+  const [reviewsEnabled, setReviewsEnabled] = useState<boolean>(defaultEnabled);
+  const [seenDefaultEnabled, setSeenDefaultEnabled] = useState<boolean>(settings.reviews_enabled);
+  if (seenDefaultEnabled !== settings.reviews_enabled) {
+    setSeenDefaultEnabled(settings.reviews_enabled);
+    setReviewsEnabled(settings.reviews_enabled);
+  }
+
+  return (
+    <FieldSet data-testid="reviews-settings">
+      <FieldLegend variant="label">Ratings &amp; reviews</FieldLegend>
+      <div
+        className={cn(
+          "overflow-hidden rounded-xl border transition-colors",
+          reviewsEnabled ? "border-amber-400/40 bg-amber-400/[0.04]" : "border-border bg-muted/15",
+        )}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              aria-hidden
+              className={cn(
+                "grid size-9 shrink-0 place-items-center rounded-lg transition-colors",
+                reviewsEnabled ? "bg-amber-400/15 text-amber-500 ring-1 ring-amber-400/30" : "bg-muted text-muted-foreground",
+              )}
+            >
+              <StarIcon className={cn("size-4", reviewsEnabled && "fill-current")} />
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <label htmlFor="reviews_enabled" className="cursor-pointer text-sm font-medium leading-none">
+                Enable ratings &amp; reviews
+              </label>
+              <Badge variant={reviewsEnabled ? "default" : "secondary"} className="h-5 px-2 text-[11px] leading-none">
+                {reviewsEnabled ? "Enabled" : "Disabled"}
+              </Badge>
+            </div>
+          </div>
+
+          <label className="flex cursor-pointer items-center gap-2.5 select-none">
+            <input type="hidden" name="reviews_enabled" value={reviewsEnabled ? "on" : "off"} />
+            <Switch
+              id="reviews_enabled"
+              isSelected={reviewsEnabled}
+              onChange={setReviewsEnabled}
+              aria-label="Enable ratings and reviews"
+              data-testid="reviews-enabled-switch"
+            />
+          </label>
+        </div>
+
+        <div className="border-t border-border/70 bg-background/50 px-4 py-3">
+          <p className="text-xs leading-5 text-muted-foreground" aria-live="polite">
+            {reviewsEnabled
+              ? "Customers can rate products, write reviews and mark reviews helpful. Rating stars appear on product cards and product pages."
+              : "Rating stars, the product-page Ratings & reviews tab, new submissions and helpful votes are hidden. Existing reviews stay saved and can still be moderated."}
+          </p>
+        </div>
+      </div>
+    </FieldSet>
   );
 }
 

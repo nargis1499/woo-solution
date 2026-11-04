@@ -34,10 +34,12 @@ on the cart/checkout path.
 ## Reviews
 
 Shown on every product page in the **Ratings & reviews** tab, moderated
-under **Nemesis → Reviews**.
+under **Nemesis → Reviews**. The whole feature can be switched on or off under
+**Nemesis → E-commerce → General → Enable ratings & reviews**.
 
 | Rule | Behaviour |
 | --- | --- |
+| Feature switch | `site_settings.reviews_enabled` (default on). While off, stars, the product-page reviews tab, `aggregateRating` JSON-LD, submissions and helpful votes are disabled; existing reviews stay stored and admins can still moderate them |
 | Who can post | Any signed-in customer, one review per product (re-submitting edits it) |
 | Verified purchase | Computed in the database: a *completed* order by that customer containing the product. Verified reviews publish instantly and carry the badge; everyone else waits in the moderation queue |
 | Moderation | Approve / reject / back-to-pending / delete, plus an optional public **store response**. New pending reviews notify every admin (`product_review` notification kind) |

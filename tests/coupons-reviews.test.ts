@@ -13,7 +13,9 @@ import {
 } from "@/lib/coupons";
 import { formatRating, sortReviews, summarizeReviews } from "@/lib/reviews";
 import { USD_MONEY } from "@/lib/money";
-import type { Coupon, ProductReview } from "@/lib/types";
+import { productJsonLd } from "@/lib/seo";
+import { DEFAULT_SITE_SETTINGS, normaliseSiteSettings } from "@/lib/site-settings";
+import type { Coupon, Product, ProductReview } from "@/lib/types";
 
 const USD = 1_000_000;
 
@@ -189,5 +191,36 @@ describe("Stars placement (fractional fill must not squeeze the icons)", () => {
     expect(renderToStaticMarkup(createElement(Stars, { value: 4.3 }))).toContain('style="width:86%"');
     expect(renderToStaticMarkup(createElement(Stars, { value: 9 }))).toContain('style="width:100%"');
     expect(renderToStaticMarkup(createElement(Stars, { value: -2 }))).toContain('style="width:0%"');
+  });
+});
+
+describe("Ratings & Reviews feature switch", () => {
+  it("defaults on and reads the column or pre-migration fallback", () => {
+    expect(DEFAULT_SITE_SETTINGS.reviews_enabled).toBe(true);
+    expect(normaliseSiteSettings(null).reviews_enabled).toBe(true);
+    expect(normaliseSiteSettings({ reviews_enabled: false }).reviews_enabled).toBe(false);
+    expect(normaliseSiteSettings({ theme_gradients: { reviews_enabled: false } }).reviews_enabled).toBe(false);
+  });
+
+  it("omits aggregateRating JSON-LD while disabled", () => {
+    const product: Product = {
+      id: "00000000-0000-0000-0000-000000000010",
+      category_id: null,
+      name: "Reviewed product",
+      slug: "reviewed-product",
+      description: "A product with approved reviews.",
+      price_micros: 25 * USD,
+      compare_at_price_micros: null,
+      image_url: null,
+      stock: 3,
+      is_active: true,
+      is_featured: false,
+      created_at: "2026-01-01T00:00:00Z",
+      rating_avg: 4.5,
+      rating_count: 3,
+    };
+
+    expect(productJsonLd(product, DEFAULT_SITE_SETTINGS)).toHaveProperty("aggregateRating");
+    expect(productJsonLd(product, { ...DEFAULT_SITE_SETTINGS, reviews_enabled: false })).not.toHaveProperty("aggregateRating");
   });
 });
