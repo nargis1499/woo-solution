@@ -123,10 +123,8 @@ export default async function ProductPage({ params }: { params: Params }) {
             <StorefrontBlockContent content={product.content} />
           </section>
         )}
-        <ProductInformationTabs product={product} />
-
-        <Suspense fallback={null}>
-          <ReviewsSection productId={product.id} slug={product.slug} storeName={settings.store_name} />
+        <Suspense fallback={<ProductInformationTabs product={product} />}>
+          <ProductInformationWithReviews product={product} storeName={settings.store_name} />
         </Suspense>
 
         <Suspense fallback={null}>
@@ -138,20 +136,34 @@ export default async function ProductPage({ params }: { params: Params }) {
 }
 
 /**
- * Ratings & reviews (migration 20261061). Hidden entirely while the
- * database has not run the migration yet (`available: false`).
+ * Product-information tabs with Ratings & reviews (migration 20261061) as
+ * the final tab. The reviews tab is omitted entirely while the database has
+ * not run the migration yet (`available: false`).
  */
-async function ReviewsSection({ productId, slug, storeName }: { productId: string; slug: string; storeName: string }) {
+async function ProductInformationWithReviews({
+  product,
+  storeName,
+}: {
+  product: NonNullable<Awaited<ReturnType<typeof getProductBySlug>>>;
+  storeName: string;
+}) {
   const user = await getCurrentUser();
-  const { reviews, available } = await getProductReviews(productId, user?.id);
-  if (!available) return null;
+  const { reviews, available } = await getProductReviews(product.id, user?.id);
+  if (!available) return <ProductInformationTabs product={product} />;
+
   return (
-    <ProductReviews
-      productId={productId}
-      slug={slug}
-      storeName={storeName}
-      initialReviews={reviews}
-      currentUser={user}
+    <ProductInformationTabs
+      product={product}
+      reviews={
+        <ProductReviews
+          productId={product.id}
+          slug={product.slug}
+          storeName={storeName}
+          initialReviews={reviews}
+          currentUser={user}
+          embedded
+        />
+      }
     />
   );
 }
