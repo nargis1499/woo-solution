@@ -3,12 +3,14 @@ import { NOINDEX } from "@/lib/seo";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
-import { CircleCheckIcon } from "lucide-react";
+import { AlertTriangleIcon, CircleCheckIcon, Clock3Icon, CreditCardIcon } from "lucide-react";
+import { resumeStripeCheckout } from "@/app/(store)/checkout/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyOrder } from "@/lib/data/orders";
 import { listOrderMessagesOrNull } from "@/lib/order-messages";
 import { parseOrderPaymentInfo } from "@/lib/order-payment";
 import { getStorePresence } from "@/lib/presence.server";
+import { syncStripeCheckoutSession } from "@/lib/stripe.server";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
 import { OrderChat } from "@/components/order-chat/order-chat";
@@ -16,6 +18,7 @@ import { OrderStatusBadge } from "@/components/order-status-badge";
 import { ProductImage } from "@/components/product-image";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
+import { Button } from "@/components/ui/button";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -24,7 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export const metadata: Metadata = { title: "Order details", robots: NOINDEX };
 
 type Params = Promise<{ id: string }>;
-type SearchParams = Promise<{ placed?: string }>;
+type SearchParams = Promise<{ placed?: string; stripe?: string; session_id?: string }>;
 
 export default function OrderPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   return (
@@ -37,12 +40,32 @@ export default function OrderPage({ params, searchParams }: { params: Params; se
 }
 
 async function OrderDetails({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
-  const [{ id }, { placed }, user] = await Promise.all([params, searchParams, getCurrentUser()]);
+  const [{ id }, { placed, stripe: stripeReturn, session_id: stripeSessionId }, user] = await Promise.all([
+    params,
+    searchParams,
+    getCurrentUser(),
+  ]);
   if (!user) redirect(`/login?next=${encodeURIComponent(`/orders/${id}`)}`);
+
+  // A Stripe success redirect is only a hint. Retrieve and verify the actual
+  // Checkout Session server-side before this page reads the order; the signed
+  // webhook runs the same idempotent reconciliation in the background.
+  if (stripeReturn === "success" && stripeSessionId) {
+    await syncStripeCheckoutSession(stripeSessionId, {
+      expectedOrderId: id,
+      expectedUserId: user.id,
+    }).catch(() => null);
+  }
+
   const order = await getMyOrder(id);
   if (!order) notFound();
   const items = order.order_items ?? [];
   const paymentInfo = parseOrderPaymentInfo(order);
+  const stripePaid = paymentInfo.isStripe && order.payment_status === "paid";
+  const stripeUnpaid =
+    paymentInfo.isStripe && order.payment_status === "unpaid" && order.status !== "cancelled";
+  const stripeProcessing =
+    stripeUnpaid && (stripeReturn === "processing" || stripeReturn === "success");
   // `null` = migration 17 not run yet → the thread is simply not shown.
   // The store's presence is resolved *for this customer*: their per-customer override (migration 20),
   // else the admin's global switch. The customer never gets an activity time the admin hid.
@@ -57,9 +80,45 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
           <AlertDescription className="text-current/80">
             {paymentInfo.isPlisio && order.payment_status === "paid"
               ? `Plisio verified your blockchain payment automatically! Your order is Paid and now Processing.`
-              : paymentInfo.isCrypto
-                ? `We've received your Transaction ID (TXID) and sent a confirmation to ${order.customer_email ?? "your e-mail"}. The Admin will verify your payment shortly.`
-                : `We've sent a confirmation to ${order.customer_email ?? "your e-mail"}. Pay in cash when it arrives.`}
+              : stripePaid
+                ? `Stripe confirmed your payment automatically! Your order is Paid and now Processing.`
+                : paymentInfo.isStripe
+                  ? `We've received your order and are waiting for Stripe to confirm the payment. You can safely close this page — it will update automatically.`
+                  : paymentInfo.isCrypto
+                    ? `We've received your Transaction ID (TXID) and sent a confirmation to ${order.customer_email ?? "your e-mail"}. The Admin will verify your payment shortly.`
+                    : `We've sent a confirmation to ${order.customer_email ?? "your e-mail"}. Pay in cash when it arrives.`}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {stripeUnpaid && stripeReturn === "cancelled" && (
+        <Alert className="border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <AlertTriangleIcon />
+          <AlertTitle>Stripe payment wasn&apos;t completed</AlertTitle>
+          <AlertDescription className="text-current/80">
+            Your order is saved but still unpaid. Use “Pay with Stripe” below whenever you&apos;re ready — you
+            don&apos;t need to place the order again.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {stripeUnpaid && stripeReturn === "session-error" && (
+        <Alert variant="destructive">
+          <AlertTriangleIcon />
+          <AlertTitle>We couldn&apos;t open Stripe Checkout</AlertTitle>
+          <AlertDescription>
+            Your order is saved but still unpaid. Please try “Pay with Stripe” below again in a moment.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {stripeProcessing && (
+        <Alert className="border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
+          <Clock3Icon />
+          <AlertTitle>Stripe is confirming your payment</AlertTitle>
+          <AlertDescription className="text-current/80">
+            Some payment methods take a little longer to settle. This order will move to Paid &amp; Processing
+            automatically as soon as Stripe confirms it.
           </AlertDescription>
         </Alert>
       )}
@@ -72,6 +131,30 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
         </div>
         <OrderStatusBadge status={order.status} className="text-sm" />
       </div>
+
+      {stripeUnpaid && (
+        <Card className="border-violet-500/30 bg-violet-500/[0.05]" data-testid="order-stripe-pay-card">
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-5">
+            <div className="flex min-w-0 items-center gap-3.5">
+              <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-violet-500/12 text-violet-600 dark:text-violet-400">
+                <CreditCardIcon className="size-5" aria-hidden />
+              </span>
+              <div>
+                <p className="font-semibold">Complete your Stripe payment</p>
+                <p className="text-sm text-muted-foreground">
+                  {formatMoney(order.total_micros, orderMoney(order))} is due. Stripe will open its secure hosted
+                  checkout; this order updates automatically after confirmation.
+                </p>
+              </div>
+            </div>
+            <form action={resumeStripeCheckout.bind(null, order.id)}>
+              <Button type="submit" data-testid="order-pay-with-stripe">
+                Pay with Stripe
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="gap-0 py-0">
         <ul className="divide-y">
@@ -130,7 +213,9 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
             </div>
             {paymentInfo.transactionId && (
               <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Transaction ID (TXID)</dt>
+                <dt className="text-muted-foreground">
+                  {paymentInfo.isStripe ? "Stripe payment reference" : "Transaction ID (TXID)"}
+                </dt>
                 <dd className="font-mono text-xs break-all text-right">{paymentInfo.transactionId}</dd>
               </div>
             )}

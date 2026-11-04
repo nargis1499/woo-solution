@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getSiteSettings } from "@/lib/site-settings";
+import { getStripePaymentAvailability } from "@/lib/stripe.server";
 import { isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
 import {
   isMissingBrandColumn,
@@ -36,8 +37,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const [settings, profileRes] = await Promise.all([
+    const [settings, stripe, profileRes] = await Promise.all([
       getSiteSettings(),
+      getStripePaymentAvailability(),
       supabase
         .from("profiles")
         .select("full_name, email, phone, is_admin")
@@ -149,6 +151,8 @@ export async function GET(request: NextRequest) {
       customer,
       payment: {
         codEnabled: settings.payment_cod_enabled,
+        stripeEnabled: stripe.enabled,
+        stripeMode: stripe.mode,
         plisioEnabled:
           settings.payment_plisio_enabled &&
           (Boolean(settings.payment_plisio_secret_key) ||

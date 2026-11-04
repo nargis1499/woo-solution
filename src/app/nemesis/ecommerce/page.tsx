@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { adminGetSiteSettings } from "@/lib/admin/data";
+import { getStripeAdminSummary } from "@/lib/stripe.server";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/admin/ui";
 import { WoocommerceTabs } from "@/components/admin/woocommerce-tabs";
@@ -8,7 +9,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 export const metadata: Metadata = { title: "E-commerce" };
 
 export default async function AdminEcommercePage() {
-  const settings = await adminGetSiteSettings();
+  const [settings, stripeSettings] = await Promise.all([
+    adminGetSiteSettings(),
+    getStripeAdminSummary(),
+  ]);
 
   return (
     <>
@@ -33,6 +37,7 @@ export default async function AdminEcommercePage() {
           <WoocommerceTabs
             settings={settings}
             currencyMigrated={settings.currencyMigrated}
+            stripeSettings={stripeSettings}
           />
         </div>
       ) : (

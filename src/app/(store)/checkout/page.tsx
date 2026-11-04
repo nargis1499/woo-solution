@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { getAdminStatus } from "@/lib/admin/auth";
 import { getSiteSettings } from "@/lib/site-settings";
+import { getStripePaymentAvailability } from "@/lib/stripe.server";
 import { CheckoutForm } from "@/components/checkout-form";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -21,9 +22,10 @@ export default function CheckoutPage() {
 }
 
 async function CheckoutGate() {
-  const [{ user, isAdmin }, settings] = await Promise.all([
+  const [{ user, isAdmin }, settings, stripe] = await Promise.all([
     getAdminStatus(),
     getSiteSettings(),
+    getStripePaymentAvailability(),
   ]);
   if (!user) redirect("/login?next=%2Fcheckout");
 
@@ -33,6 +35,8 @@ async function CheckoutGate() {
       storeName={settings.store_name}
       payment={{
         codEnabled: settings.payment_cod_enabled,
+        stripeEnabled: stripe.enabled,
+        stripeMode: stripe.mode,
         plisioEnabled:
           settings.payment_plisio_enabled &&
           (Boolean(settings.payment_plisio_secret_key) ||

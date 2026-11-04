@@ -2,8 +2,8 @@ import { shortNetworkTag } from "./crypto-protocols";
 import type { Order } from "./types";
 
 export type OrderPaymentInput = {
-  method: "cod" | "crypto" | "plisio";
-  gateway?: "plisio" | "manual";
+  method: "cod" | "crypto" | "plisio" | "stripe";
+  gateway?: "plisio" | "manual" | "stripe";
   protocolCode?: string;
   protocolName?: string;
   network?: string;
@@ -12,11 +12,14 @@ export type OrderPaymentInput = {
   plisioTxnId?: string;
   plisioCid?: string;
   cryptoAmount?: string;
+  stripeCheckoutSessionId?: string;
+  stripePaymentIntentId?: string;
 };
 
 export type ParsedOrderPayment = {
   isCrypto: boolean;
   isPlisio: boolean;
+  isStripe: boolean;
   isTestMode: boolean;
   methodLabel: string;
   shortMethodLabel: string;
@@ -28,6 +31,8 @@ export type ParsedOrderPayment = {
   plisioTxnId: string | null;
   plisioCid: string | null;
   cryptoAmount: string | null;
+  stripeCheckoutSessionId: string | null;
+  stripePaymentIntentId: string | null;
   customerNotes: string | null;
 };
 
@@ -35,8 +40,8 @@ const PAYMENT_META_PREFIX = "[PAYMENT_META:";
 const PAYMENT_META_SUFFIX = "]";
 
 type EncodedPaymentMeta = {
-  m?: "crypto" | "cod" | "plisio";
-  g?: "plisio" | "manual";
+  m?: "crypto" | "cod" | "plisio" | "stripe";
+  g?: "plisio" | "manual" | "stripe";
   c?: string;
   p?: string;
   n?: string;
@@ -45,6 +50,8 @@ type EncodedPaymentMeta = {
   ptx?: string;
   cid?: string;
   amt?: string;
+  cs?: string;
+  pi?: string;
 };
 
 /**
@@ -64,18 +71,21 @@ export function formatOrderNotesWithPayment(
   }
 
   const isPlisio = payment.method === "plisio" || payment.gateway === "plisio";
+  const isStripe = payment.method === "stripe" || payment.gateway === "stripe";
 
   const meta: EncodedPaymentMeta = {
-    m: isPlisio ? "plisio" : "crypto",
-    g: isPlisio ? "plisio" : undefined,
+    m: isStripe ? "stripe" : isPlisio ? "plisio" : "crypto",
+    g: isStripe ? "stripe" : isPlisio ? "plisio" : undefined,
     c: payment.protocolCode?.trim() || undefined,
-    p: payment.protocolName?.trim() || undefined,
+    p: payment.protocolName?.trim() || (isStripe ? "Stripe Checkout" : undefined),
     n: payment.network?.trim() || undefined,
     a: payment.depositAddress?.trim() || undefined,
-    tx: payment.transactionId?.trim() || undefined,
+    tx: payment.transactionId?.trim() || payment.stripePaymentIntentId?.trim() || undefined,
     ptx: payment.plisioTxnId?.trim() || undefined,
     cid: payment.plisioCid?.trim() || undefined,
     amt: payment.cryptoAmount?.trim() || undefined,
+    cs: payment.stripeCheckoutSessionId?.trim() || undefined,
+    pi: payment.stripePaymentIntentId?.trim() || undefined,
   };
 
   const tag = `${PAYMENT_META_PREFIX}${JSON.stringify(meta)}${PAYMENT_META_SUFFIX}`;
@@ -94,6 +104,8 @@ export function parseOrderPaymentInfo(
     | "payment_network"
     | "payment_address"
     | "payment_tx_id"
+    | "stripe_checkout_session_id"
+    | "stripe_payment_intent_id"
   >,
 ): ParsedOrderPayment {
   let rawNotes = order.notes ?? "";
@@ -133,6 +145,45 @@ export function parseOrderPaymentInfo(
   }
 
   const methodRaw = (order.payment_method ?? "cod").trim();
+  const stripeCheckoutSessionId = order.stripe_checkout_session_id || meta?.cs || null;
+  const stripePaymentIntentId =
+    order.stripe_payment_intent_id || meta?.pi || (/^stripe/i.test(methodRaw) ? order.payment_tx_id || meta?.tx || null : null);
+  const isStripe = Boolean(
+    meta?.m === "stripe" ||
+      meta?.g === "stripe" ||
+      /^stripe/i.test(methodRaw) ||
+      /stripe/i.test(order.payment_protocol ?? "") ||
+      stripeCheckoutSessionId ||
+      stripePaymentIntentId,
+  );
+
+  if (isStripe) {
+    const network =
+      order.payment_network ||
+      meta?.n ||
+      (stripeCheckoutSessionId?.startsWith("cs_test_") ? "Test mode" : stripeCheckoutSessionId ? "Live mode" : null);
+    const isStripeTestMode = /test/i.test(network ?? "") || Boolean(stripeCheckoutSessionId?.startsWith("cs_test_"));
+    return {
+      isCrypto: false,
+      isPlisio: false,
+      isStripe: true,
+      isTestMode: isStripeTestMode,
+      methodLabel: `Stripe Checkout${isStripeTestMode ? " (Test mode)" : ""}`,
+      shortMethodLabel: isStripeTestMode ? "STRIPE [TEST]" : "STRIPE",
+      protocolCode: "stripe",
+      protocolName: "Stripe Checkout",
+      network,
+      depositAddress: null,
+      transactionId: stripePaymentIntentId,
+      plisioTxnId: null,
+      plisioCid: null,
+      cryptoAmount: null,
+      stripeCheckoutSessionId,
+      stripePaymentIntentId,
+      customerNotes: rawNotes || null,
+    };
+  }
+
   const isPlisio =
     meta?.m === "plisio" ||
     meta?.g === "plisio" ||
@@ -164,6 +215,7 @@ export function parseOrderPaymentInfo(
     return {
       isCrypto: false,
       isPlisio: false,
+      isStripe: false,
       isTestMode: false,
       methodLabel: "Cash on Delivery (COD)",
       shortMethodLabel: "COD",
@@ -175,6 +227,8 @@ export function parseOrderPaymentInfo(
       plisioTxnId: null,
       plisioCid: null,
       cryptoAmount: null,
+      stripeCheckoutSessionId: null,
+      stripePaymentIntentId: null,
       customerNotes: rawNotes || null,
     };
   }
@@ -197,6 +251,7 @@ export function parseOrderPaymentInfo(
   return {
     isCrypto: true,
     isPlisio,
+    isStripe: false,
     isTestMode,
     methodLabel: isPlisio
       ? `${isTestMode ? "Plisio Crypto [TEST MODE]" : "Plisio Crypto"} — ${fullProto}`
@@ -210,6 +265,8 @@ export function parseOrderPaymentInfo(
     plisioTxnId,
     plisioCid,
     cryptoAmount,
+    stripeCheckoutSessionId: null,
+    stripePaymentIntentId: null,
     customerNotes: rawNotes || null,
   };
 }

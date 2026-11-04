@@ -14,7 +14,9 @@ export const BASE_ORDER_COLUMNS =
 export const ORDER_COLUMNS_NO_PAYMENT = `${BASE_ORDER_COLUMNS}, exchange_rate`;
 export const ORDER_COLUMNS_NO_COUPON = `${ORDER_COLUMNS_NO_PAYMENT}, payment_protocol, payment_network, payment_address, payment_tx_id`;
 /** Coupon columns arrived with migration 20261061 (`discount_micros`, `coupon_code`, `coupon_id`). */
-export const ORDER_COLUMNS = `${ORDER_COLUMNS_NO_COUPON}, discount_micros, coupon_code, coupon_id`;
+export const ORDER_COLUMNS_NO_STRIPE = `${ORDER_COLUMNS_NO_COUPON}, discount_micros, coupon_code, coupon_id`;
+/** Stripe reconciliation columns arrived with migration 20261063. */
+export const ORDER_COLUMNS = `${ORDER_COLUMNS_NO_STRIPE}, stripe_checkout_session_id, stripe_payment_intent_id, stripe_customer_id, stripe_checkout_status, stripe_payment_status`;
 
 /** `order_items` columns for the order detail views (variation columns arrived with migration 14). */
 export const ORDER_ITEM_COLUMNS =
@@ -26,6 +28,8 @@ type QueryError = { code?: string; message?: string } | null;
 const mentions = (error: QueryError, re: RegExp): boolean =>
   Boolean(error) && (error!.code === "42703" || error!.code === "42P01" || re.test(error!.message ?? "")) && re.test(`${error!.message ?? ""} ${error!.code ?? ""}`);
 
+const isMissingStripeColumns = (error: QueryError): boolean =>
+  Boolean(error) && /stripe_(checkout|payment|customer)/i.test(error!.message ?? "");
 const isMissingPaymentColumns = (error: QueryError): boolean =>
   Boolean(error) && (error!.code === "42703" || /payment_(protocol|network|address|tx_id)/i.test(error!.message ?? ""));
 const isMissingExchangeRate = (error: QueryError): boolean => Boolean(error) && (error!.code === "42703" || /exchange_rate/i.test(error!.message ?? ""));
@@ -34,6 +38,9 @@ const isMissingVariationColumns = (error: QueryError): boolean => mentions(error
 /** Runs `query` with the full column list, falling back if payment columns or exchange_rate are missing. */
 export async function withOrderColumns<T extends { error: QueryError }>(query: (columns: string) => PromiseLike<T>): Promise<T> {
   let result = await query(ORDER_COLUMNS);
+  if (result.error && isMissingStripeColumns(result.error)) {
+    result = await query(ORDER_COLUMNS_NO_STRIPE);
+  }
   if (result.error && isMissingPaymentColumns(result.error)) {
     result = await query(ORDER_COLUMNS_NO_PAYMENT);
   }

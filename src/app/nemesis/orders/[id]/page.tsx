@@ -164,18 +164,20 @@ export default async function AdminOrderPage({
                       data-testid="admin-order-payment-method"
                     >
                       <span>
-                        {paymentInfo.isPlisio
-                          ? "Plisio (Automated Crypto)"
-                          : paymentInfo.isCrypto
-                            ? "Cryptocurrency"
-                            : "Cash on Delivery (COD)"}
+                        {paymentInfo.isStripe
+                          ? "Stripe Checkout"
+                          : paymentInfo.isPlisio
+                            ? "Plisio (Automated Crypto)"
+                            : paymentInfo.isCrypto
+                              ? "Cryptocurrency"
+                              : "Cash on Delivery (COD)"}
                       </span>
                       {paymentInfo.isTestMode && (
                         <span
                           data-testid="admin-order-test-mode-badge"
                           className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider text-amber-600 uppercase dark:text-amber-400"
                         >
-                          TEST MODE · SIMULATED
+                          {paymentInfo.isStripe ? "TEST MODE · STRIPE TEST KEYS" : "TEST MODE · SIMULATED"}
                         </span>
                       )}
                     </dd>
@@ -249,6 +251,69 @@ export default async function AdminOrderPage({
                       )}
                     </div>
                   </>
+                )}
+
+                {paymentInfo.isStripe && (
+                  <div className="space-y-4 border-t pt-4" data-testid="admin-order-stripe-details">
+                    <dl className="grid gap-4 sm:grid-cols-3">
+                      <div>
+                        <dt className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                          Stripe mode
+                        </dt>
+                        <dd className="mt-1 font-medium">{paymentInfo.network ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                          Checkout status
+                        </dt>
+                        <dd className="mt-1 font-medium">{order.stripe_checkout_status ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                          Stripe payment status
+                        </dt>
+                        <dd className="mt-1 font-medium">{order.stripe_payment_status ?? "—"}</dd>
+                      </div>
+                    </dl>
+
+                    {[
+                      {
+                        label: "Stripe Checkout Session",
+                        value: paymentInfo.stripeCheckoutSessionId,
+                        testId: "admin-order-stripe-session",
+                        copyLabel: "Copy session ID",
+                      },
+                      {
+                        label: "Stripe PaymentIntent",
+                        value: paymentInfo.stripePaymentIntentId,
+                        testId: "admin-order-stripe-payment-intent",
+                        copyLabel: "Copy PaymentIntent ID",
+                      },
+                      {
+                        label: "Stripe customer",
+                        value: order.stripe_customer_id ?? null,
+                        testId: "admin-order-stripe-customer",
+                        copyLabel: "Copy customer ID",
+                      },
+                    ]
+                      .filter((item) => Boolean(item.value))
+                      .map((item) => (
+                        <div key={item.label}>
+                          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                            {item.label}
+                          </p>
+                          <div
+                            className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-center"
+                            data-testid={item.testId}
+                          >
+                            <code className="flex-1 rounded-lg border border-violet-500/30 bg-violet-500/[0.08] px-3 py-2 font-mono text-xs font-semibold break-all">
+                              {item.value}
+                            </code>
+                            <CopyValueButton value={item.value!} label={item.copyLabel} />
+                          </div>
+                        </div>
+                      ))}
+                  </div>
                 )}
               </div>
             </Section>

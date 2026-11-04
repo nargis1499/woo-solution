@@ -26,9 +26,17 @@ import { Switch } from "@/components/ui/switch";
 import type { CryptoProtocol } from "@/lib/crypto-protocols";
 import { inferPlisioNetworkInfo, type PlisioCurrency } from "@/lib/plisio";
 import type { SiteSettings } from "@/lib/types";
+import { EMPTY_STRIPE_ADMIN_SUMMARY, type StripeAdminSummary } from "@/lib/stripe";
 import { cn } from "@/lib/utils";
+import { StripePaymentSettings } from "./stripe-payment-settings";
 
-export function PaymentSettings({ settings }: { settings: SiteSettings }) {
+export function PaymentSettings({
+  settings,
+  stripeSettings = EMPTY_STRIPE_ADMIN_SUMMARY,
+}: {
+  settings: SiteSettings;
+  stripeSettings?: StripeAdminSummary;
+}) {
   const router = useRouter();
   const [codEnabled, setCodEnabled] = useState<boolean>(
     settings.payment_cod_enabled,
@@ -443,7 +451,10 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
         )}
       </div>
 
-      {/* 2. Plisio Automated Cryptocurrency Payment Gateway Card — MIDDLE */}
+      {/* 2. Stripe hosted Checkout for cards and wallets */}
+      <StripePaymentSettings initialSummary={stripeSettings} siteUrl={settings.seo_site_url} />
+
+      {/* 3. Plisio Automated Cryptocurrency Payment Gateway Card */}
       <div
         className="overflow-hidden rounded-2xl border bg-card"
         data-testid="payment-plisio-card"
@@ -956,7 +967,7 @@ export function PaymentSettings({ settings }: { settings: SiteSettings }) {
         )}
       </div>
 
-      {/* 3. Manual Crypto Payment Gateway Card — BOTTOM */}
+      {/* 4. Manual Crypto Payment Gateway Card — BOTTOM */}
       <div
         className="overflow-hidden rounded-2xl border bg-card"
         data-testid="payment-crypto-card"

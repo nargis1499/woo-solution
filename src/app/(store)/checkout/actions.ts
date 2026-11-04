@@ -1,12 +1,19 @@
 "use server";
 
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import {
   formatOrderNotesWithPayment,
+  parseOrderPaymentInfo,
   type OrderPaymentInput,
 } from "@/lib/order-payment";
 import { resolvePlisioCurrency, type PlisioInvoiceSession } from "@/lib/plisio";
 import { createPlisioOrderInvoice } from "@/lib/plisio.server";
+import {
+  createStripeCheckoutSessionForOrder,
+  getStripePaymentAvailability,
+  resolveStripeSiteOrigin,
+} from "@/lib/stripe.server";
 import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -32,7 +39,14 @@ export type CouponPreviewResult =
   | { ok: false; error: string };
 
 export type PlaceOrderResult =
-  | { ok: true; orderId: string; plisioInvoice?: PlisioInvoiceSession }
+  | {
+      ok: true;
+      orderId: string;
+      plisioInvoice?: PlisioInvoiceSession;
+      stripeCheckoutUrl?: string;
+      stripeCheckoutError?: string;
+      stripePaymentStatus?: "paid" | "pending";
+    }
   | { ok: false; error: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -115,12 +129,14 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
   if (items.length === 0) return { ok: false, error: "Your cart is empty." };
 
   const rawMethod = input.payment?.method;
-  const paymentMethod: "cod" | "crypto" | "plisio" =
-    rawMethod === "plisio"
-      ? "plisio"
-      : rawMethod === "crypto"
-        ? "crypto"
-        : "cod";
+  const paymentMethod: "cod" | "crypto" | "plisio" | "stripe" =
+    rawMethod === "stripe"
+      ? "stripe"
+      : rawMethod === "plisio"
+        ? "plisio"
+        : rawMethod === "crypto"
+          ? "crypto"
+          : "cod";
 
   const paymentTxId = clean(input.payment?.transactionId, 240);
   if (paymentMethod === "crypto" && !paymentTxId) {
@@ -128,6 +144,16 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
       ok: false,
       error: "Please enter your Transaction ID (TXID) so the Admin can verify your payment.",
     };
+  }
+
+  if (paymentMethod === "stripe") {
+    const stripe = await getStripePaymentAvailability();
+    if (!stripe.enabled) {
+      return {
+        ok: false,
+        error: "Stripe Checkout is not available right now. Please choose another payment method.",
+      };
+    }
   }
 
   let plisioCurrency = null;
@@ -159,7 +185,14 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
             depositAddress: clean(input.payment?.depositAddress, 200),
             transactionId: paymentTxId,
           }
-        : { method: "cod" };
+        : paymentMethod === "stripe"
+          ? {
+              method: "stripe",
+              gateway: "stripe",
+              protocolCode: "stripe",
+              protocolName: "Stripe Checkout",
+            }
+          : { method: "cod" };
 
   const rawCustomerNotes = clean(input.shipping?.notes, 600);
   const notesWithPayment = formatOrderNotesWithPayment(rawCustomerNotes, normalizedPayment);
@@ -278,7 +311,44 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     // Non-fatal: `enrichNewOrderNotifications` also resolves item counts at read time
   }
 
-  // 3. When using Plisio, immediately generate the unique Plisio invoice for this order
+  // 3. Stripe: create the hosted Checkout Session from the trusted order row
+  // that place_order() just priced in the database. If Stripe is temporarily
+  // unreachable, keep the order and send the customer to its Pay-now retry
+  // instead of making them place a duplicate order.
+  if (paymentMethod === "stripe") {
+    const [h, settings] = await Promise.all([headers(), getSiteSettingsFresh()]);
+    const userId =
+      typeof (claims.claims as { sub?: unknown }).sub === "string"
+        ? (claims.claims as { sub: string }).sub
+        : null;
+    const stripeResult = await createStripeCheckoutSessionForOrder({
+      orderId,
+      siteOrigin: resolveStripeSiteOrigin({
+        originHeader: h.get("origin"),
+        configuredSiteUrl: settings.seo_site_url,
+      }),
+      expectedUserId: userId,
+    });
+    if (!stripeResult.ok) {
+      return {
+        ok: true,
+        orderId,
+        stripeCheckoutError: stripeResult.error,
+        stripePaymentStatus: "pending",
+      };
+    }
+    if (stripeResult.status === "redirect") {
+      return {
+        ok: true,
+        orderId,
+        stripeCheckoutUrl: stripeResult.url,
+        stripePaymentStatus: "pending",
+      };
+    }
+    return { ok: true, orderId, stripePaymentStatus: stripeResult.status };
+  }
+
+  // 4. When using Plisio, immediately generate the unique Plisio invoice for this order
   if (paymentMethod === "plisio" && plisioCurrency) {
     const h = await headers();
     const origin =
@@ -297,4 +367,50 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
   }
 
   return { ok: true, orderId };
+}
+
+/**
+ * Reopens (or safely recreates after expiry/failure) the hosted Stripe
+ * Checkout Session for one of the signed-in customer's unpaid Stripe orders.
+ */
+export async function resumeStripeCheckout(orderId: string): Promise<never> {
+  if (!UUID_RE.test(orderId)) redirect("/orders");
+
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId =
+    claims?.claims && typeof (claims.claims as { sub?: unknown }).sub === "string"
+      ? (claims.claims as { sub: string }).sub
+      : null;
+  if (!userId) redirect(`/login?next=${encodeURIComponent(`/orders/${orderId}`)}`);
+
+  const { data: ownedOrder } = await supabase
+    .from("orders")
+    .select("payment_method, payment_protocol, payment_network, payment_address, payment_tx_id, notes")
+    .eq("id", orderId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const paymentInfo = ownedOrder
+    ? parseOrderPaymentInfo({
+        ...(ownedOrder as Record<string, unknown>),
+        stripe_checkout_session_id: null,
+        stripe_payment_intent_id: null,
+      } as Parameters<typeof parseOrderPaymentInfo>[0])
+    : null;
+  if (!paymentInfo?.isStripe) redirect(`/orders/${orderId}?stripe=session-error`);
+
+  const [h, settings] = await Promise.all([headers(), getSiteSettingsFresh()]);
+  const result = await createStripeCheckoutSessionForOrder({
+    orderId,
+    siteOrigin: resolveStripeSiteOrigin({
+      originHeader: h.get("origin"),
+      configuredSiteUrl: settings.seo_site_url,
+    }),
+    expectedUserId: userId,
+  });
+
+  if (result.ok && result.status === "redirect") redirect(result.url);
+  if (result.ok && result.status === "paid") redirect(`/orders/${orderId}?placed=1&stripe=success`);
+  if (result.ok && result.status === "pending") redirect(`/orders/${orderId}?stripe=processing`);
+  redirect(`/orders/${orderId}?stripe=session-error`);
 }
