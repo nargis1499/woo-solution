@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   BanknoteIcon,
@@ -201,8 +201,26 @@ export function ProductShowcase({
 }
 
 /** Product details below the buy panel; only information stored on the product is shown. */
-export function ProductInformationTabs({ product }: { product: Product }) {
+export function ProductInformationTabs({ product, reviews }: { product: Product; reviews?: ReactNode }) {
   const [tab, setTab] = useState("features");
+  const hasReviews = reviews != null;
+
+  // The rating summary in the buy panel and the post-login return URL both
+  // deep-link to #reviews. Now that reviews live in this tab set, translate
+  // that hash into selecting the tab, then scroll once the panel is visible.
+  useEffect(() => {
+    if (!hasReviews) return;
+    const openReviewsTab = () => {
+      if (window.location.hash !== "#reviews") return;
+      setTab("ratings-reviews");
+      window.requestAnimationFrame(() => {
+        document.getElementById("reviews")?.scrollIntoView({ block: "start" });
+      });
+    };
+    openReviewsTab();
+    window.addEventListener("hashchange", openReviewsTab);
+    return () => window.removeEventListener("hashchange", openReviewsTab);
+  }, [hasReviews]);
   const features = parseProductFeatures(product.features, 3);
   const specs: { label: string; value: string; href?: string }[] = [
     ...(product.brand ? [{ label: "Brand", value: product.brand }] : []),
@@ -247,9 +265,18 @@ export function ProductInformationTabs({ product }: { product: Product }) {
           >
             Delivery &amp; Payment
           </TabsTrigger>
+          {hasReviews ? (
+            <TabsTrigger
+              id="ratings-reviews"
+              className="-mb-px h-11 flex-none cursor-pointer rounded-none px-3 text-sm text-slate-400 hover:text-slate-100 data-selected:text-indigo-300 dark:text-slate-400 dark:hover:text-slate-100 dark:data-selected:text-indigo-300 after:bg-indigo-400 group-data-horizontal/tabs:after:bottom-0 sm:px-5"
+            >
+              Ratings &amp; reviews
+            </TabsTrigger>
+          ) : null}
         </TabsList>
         {/* shouldForceMount keeps every tab panel in the SSR HTML DOM so Googlebot crawls
-            Key Features, Specifications and Delivery & Payment without needing JS clicks. */}
+            Key Features, Specifications, Delivery & Payment and Ratings & reviews without
+            needing JS clicks. */}
         <TabsContent id="features" shouldForceMount className="pt-6 data-inert:hidden">
           <h2 className="sr-only">Key Features</h2>
           {features.length ? (
@@ -323,6 +350,12 @@ export function ProductInformationTabs({ product }: { product: Product }) {
             </article>
           </div>
         </TabsContent>
+        {hasReviews ? (
+          <TabsContent id="ratings-reviews" shouldForceMount className="pt-6 data-inert:hidden">
+            <h2 className="sr-only">Ratings &amp; reviews</h2>
+            {reviews}
+          </TabsContent>
+        ) : null}
       </Tabs>
     </section>
   );

@@ -67,12 +67,15 @@ export function ProductReviews({
   storeName,
   initialReviews,
   currentUser,
+  embedded = false,
 }: {
   productId: string;
   slug: string;
   storeName: string;
   initialReviews: ProductReview[];
   currentUser: CurrentUser | null;
+  /** Render inside another surface (the product-information tab) without repeating its card chrome or heading. */
+  embedded?: boolean;
 }) {
   const [reviews, setReviews] = useState<ProductReview[]>(initialReviews);
   const [sort, setSort] = useState<ReviewSort>("newest");
@@ -95,16 +98,23 @@ export function ProductReviews({
   const shown = listed.slice(0, visible);
 
   return (
-    <section id="reviews" className="mt-10 scroll-mt-24 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-8" aria-labelledby="reviews-heading">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="mb-1 inline-flex items-center gap-1.5 text-xs font-bold tracking-[0.18em] text-indigo-300 uppercase">
-            <MessageSquareHeartIcon className="size-3.5" aria-hidden /> Customer feedback
-          </p>
-          <h2 id="reviews-heading" className="text-2xl font-bold tracking-tight text-white">
-            Ratings &amp; reviews
-          </h2>
-        </div>
+    <section
+      id="reviews"
+      className={cn("scroll-mt-24", !embedded && "mt-10 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-8")}
+      aria-labelledby={embedded ? undefined : "reviews-heading"}
+      aria-label={embedded ? "Ratings and reviews" : undefined}
+    >
+      <div className={cn("flex flex-wrap gap-4", embedded ? "items-center justify-end" : "items-start justify-between")}>
+        {!embedded ? (
+          <div>
+            <p className="mb-1 inline-flex items-center gap-1.5 text-xs font-bold tracking-[0.18em] text-indigo-300 uppercase">
+              <MessageSquareHeartIcon className="size-3.5" aria-hidden /> Customer feedback
+            </p>
+            <h2 id="reviews-heading" className="text-2xl font-bold tracking-tight text-white">
+              Ratings &amp; reviews
+            </h2>
+          </div>
+        ) : null}
         {currentUser ? (
           <Button
             variant="outline"
@@ -124,7 +134,7 @@ export function ProductReviews({
         )}
       </div>
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-[300px_1fr] lg:gap-10">
+      <div className={cn("grid gap-8 lg:grid-cols-[300px_1fr] lg:gap-10", embedded ? "mt-5" : "mt-8")}>
         {/* ── Summary ─────────────────────────────────────────────────── */}
         <div className="space-y-5">
           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-5 text-center">

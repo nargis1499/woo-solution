@@ -33,8 +33,8 @@ on the cart/checkout path.
 
 ## Reviews
 
-Shown on every product page under **Ratings & reviews**, moderated under
-**Nemesis → Reviews**.
+Shown on every product page in the **Ratings & reviews** tab, moderated
+under **Nemesis → Reviews**.
 
 | Rule | Behaviour |
 | --- | --- |
