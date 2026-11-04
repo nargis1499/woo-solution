@@ -19,6 +19,7 @@ import { formatDate } from "@/lib/format";
 import { REVIEW_SORTS, formatRating, sortReviews, summarizeReviews, type ReviewSort } from "@/lib/reviews";
 import type { CurrentUser, ProductReview } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +35,23 @@ function initials(name: string): string {
     .slice(0, 2)
     .map((part) => part[0]!.toUpperCase())
     .join("") || "C";
+}
+
+function ReviewAvatar({ name, src }: { name: string; src: string | null }) {
+  const avatarSrc = src?.trim() || null;
+
+  return (
+    <Avatar size="lg" className="shrink-0" aria-hidden>
+      {avatarSrc ? (
+        // Google avatar URLs can reject hot-linked requests that carry the
+        // storefront referer. Account/admin avatars already use no-referrer;
+        // matching that here also keeps guest and signed-in views consistent.
+        // AvatarImage hides failed loads, allowing the initials below to show.
+        <AvatarImage key={avatarSrc} src={avatarSrc} alt="" loading="lazy" referrerPolicy="no-referrer" />
+      ) : null}
+      <AvatarFallback className="bg-indigo-500/25 text-sm font-bold text-indigo-200">{initials(name)}</AvatarFallback>
+    </Avatar>
+  );
 }
 
 /**
@@ -296,15 +314,7 @@ function ReviewCard({
     <li className={cn("rounded-xl border border-slate-800 bg-slate-950/40 p-4 sm:p-5", muted && "border-0 bg-transparent p-0 sm:p-0")}>
       <article>
         <header className="flex flex-wrap items-center gap-3">
-          {review.author_avatar_url ? (
-            // Author avatars come from auth providers (any host) – a plain img keeps this host-agnostic.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={review.author_avatar_url} alt="" className="size-10 rounded-full object-cover" loading="lazy" />
-          ) : (
-            <span className="grid size-10 place-items-center rounded-full bg-indigo-500/25 text-sm font-bold text-indigo-200" aria-hidden>
-              {initials(review.author_name)}
-            </span>
-          )}
+          <ReviewAvatar name={review.author_name} src={review.author_avatar_url} />
           <div className="min-w-0">
             <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-white">
               {review.author_name}
