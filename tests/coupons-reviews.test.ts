@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Stars } from "@/components/reviews/stars";
 import {
   computeDiscountMicros,
   couponStatus,
@@ -166,5 +169,25 @@ describe("sortReviews + formatRating", () => {
     expect(formatRating(4)).toBe("4");
     expect(formatRating(4.666)).toBe("4.7");
     expect(formatRating(0)).toBe("0");
+  });
+});
+
+describe("Stars placement (fractional fill must not squeeze the icons)", () => {
+  it("keeps both star rows at natural width inside the %-width clip", () => {
+    // Regression: the filled row used to be a plain `flex` box, so it
+    // adopted the clip's 80% width and flex shrank its SVGs — 4/5 showed
+    // five tiny gold stars bunched beside full-size grey ones.
+    const html = renderToStaticMarkup(createElement(Stars, { value: 4, starClassName: "size-3.5" }));
+
+    expect(html).toContain('aria-label="Rated 4 out of 5 stars"');
+    expect(html).toContain('style="width:80%"');
+    expect(html.match(/flex w-max shrink-0/g) ?? []).toHaveLength(2);
+    expect(html.match(/shrink-0 size-3\.5/g) ?? []).toHaveLength(10);
+  });
+
+  it("clamps fractional and out-of-range values", () => {
+    expect(renderToStaticMarkup(createElement(Stars, { value: 4.3 }))).toContain('style="width:86%"');
+    expect(renderToStaticMarkup(createElement(Stars, { value: 9 }))).toContain('style="width:100%"');
+    expect(renderToStaticMarkup(createElement(Stars, { value: -2 }))).toContain('style="width:0%"');
   });
 });
