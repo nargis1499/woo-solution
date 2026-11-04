@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { isMissingReviewsSchema } from "@/lib/reviews";
+import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { createClient } from "@/lib/supabase/server";
 import type { ProductReview } from "@/lib/types";
 
@@ -10,6 +11,14 @@ const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const clean = (value: unknown, max: number) =>
   typeof value === "string" ? value.trim().slice(0, max) : "";
+
+const REVIEWS_DISABLED_ERROR = "Product reviews are currently disabled.";
+
+/** Fresh read so turning the E-commerce → General switch off blocks writes immediately. */
+async function reviewsEnabled(): Promise<boolean> {
+  const settings = await getSiteSettingsFresh();
+  return settings.reviews_enabled !== false;
+}
 
 export type SubmitReviewResult =
   | { ok: true; review: ProductReview }
@@ -36,6 +45,7 @@ export async function submitReview(input: {
   if (!UUID_RE.test(productId)) return { ok: false, error: "Something went wrong. Please reload the page." };
   if (!Number.isFinite(rating) || rating < 1 || rating > 5) return { ok: false, error: "Please choose a star rating." };
   if (body.length < 3) return { ok: false, error: "Please write a little more about the product." };
+  if (!(await reviewsEnabled())) return { ok: false, error: REVIEWS_DISABLED_ERROR };
 
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
@@ -63,6 +73,7 @@ export type ToggleHelpfulResult =
 export async function toggleReviewHelpful(input: { reviewId: string }): Promise<ToggleHelpfulResult> {
   const reviewId = clean(input?.reviewId, 40);
   if (!UUID_RE.test(reviewId)) return { ok: false, error: "Something went wrong. Please reload the page." };
+  if (!(await reviewsEnabled())) return { ok: false, error: REVIEWS_DISABLED_ERROR };
 
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();

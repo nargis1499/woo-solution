@@ -1228,6 +1228,7 @@ const META_FALLBACK_KEYS = [
   "footer_text",
   "shipping_enabled",
   "shipping_rate_micros",
+  "reviews_enabled",
   "payment_cod_enabled",
   "payment_plisio_enabled",
   "payment_plisio_test_mode",
@@ -1256,7 +1257,7 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
   if (error) {
     if (error.code === "42703" || /column .* does not exist|schema cache/i.test(error.message ?? "")) {
       const message = error.message ?? "";
-      if (/footer_text|shipping_|payment_|home_show_hero|home_hero_|home_show_category_sections|home_category_/i.test(message)) {
+      if (/footer_text|shipping_|reviews_enabled|payment_|home_show_hero|home_hero_|home_show_category_sections|home_category_/i.test(message)) {
         const { data: current } = await supabase.from("site_settings").select("theme_gradients").eq("id", 1).maybeSingle();
         const existingGradients =
           current?.theme_gradients && typeof current.theme_gradients === "object" && !Array.isArray(current.theme_gradients)
@@ -1280,7 +1281,9 @@ async function saveSiteSettings(patch: Record<string, unknown>): Promise<string 
           ? "20261037000000_footer_text.sql"
           : /shipping_/i.test(errMsg)
             ? "20261036000000_shipping_settings.sql"
-            : /currency|bdt_rate/i.test(errMsg)
+            : /reviews_enabled/i.test(errMsg)
+              ? "20261062000000_reviews_toggle.sql"
+              : /currency|bdt_rate/i.test(errMsg)
               ? "20261025000000_currency.sql"
               : /home_page_id/i.test(errMsg)
                 ? "20261060000000_static_homepage.sql"
@@ -1431,6 +1434,7 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
   const currency = isCurrencyCode(currencyInput) ? currencyInput : null;
   const rateInput = str(formData, "usd_to_bdt_rate", 20);
   const shippingEnabled = formData.has("shipping_enabled") ? bool(formData, "shipping_enabled") : true;
+  const reviewsEnabled = formData.has("reviews_enabled") ? bool(formData, "reviews_enabled") : null;
   const shippingRateInput = str(formData, "shipping_rate", 20);
   const fieldErrors: Record<string, string> = {};
   if (!currency) fieldErrors.currency = "Pick USD or BDT.";
@@ -1457,6 +1461,7 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
       ...(rate ? { usd_to_bdt_rate: rate } : {}),
       shipping_enabled: shippingEnabled,
       ...(shippingRateMicros !== null ? { shipping_rate_micros: shippingRateMicros } : {}),
+      ...(reviewsEnabled !== null ? { reviews_enabled: reviewsEnabled } : {}),
     });
     if (problem) return { error: problem, values };
     return { success: "Setting Saved", values };

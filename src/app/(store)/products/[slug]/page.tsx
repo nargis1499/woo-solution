@@ -124,7 +124,7 @@ export default async function ProductPage({ params }: { params: Params }) {
           </section>
         )}
         <Suspense fallback={<ProductInformationTabs product={product} />}>
-          <ProductInformationWithReviews product={product} storeName={settings.store_name} />
+          <ProductInformationWithReviews product={product} storeName={settings.store_name} reviewsEnabled={settings.reviews_enabled} />
         </Suspense>
 
         <Suspense fallback={null}>
@@ -137,16 +137,20 @@ export default async function ProductPage({ params }: { params: Params }) {
 
 /**
  * Product-information tabs with Ratings & reviews (migration 20261061) as
- * the final tab. The reviews tab is omitted entirely while the database has
- * not run the migration yet (`available: false`).
+ * the final tab. The reviews tab is omitted entirely while Ratings & Reviews
+ * are switched off in E-commerce → General or the database has not run the
+ * migration yet (`available: false`).
  */
 async function ProductInformationWithReviews({
   product,
   storeName,
+  reviewsEnabled,
 }: {
   product: NonNullable<Awaited<ReturnType<typeof getProductBySlug>>>;
   storeName: string;
+  reviewsEnabled: boolean;
 }) {
+  if (!reviewsEnabled) return <ProductInformationTabs product={product} />;
   const user = await getCurrentUser();
   const { reviews, available } = await getProductReviews(product.id, user?.id);
   if (!available) return <ProductInformationTabs product={product} />;

@@ -45,6 +45,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   usd_to_bdt_rate: null,
   shipping_enabled: true,
   shipping_rate_micros: FLAT_SHIPPING_MICROS,
+  reviews_enabled: true,
   payment_cod_enabled: true,
   payment_plisio_enabled: false,
   payment_plisio_test_mode: false,
@@ -132,6 +133,7 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     usd_to_bdt_rate: positive(row.usd_to_bdt_rate),
     shipping_enabled: flag(row.shipping_enabled ?? meta.shipping_enabled, true),
     shipping_rate_micros: nonNegative(row.shipping_rate_micros ?? meta.shipping_rate_micros, FLAT_SHIPPING_MICROS),
+    reviews_enabled: flag(row.reviews_enabled ?? meta.reviews_enabled, true),
     payment_cod_enabled: flag(row.payment_cod_enabled ?? meta.payment_cod_enabled, true),
     payment_plisio_enabled: flag(row.payment_plisio_enabled ?? meta.payment_plisio_enabled, false),
     payment_plisio_test_mode: flag(row.payment_plisio_test_mode ?? meta.payment_plisio_test_mode, false),
@@ -233,7 +235,7 @@ const getCachedSiteSettings = unstable_cache(
     }
   },
   // Do not reuse a normalized payload with the previous settings schema.
-  ["site-settings", "static-homepage-v1"],
+  ["site-settings", "reviews-toggle-v1"],
   { tags: [SITE_SETTINGS_TAG], revalidate: 3600 },
 );
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { isMissingReviewsSchema, summarizeReviews, type RatingSummary } from "@/lib/reviews";
+import { getSiteSettings } from "@/lib/site-settings";
 import type { Product, ProductReview } from "@/lib/types";
 
 const REVIEW_COLUMNS =
@@ -11,9 +12,15 @@ export type ProductReviewsData = {
   reviews: ProductReview[];
   /** Aggregates over approved reviews only. */
   summary: RatingSummary;
-  /** False when migration 20261061 has not run yet – the section stays hidden. */
+  /** False when reviews are switched off or migration 20261061 has not run yet. */
   available: boolean;
 };
+
+/** E-commerce → General feature switch; older cached settings without the field stay enabled. */
+async function isReviewsEnabled(): Promise<boolean> {
+  const settings = await getSiteSettings();
+  return settings.reviews_enabled !== false;
+}
 
 /**
  * Reviews for one product page. RLS already scopes the rows (approved for
@@ -22,6 +29,7 @@ export type ProductReviewsData = {
  */
 export async function getProductReviews(productId: string, userId?: string | null): Promise<ProductReviewsData> {
   const empty: ProductReviewsData = { reviews: [], summary: summarizeReviews([]), available: false };
+  if (!(await isReviewsEnabled())) return empty;
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("product_reviews")
@@ -59,10 +67,18 @@ type RatingStatRow = { product_id: string; review_count: number | string; avg_ra
 
 /**
  * Attaches `rating_avg` / `rating_count` (approved reviews) to product rows
- * for cards and headers. Best-effort: a pre-20261061 database simply leaves
- * the fields off and no stars render.
+ * for cards and headers. When Ratings & Reviews are switched off, any fields
+ * already present are cleared so stars and aggregate SEO data disappear.
+ * Best-effort: a pre-20261061 database simply leaves the fields off.
  */
 export async function withRatings<T extends Product>(products: T[]): Promise<T[]> {
+  if (!(await isReviewsEnabled())) {
+    for (const product of products) {
+      product.rating_avg = null;
+      product.rating_count = 0;
+    }
+    return products;
+  }
   const ids = [...new Set(products.map((p) => p.id).filter(Boolean))];
   if (ids.length === 0) return products;
   const supabase = await createClient();

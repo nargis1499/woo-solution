@@ -367,8 +367,9 @@ export function productJsonLd(product: Product, settings: SiteSettings): Record<
     ...(product.category ? { category: product.category.name } : {}),
     ...(additionalProperty.length > 0 ? { additionalProperty } : {}),
     // Approved-review aggregate (migration 20261061) – this is what earns the
-    // star row in Google results; omitted entirely while a product has none.
-    ...(product.rating_count && product.rating_count > 0 && product.rating_avg
+    // star row in Google results; omitted while a product has none or while
+    // Ratings & Reviews are switched off in E-commerce → General.
+    ...(settings.reviews_enabled && product.rating_count && product.rating_count > 0 && product.rating_avg
       ? {
           aggregateRating: {
             "@type": "AggregateRating",
