@@ -92,7 +92,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
                       className="mt-0.5 max-w-[170px] truncate font-mono text-[11px] text-muted-foreground"
                       title={paymentInfo.transactionId}
                     >
-                      TXID: {paymentInfo.transactionId}
+                      {paymentInfo.isStripe ? "Stripe: " : "TXID: "}{paymentInfo.transactionId}
                     </p>
                   )}
                 </div>,

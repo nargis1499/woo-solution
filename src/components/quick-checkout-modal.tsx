@@ -13,6 +13,7 @@ import {
   ChevronDownIcon,
   CircleCheckIcon,
   CopyIcon,
+  CreditCardIcon,
   ExternalLinkIcon,
   FlameIcon,
   GlobeIcon,
@@ -54,6 +55,8 @@ type QuickCheckoutCustomer = {
 
 type QuickCheckoutPayment = {
   codEnabled: boolean;
+  stripeEnabled?: boolean;
+  stripeMode?: "test" | "live" | null;
   plisioEnabled?: boolean;
   plisioCurrencies?: PlisioCurrency[];
   cryptoEnabled: boolean;
@@ -214,14 +217,17 @@ export function QuickCheckoutModal({
   const [paymentConfig, setPaymentConfig] = useState<QuickCheckoutPayment>(
     initialData?.payment ?? {
       codEnabled: true,
+      stripeEnabled: false,
+      stripeMode: null,
       plisioEnabled: false,
       plisioCurrencies: [],
       cryptoEnabled: true,
       cryptoProtocols: DEFAULT_CRYPTO_PROTOCOLS,
     },
   );
-  const [paymentMode, setPaymentMode] = useState<"crypto" | "plisio" | "cod">(() => {
+  const [paymentMode, setPaymentMode] = useState<"crypto" | "plisio" | "cod" | "stripe">(() => {
     const p = initialData?.payment;
+    if (p?.stripeEnabled) return "stripe";
     if (p?.plisioEnabled && (p.plisioCurrencies?.length ?? 0) > 0) return "plisio";
     if (p && (!p.cryptoEnabled || p.cryptoProtocols.length === 0) && p.codEnabled) {
       return "cod";
@@ -245,6 +251,7 @@ export function QuickCheckoutModal({
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [submittedOrderId, setSubmittedOrderId] = useState<string | null>(null);
+  const [submittedStripePaid, setSubmittedStripePaid] = useState(false);
 
   useEffect(() => {
     if (
@@ -294,7 +301,9 @@ export function QuickCheckoutModal({
           if (firstPlisioCid) {
             setSelectedPlisioCid((prev) => prev || firstPlisioCid);
           }
-          if (data.payment.plisioEnabled && (data.payment.plisioCurrencies?.length ?? 0) > 0) {
+          if (data.payment.stripeEnabled) {
+            setPaymentMode("stripe");
+          } else if (data.payment.plisioEnabled && (data.payment.plisioCurrencies?.length ?? 0) > 0) {
             setPaymentMode("plisio");
           } else if (
             (!data.payment.cryptoEnabled ||
@@ -533,16 +542,18 @@ export function QuickCheckoutModal({
           notes: notes.trim(),
         },
         payment:
-          paymentMode === "crypto" && selectedProtocol
-            ? {
-                method: "crypto",
-                protocolCode: selectedProtocol.code,
-                protocolName: selectedProtocol.name,
-                network: selectedProtocol.network,
-                depositAddress: selectedProtocol.address,
-                transactionId: txId.trim(),
-              }
-            : { method: "cod" },
+          paymentMode === "stripe"
+            ? { method: "stripe", gateway: "stripe", protocolName: "Stripe Checkout" }
+            : paymentMode === "crypto" && selectedProtocol
+              ? {
+                  method: "crypto",
+                  protocolCode: selectedProtocol.code,
+                  protocolName: selectedProtocol.name,
+                  network: selectedProtocol.network,
+                  depositAddress: selectedProtocol.address,
+                  transactionId: txId.trim(),
+                }
+              : { method: "cod" },
       });
 
       if (!res.ok) {
@@ -550,8 +561,27 @@ export function QuickCheckoutModal({
         return;
       }
 
+      if (paymentMode === "stripe" && res.stripeCheckoutUrl) {
+        toast.success("Opening secure Stripe Checkout…");
+        window.location.assign(res.stripeCheckoutUrl);
+        return;
+      }
+      if (paymentMode === "stripe" && res.stripeCheckoutError) {
+        toast.error(
+          "Your order was saved, but Stripe Checkout could not be opened. Use Pay with Stripe on the order page to try again.",
+        );
+        onClose();
+        router.push(`/orders/${res.orderId}?stripe=session-error`);
+        return;
+      }
+
+      setSubmittedStripePaid(paymentMode === "stripe" && res.stripePaymentStatus === "paid");
       setSubmittedOrderId(res.orderId);
-      toast.success("Order submitted! Thank you for your purchase.");
+      toast.success(
+        paymentMode === "stripe" && res.stripePaymentStatus === "paid"
+          ? "Stripe payment confirmed! Thank you for your purchase."
+          : "Order submitted! Thank you for your purchase.",
+      );
     } catch (e) {
       setVerifyError(
         e instanceof Error ? e.message : "Failed to submit order. Please try again.",
@@ -677,16 +707,20 @@ export function QuickCheckoutModal({
 
               <div className="space-y-1.5">
                 <h3 className="text-xl font-extrabold tracking-tight text-foreground sm:text-2xl">
-                  {paymentMode === "plisio"
+                  {paymentMode === "plisio" || submittedStripePaid
                     ? "Thank You! Payment Verified & Order Processing."
                     : "Thank You! Your Order Has Been Submitted."}
                 </h3>
                 <p className="mx-auto max-w-lg text-xs text-muted-foreground sm:text-sm">
                   {paymentMode === "plisio"
                     ? "Plisio verified your blockchain payment automatically. Your order status is now Paid & Processing."
-                    : paymentMode === "crypto"
-                      ? "Your Transaction ID (TXID) has been sent to the Admin for payment verification."
-                      : "Your Cash on Delivery order has been received and will be processed shortly."}
+                    : submittedStripePaid
+                      ? "Stripe confirmed your payment. Your order status is now Paid & Processing."
+                      : paymentMode === "stripe"
+                        ? "Your order was created and Stripe is still confirming the payment. It will show Paid automatically once Stripe confirms it."
+                        : paymentMode === "crypto"
+                          ? "Your Transaction ID (TXID) has been sent to the Admin for payment verification."
+                          : "Your Cash on Delivery order has been received and will be processed shortly."}
                 </p>
               </div>
 
@@ -701,14 +735,16 @@ export function QuickCheckoutModal({
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-muted-foreground">Payment Protocol:</span>
                   <span className="font-semibold text-foreground">
-                    {paymentMode === "plisio"
-                      ? `${selectedPlisioCurrency.name} · Plisio (${selectedPlisioCurrency.network})`
-                      : paymentMode === "crypto" && selectedProtocol
-                        ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
-                        : "Cash on Delivery (COD)"}
+                    {paymentMode === "stripe"
+                      ? "Stripe Checkout"
+                      : paymentMode === "plisio"
+                        ? `${selectedPlisioCurrency.name} · Plisio (${selectedPlisioCurrency.network})`
+                        : paymentMode === "crypto" && selectedProtocol
+                          ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
+                          : "Cash on Delivery (COD)"}
                   </span>
                 </div>
-                {paymentMode === "plisio" && (
+                {(paymentMode === "plisio" || submittedStripePaid) && (
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted-foreground">Payment &amp; Order Status:</span>
                     <div className="flex items-center gap-1.5">
@@ -745,7 +781,7 @@ export function QuickCheckoutModal({
                 )}
                 <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-2.5 text-sm font-extrabold sm:text-base">
                   <span className="text-primary">
-                    {paymentMode === "crypto" || paymentMode === "plisio"
+                    {paymentMode === "crypto" || paymentMode === "plisio" || submittedStripePaid
                       ? "Total Paid:"
                       : "Total Due:"}
                   </span>
@@ -1221,7 +1257,78 @@ export function QuickCheckoutModal({
                     </div>
                   )}
 
-                  {/* 2. Plisio Automated Crypto Gateway Option (when enabled) */}
+                  {/* 2. Stripe hosted Checkout for cards and wallets */}
+                  {paymentConfig.stripeEnabled && (
+                    <div className="space-y-3" data-testid="qc-stripe-section">
+                      <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
+                        CARDS &amp; WALLETS
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMode("stripe")}
+                        data-testid="qc-stripe-option"
+                        data-selected={paymentMode === "stripe" ? "true" : "false"}
+                        className={cn(
+                          "flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all",
+                          paymentMode === "stripe"
+                            ? "border-2 border-primary bg-primary/[0.06] shadow-xs ring-2 ring-primary/15"
+                            : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
+                        )}
+                      >
+                        <div className="flex min-w-0 items-center gap-3.5">
+                          <span
+                            className={cn(
+                              "grid size-10 shrink-0 place-items-center rounded-xl transition-colors",
+                              paymentMode === "stripe"
+                                ? "bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground)"
+                                : "bg-violet-500/10 text-violet-500",
+                            )}
+                          >
+                            <CreditCardIcon className="size-5" aria-hidden />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="flex flex-wrap items-center gap-2 text-sm font-extrabold text-foreground sm:text-base">
+                              Card / Stripe Checkout
+                              {paymentConfig.stripeMode === "test" && (
+                                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-amber-600 uppercase dark:text-amber-400">
+                                  Test mode
+                                </span>
+                              )}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              Pay securely by card and enabled wallets on Stripe
+                            </p>
+                          </div>
+                        </div>
+                        <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
+                          {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                        </span>
+                      </button>
+
+                      {paymentMode === "stripe" && (
+                        <div
+                          className="flex items-start gap-3 rounded-2xl border border-violet-500/25 bg-violet-500/[0.06] p-4 text-xs leading-relaxed sm:text-sm"
+                          data-testid="qc-stripe-info"
+                        >
+                          <LockIcon className="mt-0.5 size-5 shrink-0 text-violet-500" aria-hidden />
+                          <div>
+                            <p className="font-bold text-foreground">Secure payment on Stripe</p>
+                            <p className="mt-1 text-muted-foreground">
+                              No card details are entered in this store. On the final step, Stripe opens its hosted
+                              checkout and confirms the payment back to your order automatically.
+                            </p>
+                            {paymentConfig.stripeMode === "test" && (
+                              <p className="mt-2 font-medium text-amber-700 dark:text-amber-300">
+                                Test card: <code className="rounded bg-background px-1.5 py-0.5">4242 4242 4242 4242</code>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 3. Plisio Automated Crypto Gateway Option (when enabled) */}
                   {paymentConfig.plisioEnabled && activePlisioCurrencies.length > 0 && (
                     <PlisioCoinSelector
                       currencies={activePlisioCurrencies}
@@ -1237,7 +1344,7 @@ export function QuickCheckoutModal({
                     />
                   )}
 
-                  {/* 3. Manual Crypto Options Below Plisio / COD */}
+                  {/* 4. Manual Crypto Options Below Stripe / Plisio / COD */}
                   {paymentConfig.cryptoEnabled && selectedProtocol && (
                     <>
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1435,9 +1542,11 @@ export function QuickCheckoutModal({
                           ? submitting
                             ? "Generating Plisio Invoice…"
                             : "Continue to Plisio Auto-Pay →"
-                          : paymentMode === "cod"
-                            ? "Confirm Cash on Delivery → Verify"
-                            : "I Have Sent Payment → Enter TXID"}
+                          : paymentMode === "stripe"
+                            ? "Review Order → Pay with Stripe"
+                            : paymentMode === "cod"
+                              ? "Confirm Cash on Delivery → Verify"
+                              : "I Have Sent Payment → Enter TXID"}
                       </span>
                     </button>
                   </div>
@@ -1516,7 +1625,9 @@ export function QuickCheckoutModal({
                         <span>
                           {paymentMode === "crypto"
                             ? "Please enter your Transaction ID (TXID) below so the Admin can verify your payment."
-                            : "Please review your order summary below and submit your Cash on Delivery order."}
+                            : paymentMode === "stripe"
+                              ? "Please review your order below, then continue to Stripe's secure checkout to pay."
+                              : "Please review your order summary below and submit your Cash on Delivery order."}
                         </span>
                       </div>
 
@@ -1571,9 +1682,11 @@ export function QuickCheckoutModal({
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-muted-foreground">Payment Protocol:</span>
                           <span className="font-semibold text-muted-foreground">
-                            {paymentMode === "crypto" && selectedProtocol
-                              ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
-                              : "Cash on Delivery (COD)"}
+                            {paymentMode === "stripe"
+                              ? "Stripe Checkout"
+                              : paymentMode === "crypto" && selectedProtocol
+                                ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
+                                : "Cash on Delivery (COD)"}
                           </span>
                         </div>
 
@@ -1607,7 +1720,15 @@ export function QuickCheckoutModal({
                           className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-emerald-600 px-7 py-3.5 text-sm font-extrabold text-white shadow-lg transition-all hover:bg-emerald-500 active:scale-[0.99] disabled:opacity-60"
                         >
                           <CircleCheckIcon className="size-4.5" aria-hidden />
-                          <span>{submitting ? "Submitting Order…" : "Submit Order"}</span>
+                          <span>
+                            {submitting
+                              ? paymentMode === "stripe"
+                                ? "Opening Stripe Checkout…"
+                                : "Submitting Order…"
+                              : paymentMode === "stripe"
+                                ? "Pay securely with Stripe"
+                                : "Submit Order"}
+                          </span>
                         </button>
                       </div>
                     </>

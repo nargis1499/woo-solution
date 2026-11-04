@@ -322,6 +322,12 @@ export type Order = {
   payment_network?: string | null;
   payment_address?: string | null;
   payment_tx_id?: string | null;
+  /** Stripe hosted-checkout reconciliation references (migration 20261063). */
+  stripe_checkout_session_id?: string | null;
+  stripe_payment_intent_id?: string | null;
+  stripe_customer_id?: string | null;
+  stripe_checkout_status?: string | null;
+  stripe_payment_status?: string | null;
   /** Currency the customer saw at checkout; amounts below are USD micros × `exchange_rate` for display */
   currency: string;
   /** USD → `currency` rate stamped at checkout (1 for USD; missing before migration 12) */

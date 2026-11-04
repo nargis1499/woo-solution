@@ -10,8 +10,10 @@ import {
   CircleCheckIcon,
   CoinsIcon,
   CopyIcon,
+  CreditCardIcon,
   ExternalLinkIcon,
   FlameIcon,
+  LockKeyholeIcon,
   ShoppingCartIcon,
   XIcon,
 } from "lucide-react";
@@ -46,6 +48,8 @@ import { ProductImage } from "./product-image";
 
 type CheckoutPaymentConfig = {
   codEnabled: boolean;
+  stripeEnabled?: boolean;
+  stripeMode?: "test" | "live" | null;
   plisioEnabled?: boolean;
   plisioCurrencies?: PlisioCurrency[];
   cryptoEnabled: boolean;
@@ -56,9 +60,10 @@ type SubmittedCheckoutOrder = {
   orderId: string;
   itemSummary: string;
   totalMicros: number;
-  paymentMode: "cod" | "plisio" | "crypto";
+  paymentMode: "cod" | "plisio" | "crypto" | "stripe";
   protocolLabel: string;
   txHash: string;
+  stripePaid?: boolean;
 };
 
 function DepositQrCodeSvg({ value }: { value: string }) {
@@ -116,7 +121,8 @@ export function CheckoutForm({
 
   const activeProtocols = payment.cryptoProtocols;
   const activePlisioCurrencies = payment.plisioCurrencies ?? [];
-  const [paymentMode, setPaymentMode] = useState<"cod" | "plisio" | "crypto">(() => {
+  const [paymentMode, setPaymentMode] = useState<"cod" | "plisio" | "crypto" | "stripe">(() => {
+    if (!payment.codEnabled && payment.stripeEnabled) return "stripe";
     if (!payment.codEnabled && payment.plisioEnabled && activePlisioCurrencies.length > 0) {
       return "plisio";
     }
@@ -147,6 +153,7 @@ export function CheckoutForm({
   const [txHash, setTxHash] = useState<string>("");
   const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
   const [submittedOrder, setSubmittedOrder] = useState<SubmittedCheckoutOrder | null>(null);
+  const [redirectingToStripe, setRedirectingToStripe] = useState(false);
 
   const codeCounts = activeProtocols.reduce<Record<string, number>>((acc, p) => {
     acc[p.code] = (acc[p.code] ?? 0) + 1;
@@ -155,6 +162,24 @@ export function CheckoutForm({
 
   if (!hydrated) {
     return <Skeleton className="h-64 w-full rounded-xl" aria-busy />;
+  }
+
+  if (redirectingToStripe) {
+    return (
+      <Empty className="border border-dashed py-20" data-testid="checkout-stripe-redirecting">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <LockKeyholeIcon />
+          </EmptyMedia>
+          <EmptyTitle>Opening secure Stripe Checkout…</EmptyTitle>
+        </EmptyHeader>
+        <EmptyContent>
+          <p className="text-center text-sm text-muted-foreground">
+            Please wait — you are being redirected to Stripe to complete your payment.
+          </p>
+        </EmptyContent>
+      </Empty>
+    );
   }
 
   if (items.length === 0 && !submittedOrder && !pendingPlisioOrder) {
@@ -210,11 +235,13 @@ export function CheckoutForm({
         ? `${items[0].quantity}x ${items[0].name}`
         : `${items.reduce((n, i) => n + i.quantity, 0)} items (${items[0]?.name ?? "Order"})`;
     const protoLabel =
-      paymentMode === "plisio"
-        ? `${selectedPlisioCurrency.name} · Plisio (${selectedPlisioCurrency.network})`
-        : paymentMode === "crypto" && selectedProtocol
-          ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
-          : "Cash on Delivery (COD)";
+      paymentMode === "stripe"
+        ? "Stripe Checkout"
+        : paymentMode === "plisio"
+          ? `${selectedPlisioCurrency.name} · Plisio (${selectedPlisioCurrency.network})`
+          : paymentMode === "crypto" && selectedProtocol
+            ? `${selectedProtocol.name} (${shortNetworkTag(selectedProtocol.network)}) (${selectedProtocol.network})`
+            : "Cash on Delivery (COD)";
     const snapTotal = totalMicros;
     const snapMode = paymentMode;
     const snapTx = txHash.trim();
@@ -238,31 +265,47 @@ export function CheckoutForm({
         },
         couponCode: coupon?.code ?? null,
         payment:
-          paymentMode === "plisio"
-            ? {
-                method: "plisio",
-                gateway: "plisio",
-                plisioCid: selectedPlisioCurrency.cid,
-                protocolCode: selectedPlisioCurrency.code,
-                protocolName: `${selectedPlisioCurrency.name} · Plisio`,
-                network: selectedPlisioCurrency.network,
-              }
-            : paymentMode === "crypto" && selectedProtocol
+          paymentMode === "stripe"
+            ? { method: "stripe", gateway: "stripe", protocolName: "Stripe Checkout" }
+            : paymentMode === "plisio"
               ? {
-                  method: "crypto",
-                  protocolCode: selectedProtocol.code,
-                  protocolName: selectedProtocol.name,
-                  network: selectedProtocol.network,
-                  depositAddress: selectedProtocol.address,
-                  transactionId: snapTx,
+                  method: "plisio",
+                  gateway: "plisio",
+                  plisioCid: selectedPlisioCurrency.cid,
+                  protocolCode: selectedPlisioCurrency.code,
+                  protocolName: `${selectedPlisioCurrency.name} · Plisio`,
+                  network: selectedPlisioCurrency.network,
                 }
-              : { method: "cod" },
+              : paymentMode === "crypto" && selectedProtocol
+                ? {
+                    method: "crypto",
+                    protocolCode: selectedProtocol.code,
+                    protocolName: selectedProtocol.name,
+                    network: selectedProtocol.network,
+                    depositAddress: selectedProtocol.address,
+                    transactionId: snapTx,
+                  }
+                : { method: "cod" },
       });
       if (!result.ok) {
         setError(result.error);
         return;
       }
       clear();
+      if (snapMode === "stripe") {
+        if (result.stripeCheckoutUrl) {
+          setRedirectingToStripe(true);
+          window.location.assign(result.stripeCheckoutUrl);
+          return;
+        }
+        if (result.stripeCheckoutError) {
+          toast.error(
+            "Your order was saved, but Stripe Checkout could not be opened. Use Pay with Stripe on the order page to try again.",
+          );
+          router.push(`/orders/${result.orderId}?stripe=session-error`);
+          return;
+        }
+      }
       if (snapMode === "plisio" && result.plisioInvoice) {
         setPendingPlisioOrder({
           invoice: result.plisioInvoice,
@@ -279,6 +322,7 @@ export function CheckoutForm({
         paymentMode: snapMode,
         protocolLabel: protoLabel,
         txHash: snapTx,
+        stripePaid: snapMode === "stripe" && result.stripePaymentStatus === "paid",
       });
     });
   }
@@ -412,7 +456,79 @@ export function CheckoutForm({
                 </div>
               )}
 
-              {/* 2. Plisio Automated Crypto Gateway Option */}
+              {/* 2. Stripe hosted Checkout for cards and wallets */}
+              {payment.stripeEnabled && (
+                <div className="space-y-3" data-testid="checkout-stripe-section">
+                  <p className="text-xs font-extrabold tracking-wider text-muted-foreground uppercase">
+                    CARDS &amp; WALLETS
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode("stripe")}
+                    data-testid="checkout-stripe-option"
+                    data-selected={paymentMode === "stripe" ? "true" : "false"}
+                    className={cn(
+                      "flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all",
+                      paymentMode === "stripe"
+                        ? "border-2 border-primary bg-primary/[0.06] shadow-xs ring-2 ring-primary/15"
+                        : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/25",
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <span
+                        className={cn(
+                          "grid size-10 shrink-0 place-items-center rounded-xl transition-colors",
+                          paymentMode === "stripe"
+                            ? "bg-(--button) bg-[image:var(--button-image)] text-(--button-foreground)"
+                            : "bg-violet-500/10 text-violet-500",
+                        )}
+                      >
+                        <CreditCardIcon className="size-5" aria-hidden />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="flex flex-wrap items-center gap-2 text-sm font-extrabold text-foreground sm:text-base">
+                          Card / Stripe Checkout
+                          {payment.stripeMode === "test" && (
+                            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-amber-600 uppercase dark:text-amber-400">
+                              Test mode
+                            </span>
+                          )}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          Pay securely by card and enabled wallets on Stripe.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
+                      {formatPrice(totalMicros)} {money.currency}
+                    </span>
+                  </button>
+
+                  {paymentMode === "stripe" && (
+                    <div
+                      className="flex items-start gap-3 rounded-2xl border border-violet-500/25 bg-violet-500/[0.06] p-4 text-xs leading-relaxed sm:text-sm"
+                      data-testid="checkout-stripe-info"
+                    >
+                      <LockKeyholeIcon className="mt-0.5 size-5 shrink-0 text-violet-500" aria-hidden />
+                      <div>
+                        <p className="font-bold text-foreground">You&apos;ll continue to Stripe&apos;s secure checkout.</p>
+                        <p className="mt-1 text-muted-foreground">
+                          Card details never touch this store. After Stripe confirms payment, your order automatically
+                          becomes Paid &amp; Processing.
+                        </p>
+                        {payment.stripeMode === "test" && (
+                          <p className="mt-2 font-medium text-amber-700 dark:text-amber-300">
+                            Test card: <code className="rounded bg-background px-1.5 py-0.5">4242 4242 4242 4242</code>
+                            {" "}with any future expiry and CVC.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 3. Plisio Automated Crypto Gateway Option */}
               {payment.plisioEnabled && (
                 <PlisioCoinSelector
                   currencies={activePlisioCurrencies}
@@ -428,7 +544,7 @@ export function CheckoutForm({
                 />
               )}
 
-              {/* 3. Manual Cryptocurrency Payment Options Below */}
+              {/* 4. Manual Cryptocurrency Payment Options Below */}
               {payment.cryptoEnabled && (
                 <div className="space-y-4" data-testid="checkout-crypto-section">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -699,10 +815,14 @@ export function CheckoutForm({
               data-testid="checkout-submit-button"
             >
               {pending
-                ? "Submitting order…"
-                : paymentMode === "plisio"
-                  ? "Place order & Pay via Plisio"
-                  : "Place order"}
+                ? paymentMode === "stripe"
+                  ? "Opening Stripe Checkout…"
+                  : "Submitting order…"
+                : paymentMode === "stripe"
+                  ? "Place order & Pay with Stripe"
+                  : paymentMode === "plisio"
+                    ? "Place order & Pay via Plisio"
+                    : "Place order"}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
               Final prices and stock are verified securely on the server.
@@ -802,16 +922,20 @@ export function CheckoutForm({
               </div>
 
               <h3 className="mt-4 text-xl font-extrabold tracking-tight text-foreground sm:text-2xl">
-                {submittedOrder.paymentMode === "plisio"
+                {submittedOrder.paymentMode === "plisio" || submittedOrder.stripePaid
                   ? "Thank You! Payment Verified & Order Processing."
                   : "Thank You! Your Order Has Been Submitted."}
               </h3>
               <p className="mt-1.5 text-xs text-muted-foreground sm:text-sm">
                 {submittedOrder.paymentMode === "plisio"
                   ? "Plisio verified your blockchain payment automatically. Your order status is now Paid & Processing."
-                  : submittedOrder.paymentMode === "crypto"
-                    ? "Your Transaction ID (TXID) has been sent to the Admin for payment verification."
-                    : "Your Cash on Delivery order has been received and will be processed shortly."}
+                  : submittedOrder.stripePaid
+                    ? "Stripe confirmed your payment. Your order status is now Paid & Processing."
+                    : submittedOrder.paymentMode === "stripe"
+                      ? "Your order was created and Stripe is still confirming the payment. This page will show Paid automatically once Stripe confirms it."
+                      : submittedOrder.paymentMode === "crypto"
+                        ? "Your Transaction ID (TXID) has been sent to the Admin for payment verification."
+                        : "Your Cash on Delivery order has been received and will be processed shortly."}
               </p>
 
               <div className="mt-5 space-y-2.5 rounded-2xl border border-border/80 bg-muted/25 p-5 text-left text-xs sm:text-sm">
@@ -827,7 +951,7 @@ export function CheckoutForm({
                     {submittedOrder.protocolLabel}
                   </span>
                 </div>
-                {submittedOrder.paymentMode === "plisio" && (
+                {(submittedOrder.paymentMode === "plisio" || submittedOrder.stripePaid) && (
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted-foreground">Payment &amp; Order Status:</span>
                     <div className="flex items-center gap-1.5">
@@ -862,7 +986,8 @@ export function CheckoutForm({
                 <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-2.5 text-sm font-extrabold sm:text-base">
                   <span className="text-primary">
                     {submittedOrder.paymentMode === "crypto" ||
-                    submittedOrder.paymentMode === "plisio"
+                    submittedOrder.paymentMode === "plisio" ||
+                    submittedOrder.stripePaid
                       ? "Total Paid:"
                       : "Total Due:"}
                   </span>

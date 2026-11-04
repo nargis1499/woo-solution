@@ -9,6 +9,7 @@ import {
   type WoocommerceTabId,
 } from "@/lib/admin/woocommerce-tabs";
 import type { SiteSettings } from "@/lib/types";
+import { EMPTY_STRIPE_ADMIN_SUMMARY, type StripeAdminSummary } from "@/lib/stripe";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShopSettingsForm } from "./settings-forms";
@@ -17,9 +18,11 @@ import { PaymentSettings } from "./payment-settings";
 export function WoocommerceTabs({
   settings,
   currencyMigrated = true,
+  stripeSettings = EMPTY_STRIPE_ADMIN_SUMMARY,
 }: {
   settings: SiteSettings;
   currencyMigrated?: boolean;
+  stripeSettings?: StripeAdminSummary;
 }) {
   const param = useSearchParams().get("tab") ?? undefined;
   const urlTab: WoocommerceTabId = isWoocommerceTab(param) ? param : "general";
@@ -60,7 +63,7 @@ export function WoocommerceTabs({
         <ShopSettingsForm settings={settings} />
       </TabsContent>
       <TabsContent id="payment" shouldForceMount className="space-y-5 data-inert:hidden">
-        <PaymentSettings settings={settings} />
+        <PaymentSettings settings={settings} stripeSettings={stripeSettings} />
       </TabsContent>
     </Tabs>
   );
