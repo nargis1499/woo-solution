@@ -15,7 +15,7 @@
 --      Everything (dashboard, order chat, notifications, media, pages …) works from there.
 --
 --  WHAT IS IN HERE
---   • All 38 migrations in order — schema, RLS, triggers, functions, storage bucket.
+--   • All 51 migrations in order — schema, RLS, triggers, functions, storage bucket.
 --   • API role grants (Supabase normally sets these up; stated here so the file is
 --     self-contained).
 --   • OPTIONAL demo catalog at the very end (categories + products + header menu).
@@ -4058,6 +4058,2109 @@ select location, 'custom', 'Blog', '/blog', coalesce((select max(sort_order) + 1
 from (values ('header'::text), ('footer'::text)) as links(location)
 where not exists (select 1 from public.menu_items m where m.location = links.location and m.url = '/blog');
 
+-- =============================================================================
+-- 20261049000000_ai_settings.sql
+-- (migration 20261049000000_ai_settings.sql)
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- 32. Nemesis AI Settings & Provider Key Vault (Admin-Only)
+--     Stores AI provider configuration, model routing, token-budget mode, brand
+--     voice instructions, and per-provider API keys for the /nemesis AI Agent.
+--     Locked strictly behind `public.is_admin()` RLS so API keys are never
+--     exposed to `anon` or regular storefront customers.
+-- -----------------------------------------------------------------------------
+
+create table if not exists public.ai_settings (
+  id                      integer primary key default 1 check (id = 1),
+  enabled                 boolean not null default false,
+  provider                text not null default 'groq',
+  primary_model           text not null default 'openai/gpt-oss-120b',
+  fallback_model          text default 'openai/gpt-oss-20b',
+  custom_base_url         text,
+  ollama_mode             text not null default 'browser'
+                          check (ollama_mode in ('browser', 'tunnel')),
+  ollama_base_url         text not null default 'http://localhost:11434',
+  ollama_num_ctx          integer not null default 4096
+                          check (ollama_num_ctx >= 2048 and ollama_num_ctx <= 131072),
+  ollama_disable_thinking boolean not null default true,
+  token_budget_mode       text not null default 'economy'
+                          check (token_budget_mode in ('economy', 'standard', 'high')),
+  reasoning_effort        text not null default 'low'
+                          check (reasoning_effort in ('low', 'medium', 'high')),
+  temperature             numeric(3, 2) not null default 0.20
+                          check (temperature >= 0 and temperature <= 2),
+  vision_enabled          boolean not null default false,
+  require_confirmation    boolean not null default true,
+  brand_tone              text not null default 'modern',
+  default_language        text not null default 'English',
+  system_instructions     text,
+  api_keys                jsonb not null default '{}'::jsonb,
+  updated_at              timestamptz not null default now()
+);
+
+alter table public.ai_settings enable row level security;
+
+drop policy if exists "ai_settings_admin_all" on public.ai_settings;
+create policy "ai_settings_admin_all"
+  on public.ai_settings
+  for all
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+insert into public.ai_settings (id)
+values (1)
+on conflict (id) do nothing;
+
+-- =============================================================================
+-- 20261050000000_product_editor.sql
+-- (migration 20261050000000_product_editor.sql)
+-- =============================================================================
+
+-- Product editor: private costs, rich content, per-product stock and search/social metadata.
+alter table public.products
+  add column content text not null default '',
+  add column manage_stock boolean,
+  add column seo_title text,
+  add column seo_description text,
+  add column canonical_url text,
+  add column robots_index boolean not null default true,
+  add column robots_follow boolean not null default true,
+  add column og_title text,
+  add column og_description text,
+  add column og_image_id uuid references public.media(id) on delete set null,
+  add column og_image_url text;
+update public.products set manage_stock = public.stock_managed() where manage_stock is null;
+alter table public.products alter column manage_stock set not null;
+
+-- The global setting supplies the initial value only; each product can override it.
+create or replace function public.initialize_product_stock_management()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  if new.manage_stock is null then new.manage_stock := public.stock_managed(); end if;
+  return new;
+end $$;
+create trigger products_initialize_stock before insert on public.products
+for each row execute function public.initialize_product_stock_management();
+
+-- Costs must NOT be columns on public-readable products, even if omitted from the UI.
+create table public.product_costs (
+  product_id uuid primary key references public.products(id) on delete cascade,
+  cost_price_micros bigint not null check (cost_price_micros >= 0 and cost_price_micros <= 9007199254740991),
+  updated_at timestamptz not null default now()
+);
+alter table public.product_costs enable row level security;
+create policy product_costs_admin_all on public.product_costs for all to authenticated
+using (public.is_admin()) with check (public.is_admin());
+revoke all on public.product_costs from anon;
+grant select, insert, update, delete on public.product_costs to authenticated;
+grant all on public.product_costs to service_role;
+create trigger product_costs_updated_at before update on public.product_costs
+for each row execute function public.set_updated_at();
+
+create table public.product_content_media (
+  product_id uuid not null references public.products(id) on delete cascade,
+  media_id uuid not null references public.media(id) on delete restrict,
+  primary key(product_id, media_id)
+);
+create index product_content_media_media_id_idx on public.product_content_media(media_id);
+alter table public.product_content_media enable row level security;
+create policy product_content_media_admin on public.product_content_media for all to authenticated
+using (public.is_admin()) with check (public.is_admin());
+create policy product_content_media_read on public.product_content_media for select to anon, authenticated
+using (exists(select 1 from public.products p where p.id = product_id and p.is_active));
+grant select on public.product_content_media to anon;
+grant select, insert, update, delete on public.product_content_media to authenticated;
+grant all on public.product_content_media to service_role;
+
+-- Snapshot whether quantities were actually deducted. Later stock-setting changes must
+-- not manufacture stock on cancellation, or deduct untracked historical purchases.
+alter table public.order_items add column stock_deducted boolean;
+update public.order_items oi set stock_deducted = coalesce(
+  (select p.manage_stock from public.products p where p.id = oi.product_id), public.stock_managed());
+alter table public.order_items alter column stock_deducted set not null;
+alter table public.order_items alter column stock_deducted set default true;
+
+-- Preserve the existing checkout implementation while changing only stock ownership and
+-- adding the line snapshot. Assert expected fragments so schema drift fails atomically.
+do $migration$
+declare definition text;
+begin
+  definition := replace(pg_get_functiondef('public.place_order(jsonb,jsonb)'::regprocedure), E'\r\n', E'\n');
+  if position('v_managed     boolean := public.stock_managed();' in definition) = 0
+    or position('v_price, v_qty, v_variation.id, v_label' in definition) = 0 then
+    raise exception 'Unexpected place_order definition; review checkout migration before applying.';
+  end if;
+  definition := replace(definition, 'v_managed     boolean := public.stock_managed();', 'v_managed     boolean;');
+  definition := replace(definition, '    v_variation_id :=', E'    v_managed := v_product.manage_stock;\n    v_variation_id :=');
+  definition := replace(definition, '    v_label        := null;', E'    v_label        := null;\n    if v_product.type = ''variable'' and v_variation_id is null then\n      raise exception ''Choose an available variation for %.'', v_product.name;\n    end if;\n    if v_product.type <> ''variable'' and v_variation_id is not null then\n      raise exception ''This product does not have variations.'';\n    end if;');
+  definition := replace(definition, 'unit_price_micros, quantity, variation_id, variation_label', 'unit_price_micros, quantity, variation_id, variation_label, stock_deducted');
+  definition := replace(definition, 'v_price, v_qty, v_variation.id, v_label', 'v_price, v_qty, v_variation.id, v_label, v_managed');
+  definition := replace(definition, E'image_url, unit_price_micros, quantity\n', E'image_url, unit_price_micros, quantity, stock_deducted\n');
+  definition := replace(definition, E'v_product.image_url, v_price, v_qty\n', E'v_product.image_url, v_price, v_qty, v_managed\n');
+  if position('quantity, stock_deducted' in definition) = 0 or position('v_managed := v_product.manage_stock' in definition) = 0 then
+    raise exception 'Checkout stock snapshot patch failed.';
+  end if;
+  execute definition;
+end $migration$;
+
+create or replace function public.sync_stock_on_order_status()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare direction integer;
+begin
+  if old.status <> 'cancelled' and new.status = 'cancelled' then direction := 1;
+  elsif old.status = 'cancelled' and new.status <> 'cancelled' then direction := -1;
+  else return new;
+  end if;
+  update public.product_variations v set stock = v.stock + direction * lines.quantity
+  from (select variation_id, sum(quantity)::integer quantity from public.order_items
+        where order_id = new.id and stock_deducted and variation_id is not null group by variation_id) lines
+  where v.id = lines.variation_id;
+  update public.products p set stock = p.stock + direction * lines.quantity
+  from (select product_id, sum(quantity)::integer quantity from public.order_items
+        where order_id = new.id and stock_deducted and variation_id is null group by product_id) lines
+  where p.id = lines.product_id;
+  return new;
+end $$;
+
+create or replace function public.media_usage(p_ids uuid[])
+returns table (media_id uuid, product_id uuid, product_name text, product_slug text, role text)
+language sql stable set search_path = public as $$
+  select p.image_media_id, p.id, p.name, p.slug, 'image'::text from public.products p where p.image_media_id = any (p_ids)
+  union all
+  select pm.media_id, p.id, p.name, p.slug, 'gallery'::text from public.product_media pm join public.products p on p.id = pm.product_id where pm.media_id = any (p_ids)
+  union all
+  select v.image_media_id, p.id, p.name, p.slug, 'variation'::text from public.product_variations v join public.products p on p.id = v.product_id where v.image_media_id = any (p_ids)
+  union all
+  select s.favicon_media_id, null::uuid, null::text, null::text, 'favicon'::text from public.site_settings s where s.favicon_media_id = any (p_ids)
+  union all
+  select s.seo_og_image_media_id, null::uuid, null::text, null::text, 'share_image'::text from public.site_settings s where s.seo_og_image_media_id = any (p_ids)
+  union all
+  select pg.featured_image_id, pg.id, pg.title, pg.slug, 'page_image'::text from public.pages pg where pg.featured_image_id = any (p_ids)
+  union all
+  select pg.og_image_id, pg.id, pg.title, pg.slug, 'page_share_image'::text from public.pages pg where pg.og_image_id = any (p_ids)
+  union all
+  select pm.media_id, pg.id, pg.title, pg.slug, 'page_content'::text from public.page_media pm join public.pages pg on pg.id = pm.page_id where pm.media_id = any (p_ids)
+  union all
+  select bp.featured_image_id, bp.id, bp.title, bp.slug, 'post_image'::text from public.blog_posts bp where bp.featured_image_id = any (p_ids)
+  union all
+  select bp.og_image_id, bp.id, bp.title, bp.slug, 'post_share_image'::text from public.blog_posts bp where bp.og_image_id = any (p_ids)
+  union all
+  select bpm.media_id, bp.id, bp.title, bp.slug, 'post_content'::text from public.blog_post_media bpm join public.blog_posts bp on bp.id = bpm.post_id where bpm.media_id = any (p_ids)
+  union all
+  select pcm.media_id, p.id, p.name, p.slug, 'product_content'::text from public.product_content_media pcm join public.products p on p.id = pcm.product_id where pcm.media_id = any(p_ids)
+  union all
+  select p.og_image_id, p.id, p.name, p.slug, 'product_share_image'::text from public.products p where p.og_image_id = any(p_ids);
+$$;
+
+-- =============================================================================
+-- 20261051000000_order_intelligence.sql
+-- (migration 20261051000000_order_intelligence.sql)
+-- =============================================================================
+
+-- Order Intelligence: private operational history, approved actions, bounded admin RPCs.
+-- Amounts remain base USD micros. Unknown historical timestamps are never fabricated.
+alter table public.orders
+  add column fulfillment_status text not null default 'unknown' check (fulfillment_status in ('unknown','unfulfilled','packed','shipped','delivered')),
+  add column shipping_status text not null default 'unknown' check (shipping_status in ('unknown','pending','in_transit','delayed','delivered')),
+  add column tracking_number text,
+  add column tracking_url text,
+  add column shipping_carrier text,
+  add column paid_at timestamptz,
+  add column fulfilled_at timestamptz,
+  add column shipped_at timestamptz,
+  add column delivered_at timestamptz,
+  add column fulfillment_due_at timestamptz,
+  add column expected_delivery_at timestamptz,
+  add column refund_requested_at timestamptz,
+  add column refund_request_status text not null default 'none' check (refund_request_status in ('none','requested','completed'));
+alter table public.orders alter column fulfillment_status set default 'unfulfilled';
+alter table public.orders alter column shipping_status set default 'pending';
+
+create index orders_intelligence_created_idx on public.orders(created_at desc,id desc);
+create index orders_intelligence_status_created_idx on public.orders(status,created_at desc);
+create index orders_intelligence_payment_created_idx on public.orders(payment_status,created_at desc);
+create index orders_intelligence_email_created_idx on public.orders(lower(customer_email),created_at desc);
+create index orders_intelligence_fulfillment_idx on public.orders(fulfillment_status,created_at desc);
+create index order_items_intelligence_product_idx on public.order_items(product_id,order_id);
+
+create table public.order_operations_log (
+ id uuid primary key default gen_random_uuid(),
+ order_id uuid references public.orders(id) on delete set null,
+ order_number bigint,
+ actor_id uuid references auth.users(id) on delete set null,
+ event text not null,
+ message text not null,
+ success boolean not null default true,
+ created_at timestamptz not null default now()
+);
+create index order_operations_log_order_idx on public.order_operations_log(order_id,created_at desc);
+alter table public.order_operations_log enable row level security;
+create policy "Admin reads order operations" on public.order_operations_log for select to authenticated using(public.is_admin());
+revoke all on public.order_operations_log from anon, authenticated;
+grant select on public.order_operations_log to authenticated;
+
+create table public.order_action_previews (
+ id uuid primary key default gen_random_uuid(),
+ actor_id uuid not null references auth.users(id) on delete cascade,
+ order_id uuid not null references public.orders(id) on delete cascade,
+ order_version timestamptz not null,
+ action text not null,
+ payload jsonb not null,
+ expires_at timestamptz not null default now() + interval '30 minutes',
+ used_at timestamptz,
+ created_at timestamptz not null default now()
+);
+create index order_action_previews_actor_expiry_idx on public.order_action_previews(actor_id,expires_at);
+alter table public.order_action_previews enable row level security;
+revoke all on public.order_action_previews from anon, authenticated;
+-- Only guarded RPCs access previews. Client-supplied plan contents are never authoritative.
+
+create or replace function public.capture_order_intelligence_event() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+ if tg_op = 'INSERT' then
+   insert into order_operations_log(order_id,order_number,actor_id,event,message) values(new.id,new.order_number,auth.uid(),'created','Order created');
+ else
+   if new.status is distinct from old.status then
+     insert into order_operations_log(order_id,order_number,actor_id,event,message) values(new.id,new.order_number,auth.uid(),'status',old.status::text || ' → ' || new.status::text);
+   end if;
+   if new.payment_status is distinct from old.payment_status then
+     insert into order_operations_log(order_id,order_number,actor_id,event,message) values(new.id,new.order_number,auth.uid(),'payment',old.payment_status || ' → ' || new.payment_status);
+   end if;
+   if new.fulfillment_status is distinct from old.fulfillment_status or new.shipping_status is distinct from old.shipping_status then
+     insert into order_operations_log(order_id,order_number,actor_id,event,message) values(new.id,new.order_number,auth.uid(),'fulfillment',new.fulfillment_status || ' / ' || new.shipping_status);
+   end if;
+ end if;
+ return new;
+end $$;
+create trigger orders_intelligence_events after insert or update on public.orders for each row execute function public.capture_order_intelligence_event();
+
+create or replace function public.stamp_order_intelligence_payment() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+ if tg_op='INSERT' or new.payment_status is distinct from old.payment_status then
+  if new.payment_status='paid' then new.paid_at := coalesce(new.paid_at,now()); end if;
+  if new.payment_status='refunded' then new.refund_request_status := 'completed'; end if;
+ end if;
+ return new;
+end $$;
+create trigger orders_intelligence_payment before insert or update on public.orders for each row execute function public.stamp_order_intelligence_payment();
+
+-- Shared, parameterized filter. No raw SQL from the model, no wildcard interpolation.
+create or replace function public.nemesis_order_scope(p jsonb) returns setof public.orders
+language sql stable as $$
+ select o.* from public.orders o where
+   (nullif(p->>'id','') is null or o.id = (p->>'id')::uuid)
+   and (nullif(p->>'orderNumber','') is null or o.order_number = (p->>'orderNumber')::bigint)
+   and (nullif(p->>'customerId','') is null or o.user_id = (p->>'customerId')::uuid)
+   and (nullif(p->>'customerOrderId','') is null or exists(select 1 from public.orders anchor where anchor.id=(p->>'customerOrderId')::uuid and (case when anchor.user_id is not null then o.user_id=anchor.user_id when nullif(anchor.customer_email,'') is not null then o.user_id is null and lower(o.customer_email)=lower(anchor.customer_email) else o.id=anchor.id end)))
+   and (nullif(p->>'email','') is null or lower(o.customer_email) = lower(p->>'email'))
+   and (nullif(p->>'customer','') is null or position(lower(p->>'customer') in lower(o.shipping_name)) > 0 or position(lower(p->>'customer') in lower(coalesce(o.customer_email,''))) > 0)
+   and (nullif(p->>'status','') is null or o.status::text = p->>'status')
+   and (nullif(p->>'paymentStatus','') is null or o.payment_status = p->>'paymentStatus')
+   and (nullif(p->>'fulfillmentStatus','') is null or o.fulfillment_status = p->>'fulfillmentStatus')
+   and (nullif(p->>'shippingStatus','') is null or o.shipping_status = p->>'shippingStatus')
+   and (nullif(p->>'from','') is null or o.created_at >= (p->>'from')::timestamptz)
+   and (nullif(p->>'to','') is null or o.created_at < (p->>'to')::timestamptz)
+   and (nullif(p->>'minValueMicros','') is null or o.total_micros >= (p->>'minValueMicros')::bigint)
+   and (nullif(p->>'maxValueMicros','') is null or o.total_micros <= (p->>'maxValueMicros')::bigint)
+   and (nullif(p->>'product','') is null or exists(select 1 from public.order_items i where i.order_id=o.id and position(lower(p->>'product') in lower(i.product_name)) > 0))
+   and (nullif(p->>'minQuantity','') is null or (select coalesce(sum(i.quantity),0) from public.order_items i where i.order_id=o.id) >= (p->>'minQuantity')::int)
+   and (nullif(p->>'maxQuantity','') is null or (select coalesce(sum(i.quantity),0) from public.order_items i where i.order_id=o.id) <= (p->>'maxQuantity')::int);
+$$;
+
+create or replace function public.nemesis_order_flags(o public.orders, p jsonb) returns jsonb
+language sql stable set search_path = public, pg_temp as $$
+ select coalesce(jsonb_agg(x.flag) filter(where x.flag is not null),'[]'::jsonb) from (values
+ (case when o.payment_status='paid' and o.status not in ('cancelled','completed') and o.fulfillment_status not in ('shipped','delivered') then jsonb_build_object('severity','high','reason','Paid but not shipped','next','Verify fulfillment and prepare shipment.') end),
+ (case when o.status='processing' and o.updated_at < now()-make_interval(hours=>least(720,greatest(1,coalesce((p->>'processingHours')::int,72)))) then jsonb_build_object('severity','high','reason','Processing without a recent update','next','Investigate stock, payment, and dispatch.') end),
+ (case when o.status not in ('cancelled','completed') and o.fulfillment_status not in ('shipped','delivered') and coalesce(o.fulfillment_due_at,o.created_at+make_interval(hours=>least(720,greatest(1,coalesce((p->>'fulfillmentHours')::int,48))))) < now() then jsonb_build_object('severity','high','reason','Expected fulfillment time exceeded','next','Confirm dispatch timing with the fulfillment team.') end),
+ (case when o.shipping_status='delayed' or (o.fulfillment_status='shipped' and o.expected_delivery_at < now()) then jsonb_build_object('severity','high','reason','Shipment delayed or delivery estimate exceeded','next','Check carrier tracking and notify the customer.') end),
+ (case when o.payment_status='unpaid' and o.status <> 'cancelled' and o.created_at < now()-make_interval(hours=>least(720,greatest(1,coalesce((p->>'paymentHours')::int,24)))) then jsonb_build_object('severity','medium','reason','Unpaid beyond the review threshold (may be COD)','next','Verify the payment method; do not infer a failed payment.') end),
+ (case when o.status <> 'cancelled' and (o.fulfillment_status='unknown' or (o.fulfillment_status='shipped' and nullif(o.tracking_number,'') is null)) then jsonb_build_object('severity','medium','reason','Fulfillment or tracking information is incomplete','next','Verify fulfillment details before updating.') end),
+ (case when (o.user_id is not null or nullif(o.customer_email,'') is not null) and (select count(*) from (select 1 from orders past where past.status='cancelled' and (case when o.user_id is not null then past.user_id=o.user_id else past.user_id is null and lower(past.customer_email)=lower(o.customer_email) end) limit 3) repeated)>=3 then jsonb_build_object('severity','medium','reason','Customer has at least three historical cancellations','next','Review customer history before further fulfillment; do not assume fraud.') end),
+ (case when o.total_micros > coalesce((p->>'highValueMicros')::bigint,1000000000) then jsonb_build_object('severity','medium','reason','Order value exceeds the configured review threshold','next','Review payment legitimacy before dispatch.') end),
+ (case when (select coalesce(sum(quantity),0) from order_items where order_id=o.id) > coalesce((p->>'highQuantity')::int,20) then jsonb_build_object('severity','medium','reason','Quantity exceeds the configured review threshold','next','Verify bulk purchasing intent and stock availability.') end),
+ (case when o.refund_request_status='requested' and o.refund_requested_at < now()-interval '48 hours' then jsonb_build_object('severity','high','reason','Refund request awaiting resolution for over 48 hours','next','Review in the payment provider; this assistant cannot transfer funds.') end)
+ ) x(flag);
+$$;
+
+-- Build the full admin widget only for the bounded page, never for every matched row.
+create or replace function public.nemesis_order_json(o public.orders, detail boolean, p jsonb, p_flags jsonb default null) returns jsonb
+language sql stable set search_path = public, pg_temp as $$
+ select (case when detail then to_jsonb(o) else jsonb_build_object(
+  'id',o.id,'order_number',o.order_number,'status',o.status,'payment_status',o.payment_status,'payment_method',o.payment_method,
+  'fulfillment_status',o.fulfillment_status,'shipping_status',o.shipping_status,'shipping_name',o.shipping_name,
+  'total_micros',o.total_micros,'created_at',o.created_at,'updated_at',o.updated_at) end)
+ || jsonb_build_object('flags',coalesce(p_flags,nemesis_order_flags(o,p)),'quantity',(select coalesce(sum(i.quantity),0) from order_items i where i.order_id=o.id))
+ || case when detail then jsonb_build_object(
+  'items',coalesce((select jsonb_agg(to_jsonb(i) order by i.id) from order_items i where i.order_id=o.id),'[]'::jsonb),
+  'timeline',coalesce((select jsonb_agg(to_jsonb(e)-'actor_id' order by e.created_at desc,e.id desc) from (select * from order_operations_log where order_id=o.id order by created_at desc,id desc limit 200) e),'[]'::jsonb),
+  'timelineCount',(select count(*) from order_operations_log where order_id=o.id)) else '{}'::jsonb end;
+$$;
+
+create or replace function public.nemesis_orders_read(p jsonb default '{}', p_mode text default 'search') returns jsonb
+language plpgsql security definer set search_path = public, pg_temp set statement_timeout = '8s' as $$
+declare result jsonb; total_count bigint; lim int := least(50,greatest(1,coalesce((p->>'limit')::int,20))); begin
+ if not public.is_admin() then raise exception 'Admin required'; end if;
+ if p_mode not in ('search','detail','report','customers','problems') then raise exception 'Invalid report mode'; end if;
+ if p_mode in ('report','customers','problems') and not pg_try_advisory_xact_lock(hashtext('nemesis-order-aggregate')) then raise exception 'Another order aggregate report is running; retry shortly or use filtered order search'; end if;
+ if p_mode='detail' and nullif(p->>'id','') is null and nullif(p->>'orderNumber','') is null then raise exception 'Exact order required'; end if;
+ -- Inline the private SQL scope for indexed keyset search/detail reads. Do not materialize
+ -- every full order just to retrieve one page; only aggregates use the shared snapshot.
+ if p_mode in ('search','detail') then
+  select count(*) into total_count from nemesis_order_scope(p);
+  with page as materialized (
+   select o.* from nemesis_order_scope(p) o
+   where nullif(p->>'cursorAt','') is null or (o.created_at,o.id)<((p->>'cursorAt')::timestamptz,(p->>'cursorId')::uuid)
+   order by created_at desc,id desc limit lim+1
+  ), shown as (select * from page order by created_at desc,id desc limit lim)
+  select jsonb_build_object('generatedAt',now(),'mode',p_mode,'filters',p,'baseCurrency','USD','total',total_count,
+   'hasMore',(select count(*)>lim from page),
+   'rows',coalesce((select jsonb_agg(nemesis_order_json(row(s.*)::public.orders,p_mode='detail',p) order by s.created_at desc,s.id desc) from shown s),'[]'::jsonb),
+   'metrics',null,'topProducts','[]'::jsonb,'highestRevenueProducts','[]'::jsonb,'customers','[]'::jsonb,'combinations','[]'::jsonb,'daily','[]'::jsonb) into result;
+  return result;
+ end if;
+
+ with scope as materialized (select * from nemesis_order_scope(p)),
+ candidates as (
+   select o.* from scope o where p_mode='problems' or
+     (nullif(p->>'cursorAt','') is null or (o.created_at,o.id) < ((p->>'cursorAt')::timestamptz,(p->>'cursorId')::uuid))
+   order by created_at desc,id desc limit case when p_mode='problems' then null else lim+1 end
+ ),
+ flagged as materialized (select o.id,o.created_at,row(o.*)::public.orders as order_row,nemesis_order_flags(row(o.*)::public.orders,p) as flags from candidates o),
+ page as (select * from flagged where (p_mode <> 'problems' or jsonb_array_length(flags)>0)
+   and (p_mode <> 'problems' or nullif(p->>'cursorAt','') is null or (case when flags @> '[{"severity":"high"}]'::jsonb then 0 else 1 end) > coalesce((p->>'cursorSeverity')::int,0) or ((case when flags @> '[{"severity":"high"}]'::jsonb then 0 else 1 end) = coalesce((p->>'cursorSeverity')::int,0) and (created_at,id)>((p->>'cursorAt')::timestamptz,(p->>'cursorId')::uuid)))
+   order by case when p_mode='problems' then case when flags @> '[{"severity":"high"}]'::jsonb then 0 else 1 end else 0 end, case when p_mode='problems' then created_at end asc,created_at desc,case when p_mode='problems' then id end asc,id desc limit lim+1),
+ shown as (select * from page order by case when p_mode='problems' and flags @> '[{"severity":"high"}]'::jsonb then 0 else 1 end,case when p_mode='problems' then created_at end asc,created_at desc,case when p_mode='problems' then id end asc,id desc limit lim),
+ eligible as materialized(select * from scope where payment_status='paid' and status <> 'cancelled'),
+ customer as (
+  select md5(coalesce(user_id::text,lower(nullif(customer_email,'')),'order:'||id::text)) as key, min(id::text) as sample_order_id,
+   min(shipping_name) as name, count(*) as orders,
+   count(*) filter(where payment_status='paid' and status <> 'cancelled') as purchases,
+   coalesce(sum(total_micros) filter(where payment_status='paid' and status <> 'cancelled'),0) as spending,
+   count(*) filter(where status='cancelled') as cancellations, count(*) filter(where payment_status='refunded') as refunds,
+   max(created_at) as last_order, min(created_at) as first_order,
+   max(created_at) filter(where payment_status='paid' and status <> 'cancelled') as last_purchase,
+   min(created_at) filter(where payment_status='paid' and status <> 'cancelled') as first_purchase
+  from scope group by 1
+ ),
+ customer_cohort as (select * from customer
+    where (not coalesce((p->>'inactiveOnly')::boolean,false) or last_purchase < now()-make_interval(days=>least(3650,greatest(1,coalesce((p->>'inactiveDays')::int,90)))))
+      and (not coalesce((p->>'repeatOnly')::boolean,false) or purchases>1)
+      and (not coalesce((p->>'highRiskOnly')::boolean,false) or cancellations>=3 or refunds>=2)
+ ),
+ previous as (select * from nemesis_order_scope((p-'cursorAt'-'cursorId') || jsonb_build_object('from',((p->>'from')::timestamptz-((p->>'to')::timestamptz-(p->>'from')::timestamptz)),'to',p->>'from')) where p_mode='report'),
+ products as (select coalesce(i.product_id::text,i.product_name) as key,min(i.product_name) as name,sum(i.quantity) as units,sum(i.line_total_micros) as sales from eligible o join order_items i on i.order_id=o.id group by 1),
+ daily as (select (created_at at time zone 'UTC')::date as day,count(*) as orders,coalesce(sum(total_micros) filter(where payment_status='paid' and status<>'cancelled'),0) as revenue from scope group by 1),
+ basket as (select distinct o.id as order_id,coalesce(i.product_id::text,'name:'||i.product_name) as key,i.product_name as name from eligible o join order_items i on i.order_id=o.id where coalesce((p->>'includeCombinations')::boolean,false)),
+ combos as (select min(a.name) as first,min(b.name) as second,count(distinct a.order_id) as orders from basket a join basket b on b.order_id=a.order_id and a.key<b.key group by a.key,b.key order by 3 desc,1,2 limit 10)
+ select jsonb_build_object(
+  'generatedAt',now(),'mode',p_mode,'filters',p,'baseCurrency','USD',
+  'rows',coalesce((select jsonb_agg(nemesis_order_json(s.order_row,false,p,s.flags)
+    order by case when p_mode='problems' and s.flags @> '[{"severity":"high"}]'::jsonb then 0 else 1 end,case when p_mode='problems' then s.created_at end asc,s.created_at desc,case when p_mode='problems' then s.id end asc,s.id desc) from shown s),'[]'::jsonb),
+  'hasMore',(select count(*)>lim from page),
+  'total',(select count(*) from scope),
+  'metrics',case when p_mode in ('report','customers') then jsonb_build_object(
+    'orders',(select count(*) from scope),'paidOrders',(select count(*) from eligible),
+    'revenueMicros',(select coalesce(sum(total_micros),0) from eligible),
+    'aovMicros',(select coalesce(round(avg(total_micros)),0) from eligible),
+    'cancelled',(select count(*) from scope where status='cancelled'),
+    'refunded',(select count(*) from scope where payment_status='refunded'),
+    'unpaid',(select count(*) from scope where payment_status='unpaid'),
+    'statusCounts',(select jsonb_object_agg(status,n) from (select status,count(*) n from scope group by status) z),
+    'paymentCounts',(select jsonb_object_agg(payment_status,n) from (select payment_status,count(*) n from scope group by payment_status) z),
+    'fulfillmentCounts',(select jsonb_object_agg(fulfillment_status,n) from (select fulfillment_status,count(*) n from scope group by fulfillment_status) z),
+    'repeatCustomers',(select count(*) from customer where purchases>1),
+    'oneTimeCustomers',(select count(*) from customer where purchases=1),
+    'inactiveCustomers',(select count(*) from customer where last_purchase < now()-make_interval(days=>least(3650,greatest(1,coalesce((p->>'inactiveDays')::int,90))))),
+    'cohortCustomers',(select count(*) from customer_cohort),
+    'cohortSpendingMicros',(select coalesce(sum(spending),0) from customer_cohort),
+    'cohortOrders',(select coalesce(sum(orders),0) from customer_cohort),
+    'cohortPurchases',(select coalesce(sum(purchases),0) from customer_cohort),
+    'previousOrders',(select count(*) from previous),
+    'previousRevenueMicros',(select coalesce(sum(total_micros) filter(where payment_status='paid' and status<>'cancelled'),0) from previous)
+  ) else null end,
+  'topProducts',case when p_mode='report' then coalesce((select jsonb_agg(to_jsonb(t) order by t.units desc,t.key) from (select * from products order by units desc,key limit 10) t),'[]') else '[]'::jsonb end,
+  'highestRevenueProducts',case when p_mode='report' then coalesce((select jsonb_agg(to_jsonb(t) order by t.sales desc,t.key) from (select * from products order by sales desc,key limit 10) t),'[]') else '[]'::jsonb end,
+  'customers',case when p_mode in ('report','customers') then coalesce((select jsonb_agg(to_jsonb(t) order by t.spending desc,t.key) from (select *,case when purchases>1 then extract(epoch from last_purchase-first_purchase)/86400/(purchases-1) else null end as frequency_days from customer_cohort
+    order by spending desc,key limit 20) t),'[]') else '[]'::jsonb end,
+  'combinations',case when p_mode='customers' then coalesce((select jsonb_agg(to_jsonb(c) order by c.orders desc,c.first,c.second) from combos c),'[]') else '[]'::jsonb end,
+  'daily',case when p_mode='report' then coalesce((select jsonb_agg(to_jsonb(d) order by d.day desc) from (select * from daily order by day desc limit 60) d),'[]') else '[]'::jsonb end
+ ) into result;
+ return result;
+end $$;
+
+-- Validate operation semantics both when preparing and applying. No arbitrary column patches.
+create or replace function public.nemesis_validate_order_action(o public.orders, a text, v jsonb) returns void
+language plpgsql set search_path = public, pg_temp as $$
+begin
+ if exists(select 1 from jsonb_object_keys(v) as fields(key) where key <> all(case a
+  when 'status' then array['status'] when 'refund_request' then array['text'] when 'note' then array['text'] when 'notification' then array['text']
+  when 'fulfillment' then array['fulfillmentStatus','trackingNumber','trackingUrl','carrier','expectedDeliveryAt','fulfillmentDueAt']
+  when 'shipping' then array['shippingStatus','trackingNumber','trackingUrl','carrier','expectedDeliveryAt','fulfillmentDueAt'] else array[]::text[] end)) then raise exception 'Payload contains fields unrelated to this operation'; end if;
+ if a='status' then
+  if coalesce(v->>'status','') not in ('pending','processing','completed','cancelled') then raise exception 'Invalid status'; end if;
+  if o.status='cancelled' then raise exception 'Cancelled orders cannot be reopened here'; end if;
+  if o.status='completed' and v->>'status'<>'completed' then raise exception 'Completed orders require a manual review; use a refund request if appropriate'; end if;
+  if o.payment_status='refunded' then raise exception 'Refunded orders cannot change status here'; end if;
+  if v->>'status'='cancelled' and o.payment_status='paid' then raise exception 'Paid orders require a refund review instead of cancellation'; end if;
+  if v->>'status'='cancelled' and o.fulfillment_status in ('shipped','delivered') then raise exception 'Shipped orders cannot be cancelled here'; end if;
+  if v->>'status'='completed' and (o.payment_status<>'paid' or o.fulfillment_status<>'delivered') then raise exception 'Completion requires paid and delivered'; end if;
+  if o.status::text=v->>'status' then raise exception 'Status is unchanged'; end if;
+ elsif a='refund_request' then
+  if o.payment_status<>'paid' or o.refund_request_status<>'none' then raise exception 'Requires paid order without an existing refund request'; end if;
+  if length(trim(coalesce(v->>'text','')))<3 then raise exception 'Refund reason required'; end if;
+ elsif a in ('note','notification') then
+  if length(trim(coalesce(v->>'text',''))) not between 1 and (case when a='notification' then 200 else 2000 end) then raise exception 'Invalid message length'; end if;
+  if a='notification' and o.user_id is null then raise exception 'Guest notifications require a manual email integration'; end if;
+ elsif a='fulfillment' then
+  if coalesce(v->>'fulfillmentStatus','') not in ('unfulfilled','packed','shipped','delivered') then raise exception 'Invalid fulfillment status'; end if;
+  if o.status='cancelled' or o.payment_status='refunded' then raise exception 'Cannot fulfill cancelled/refunded order'; end if;
+  if o.status='completed' and o.fulfillment_status<>'unknown' and v->>'fulfillmentStatus'<>o.fulfillment_status then raise exception 'Completed fulfillment cannot be reversed here'; end if;
+  if v->>'fulfillmentStatus' in ('shipped','delivered') and o.payment_status<>'paid' and o.payment_method<>'cod' then raise exception 'Payment required before dispatch (except COD)'; end if;
+  if o.fulfillment_status='delivered' and v->>'fulfillmentStatus'<>'delivered' then raise exception 'Delivered fulfillment cannot be reversed here'; end if;
+  if o.fulfillment_status='shipped' and v->>'fulfillmentStatus' in ('unfulfilled','packed') then raise exception 'Shipped fulfillment cannot be reversed here'; end if;
+  if v->>'fulfillmentStatus'='delivered' and o.fulfillment_status<>'shipped' then raise exception 'Record shipment before delivery'; end if;
+  if v->>'fulfillmentStatus'='shipped' and nullif(coalesce(v->>'trackingNumber',o.tracking_number),'') is null then raise exception 'Tracking number required for shipment'; end if;
+ elsif a='shipping' then
+  if o.status='cancelled' or o.payment_status='refunded' then raise exception 'Cannot change shipping on cancelled/refunded order'; end if;
+  if v ? 'shippingStatus' and coalesce(v->>'shippingStatus','') not in ('pending','in_transit','delayed','delivered') then raise exception 'Invalid shipping status'; end if;
+  if v->>'shippingStatus' in ('in_transit','delayed','delivered') and o.fulfillment_status not in ('shipped','delivered') then raise exception 'Record fulfillment shipment first'; end if;
+  if v->>'shippingStatus'='delivered' and o.fulfillment_status<>'delivered' then raise exception 'Record delivered fulfillment first'; end if;
+  if o.fulfillment_status='delivered' and v ? 'shippingStatus' and v->>'shippingStatus'<>'delivered' then raise exception 'Delivered shipping cannot be reversed'; end if;
+ else raise exception 'Unsupported order action'; end if;
+ if coalesce(length(v->>'trackingNumber'),0)>200 or coalesce(length(v->>'carrier'),0)>120 or coalesce(length(v->>'trackingUrl'),0)>1000 or coalesce(length(v->>'text'),0)>2000 then raise exception 'Operation text too long'; end if;
+ if v ? 'trackingUrl' and coalesce(v->>'trackingUrl','') !~ '^https://[^[:space:]]+$' then raise exception 'Tracking URL must use HTTPS'; end if;
+ if v ? 'expectedDeliveryAt' and (v->>'expectedDeliveryAt')::timestamptz < o.created_at then raise exception 'Delivery estimate precedes order'; end if;
+ if v ? 'fulfillmentDueAt' and (v->>'fulfillmentDueAt')::timestamptz < o.created_at then raise exception 'Fulfillment deadline precedes order'; end if;
+end $$;
+
+create or replace function public.nemesis_prepare_order_action(p_order_id uuid,p_action text,p_payload jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare o orders; preview order_action_previews; begin
+ if not public.is_admin() then raise exception 'Admin required'; end if;
+ select * into o from orders where id=p_order_id;
+ if not found then raise exception 'Order not found'; end if;
+ perform nemesis_validate_order_action(o,p_action,p_payload);
+ delete from order_action_previews where actor_id=auth.uid() and expires_at < now()-interval '30 days';
+ insert into order_action_previews(actor_id,order_id,order_version,action,payload) values(auth.uid(),o.id,o.updated_at,p_action,p_payload) returning * into preview;
+ return jsonb_build_object('previewId',preview.id,'orderId',o.id,'orderNumber',o.order_number,'version',o.updated_at,'oldStatus',o.status,'oldFulfillment',o.fulfillment_status,'oldShipping',o.shipping_status,'expiresAt',preview.expires_at);
+end $$;
+
+create or replace function public.nemesis_apply_order_action(p_preview_id uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp set statement_timeout = '8s' as $$
+declare pr order_action_previews; o orders; v jsonb; failure text; begin
+ if not public.is_admin() then raise exception 'Admin required'; end if;
+ select * into pr from order_action_previews where id=p_preview_id and actor_id=auth.uid() for update;
+ if not found then raise exception 'Approval preview not found for this administrator'; end if;
+ if pr.used_at is not null then raise exception 'This approval has already been used'; end if;
+ update order_action_previews set used_at=now() where id=pr.id;
+ begin
+  if pr.expires_at < now() then raise exception 'Preview expired; generate a new preview'; end if;
+  select * into o from orders where id=pr.order_id for update;
+  if not found then raise exception 'Order no longer exists'; end if;
+  if o.updated_at is distinct from pr.order_version then raise exception 'Order changed after preview; regenerate before approval'; end if;
+  v := pr.payload;
+  perform nemesis_validate_order_action(o,pr.action,v);
+  if pr.action='status' then
+   -- Existing stock snapshot trigger handles cancellation/restocking atomically.
+   update orders set status=(v->>'status')::order_status where id=o.id;
+  elsif pr.action='refund_request' then
+   update orders set refund_request_status='requested',refund_requested_at=now() where id=o.id;
+  elsif pr.action='fulfillment' then
+   update orders set fulfillment_status=v->>'fulfillmentStatus',
+    shipping_status=case v->>'fulfillmentStatus' when 'shipped' then 'in_transit' when 'delivered' then 'delivered' else 'pending' end,
+    fulfilled_at=case when v->>'fulfillmentStatus' in ('shipped','delivered') then coalesce(fulfilled_at,now()) else fulfilled_at end,
+    shipped_at=case when v->>'fulfillmentStatus'='shipped' then coalesce(shipped_at,now()) else shipped_at end,
+    delivered_at=case when v->>'fulfillmentStatus'='delivered' then coalesce(delivered_at,now()) else delivered_at end where id=o.id;
+  elsif pr.action='notification' then
+   insert into order_messages(order_id,sender_type,sender_id,sender_name,message) values(o.id,'admin',auth.uid(),'Store administrator',v->>'text');
+  end if;
+  if pr.action in ('shipping','fulfillment') then
+   update orders set tracking_number=coalesce(v->>'trackingNumber',tracking_number),tracking_url=coalesce(v->>'trackingUrl',tracking_url),shipping_carrier=coalesce(v->>'carrier',shipping_carrier),
+    expected_delivery_at=coalesce((v->>'expectedDeliveryAt')::timestamptz,expected_delivery_at),fulfillment_due_at=coalesce((v->>'fulfillmentDueAt')::timestamptz,fulfillment_due_at),
+    shipping_status=case when pr.action='shipping' then coalesce(v->>'shippingStatus',shipping_status) else shipping_status end where id=o.id;
+  end if;
+  -- Notes/notifications also advance the version; two stale approvals cannot overwrite context.
+  update orders set updated_at=clock_timestamp() where id=o.id;
+  insert into order_operations_log(order_id,order_number,actor_id,event,message) values(o.id,o.order_number,auth.uid(),pr.action,case when pr.action in ('note','notification','refund_request') then coalesce(v->>'text',pr.action) else v::text end);
+ exception when others then
+  get stacked diagnostics failure=message_text;
+ end;
+ if failure is not null then
+  insert into order_operations_log(order_id,order_number,actor_id,event,message,success) values(pr.order_id,(select order_number from orders where id=pr.order_id),auth.uid(),pr.action,failure,false);
+  return jsonb_build_object('ok',false,'error',failure);
+ end if;
+ return jsonb_build_object('ok',true,'orderId',pr.order_id,'action',pr.action);
+end $$;
+
+revoke all on function public.nemesis_order_json(public.orders,boolean,jsonb,jsonb) from public, anon, authenticated;
+revoke all on function public.stamp_order_intelligence_payment() from public, anon, authenticated;
+revoke all on function public.capture_order_intelligence_event() from public, anon, authenticated;
+revoke all on function public.nemesis_order_scope(jsonb) from public, anon, authenticated;
+revoke all on function public.nemesis_order_flags(public.orders,jsonb) from public, anon, authenticated;
+revoke all on function public.nemesis_validate_order_action(public.orders,text,jsonb) from public, anon, authenticated;
+revoke all on function public.nemesis_orders_read(jsonb,text) from public, anon, authenticated;
+revoke all on function public.nemesis_prepare_order_action(uuid,text,jsonb) from public, anon, authenticated;
+revoke all on function public.nemesis_apply_order_action(uuid) from public, anon, authenticated;
+grant execute on function public.nemesis_orders_read(jsonb,text) to authenticated;
+grant execute on function public.nemesis_prepare_order_action(uuid,text,jsonb) to authenticated;
+grant execute on function public.nemesis_apply_order_action(uuid) to authenticated;
+
+-- =============================================================================
+-- 20261052000000_ai_diagnostic_logs.sql
+-- (migration 20261052000000_ai_diagnostic_logs.sql)
+-- =============================================================================
+
+-- Private, disposable AI diagnostics. Operational audits are deliberately separate.
+create extension if not exists pg_cron;
+
+create table public.diagnostic_log_settings (
+ id boolean primary key default true check (id),
+ retention_hours integer not null default 72 check (retention_hours in (1,3,6,24,72)),
+ last_cleanup_at timestamptz,
+ last_cleanup_deleted integer not null default 0
+);
+insert into public.diagnostic_log_settings(id) values(true);
+alter table public.diagnostic_log_settings enable row level security;
+revoke all on public.diagnostic_log_settings from public, anon, authenticated;
+grant select on public.diagnostic_log_settings to authenticated;
+grant update(retention_hours) on public.diagnostic_log_settings to authenticated;
+create policy "Admins read diagnostic settings" on public.diagnostic_log_settings for select to authenticated using(public.is_admin());
+create policy "Admins change retention" on public.diagnostic_log_settings for update to authenticated using(public.is_admin()) with check(public.is_admin());
+
+create table public.ai_diagnostic_logs (
+ id uuid primary key default gen_random_uuid(),
+ created_at timestamptz not null default clock_timestamp(),
+ actor_id uuid default auth.uid() references auth.users(id) on delete set null,
+ trace_id uuid not null,
+ category text not null default 'ai' check(category = 'ai'),
+ source text not null check(source in ('server','worker','browser')),
+ provider text not null check(length(provider) <= 60),
+ model text not null check(length(model) <= 200),
+ status text not null default 'pending' check(status in ('pending','success','error')),
+ http_status integer,
+ duration_ms integer,
+ input_tokens bigint,
+ output_tokens bigint,
+ request_payload jsonb not null check(octet_length(request_payload::text) <= 300000),
+ response_payload jsonb check(octet_length(response_payload::text) <= 300000)
+);
+create index ai_diagnostic_logs_created_idx on public.ai_diagnostic_logs(created_at desc,id desc);
+create index ai_diagnostic_logs_trace_idx on public.ai_diagnostic_logs(trace_id,created_at);
+alter table public.ai_diagnostic_logs enable row level security;
+revoke all on public.ai_diagnostic_logs from public, anon, authenticated;
+grant select,delete on public.ai_diagnostic_logs to authenticated;
+grant insert(trace_id,source,provider,model,request_payload) on public.ai_diagnostic_logs to authenticated;
+grant update(status,http_status,duration_ms,input_tokens,output_tokens,response_payload) on public.ai_diagnostic_logs to authenticated;
+create policy "Admins read AI diagnostics" on public.ai_diagnostic_logs for select to authenticated using(public.is_admin());
+create policy "Admins delete AI diagnostics" on public.ai_diagnostic_logs for delete to authenticated using(public.is_admin());
+create policy "Admins insert own AI diagnostics" on public.ai_diagnostic_logs for insert to authenticated with check(public.is_admin() and actor_id=auth.uid());
+create policy "Admins finish own AI diagnostics" on public.ai_diagnostic_logs for update to authenticated using(public.is_admin() and actor_id=auth.uid()) with check(public.is_admin() and actor_id=auth.uid());
+
+-- No authenticated execution: only the postgres-owned pg_cron job runs this function.
+create function public.cleanup_ai_diagnostic_logs() returns void
+language plpgsql security definer set search_path=pg_catalog,public as $$
+declare cutoff timestamptz; n integer; removed integer := 0;
+begin
+ if not pg_try_advisory_xact_lock(782164291) then return; end if;
+ select clock_timestamp() - make_interval(hours => retention_hours) into cutoff from public.diagnostic_log_settings where id;
+ if cutoff is null then raise exception 'Missing log retention settings'; end if;
+ for batch in 1..10 loop
+   with expired as (
+     select id from public.ai_diagnostic_logs where created_at < cutoff
+     order by created_at,id limit 500 for update skip locked
+   ) delete from public.ai_diagnostic_logs l using expired e where l.id=e.id;
+   get diagnostics n = row_count;
+   removed := removed+n;
+   exit when n < 500;
+ end loop;
+ update public.diagnostic_log_settings set last_cleanup_at=clock_timestamp(),last_cleanup_deleted=removed where id;
+end;
+$$;
+revoke all on function public.cleanup_ai_diagnostic_logs() from public,anon,authenticated;
+select cron.schedule('nemesis-ai-log-retention','*/5 * * * *','select public.cleanup_ai_diagnostic_logs()');
+
+-- =============================================================================
+-- 20261053000000_client_setup_export.sql
+-- (migration 20261053000000_client_setup_export.sql)
+-- =============================================================================
+
+-- Live client bootstrap export, not a backup. Never read business/auth rows.
+-- A registry makes NEW configuration fields opt-in rather than accidentally leaking secrets.
+create table public.client_setup_fields (
+ table_name text not null check (table_name ~ '^[a-z_][a-z0-9_]*$'),
+ column_name text not null check (column_name ~ '^[a-z_][a-z0-9_]*$'),
+ primary key(table_name,column_name),
+ check (table_name in ('site_settings','ai_settings','diagnostic_log_settings'))
+);
+alter table public.client_setup_fields enable row level security;
+revoke all on public.client_setup_fields from public,anon,authenticated;
+-- Only database migrations maintain this safety boundary. Dashboard admins cannot widen it.
+insert into public.client_setup_fields(table_name,column_name)
+select 'site_settings',unnest(array[
+ 'currency','usd_to_bdt_rate','manage_stock','payment_cod_enabled','shipping_enabled','shipping_rate_micros',
+ 'theme_light','theme_dark','theme_gradients','theme_sync',
+ 'home_show_categories','home_show_featured','home_show_filter','home_show_hero',
+ 'home_show_category_sections','home_category_default_layout','home_category_banner_style'
+]) union all select 'ai_settings',unnest(array[
+ 'provider','primary_model','fallback_model','ollama_mode','ollama_num_ctx','ollama_disable_thinking',
+ 'token_budget_mode','reasoning_effort','temperature','vision_enabled','brand_tone','default_language'
+]) union all select 'diagnostic_log_settings','retention_hours';
+
+create function public.export_client_setup(p_copy_settings boolean default true) returns jsonb
+language plpgsql stable security definer set search_path=pg_catalog,public
+set statement_timeout='25s'
+as $export$
+declare
+ out_sql text; r record; a record; g record; stmt text; role_name text;
+ config jsonb; filtered jsonb; omitted jsonb := '{}'::jsonb;
+ identity_sql text; copied integer := 0; registry_sql text := '';
+ view_count integer; emitted_views oid[] := '{}'; candidates integer;
+begin
+ if auth.uid() is null or not public.is_admin() then raise exception 'Administrator access required' using errcode='42501'; end if;
+ -- Fail visibly for unsupported constructs, never return an apparently complete partial dump.
+ if exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public' and (c.relkind in ('p','f','m') or c.relispartition or c.reloftype<>0))
+ or exists(select 1 from pg_inherits i join pg_class c on c.oid=i.inhrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public')
+ or exists(select 1 from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and a.attgenerated<>'')
+ or exists(select 1 from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public' and t.typtype in ('d','r','m') and not exists(select 1 from pg_depend d where d.classid='pg_type'::regclass and d.objid=t.oid and d.deptype='e'))
+ or exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='c')
+ or exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind not in ('f','p') and not exists(select 1 from pg_depend d where d.classid='pg_proc'::regclass and d.objid=p.oid and d.deptype='e'))
+
+ or exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_type t on t.oid=p.prorettype join pg_class c on c.oid=t.typrelid where n.nspname='public' and c.relkind='v')
+ or exists(select 1 from pg_rewrite rw join pg_class c on c.oid=rw.ev_class join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and rw.rulename<>'_RETURN')
+ then raise exception 'Schema contains advanced objects this application exporter does not support. Use a reviewed pg_dump --schema-only export instead.'; end if;
+
+ out_sql := '-- Woo Solution: LIVE fresh-client setup (not a backup)' || E'\n-- Generated ' || clock_timestamp()::text || E'\n-- Run once, as postgres, in a NEW Supabase project. Requires PostgreSQL 17+.\n-- No users, business records, files or credentials are copied. Read README-CLIENT-SETUP.md.\nbegin;\nset local check_function_bodies = off;\nset local search_path = public, extensions, pg_catalog;\n';
+ out_sql := out_sql || E'do $fresh$ begin if exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=''public'' and c.relkind in (''r'',''p'',''v'',''m'',''S'') and not exists(select 1 from pg_depend d where d.classid=''pg_class''::regclass and d.objid=c.oid and d.deptype=''e'')) then raise exception ''Fresh Supabase project required: public application objects already exist''; end if; end $fresh$;\n';
+ -- Supabase owns its auth/storage schemas. Install extension declarations, not their internals.
+ for r in select e.extname,n.nspname from pg_extension e join pg_namespace n on n.oid=e.extnamespace where e.extname not in ('plpgsql','pg_stat_statements','supabase_vault') order by e.extname loop
+   if r.nspname not in ('pg_catalog','public') then out_sql:=out_sql||format('create schema if not exists %I;',r.nspname)||E'\n'; end if;
+   out_sql:=out_sql||format('create extension if not exists %I with schema %I;',r.extname,r.nspname)||E'\n';
+ end loop;
+ -- Enums precede columns; extension-owned objects are restored by CREATE EXTENSION.
+ for r in select t.oid,t.typname from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public' and t.typtype='e' and not exists(select 1 from pg_depend d where d.classid='pg_type'::regclass and d.objid=t.oid and d.deptype='e') order by t.typname loop
+   select string_agg(quote_literal(enumlabel),', ' order by enumsortorder) into stmt from pg_enum where enumtypid=r.oid;
+   out_sql:=out_sql||format('create type public.%I as enum (%s);',r.typname,stmt)||E'\n';
+ end loop;
+ -- Empty sequences retain configuration, NEVER their current values.
+ for r in select c.oid,c.relname,s.* from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_sequence s on s.seqrelid=c.oid where n.nspname='public' and not exists(select 1 from pg_depend d where d.classid='pg_class'::regclass and d.objid=c.oid and d.deptype in ('i','e')) order by c.relname loop
+   out_sql:=out_sql||format('create sequence public.%I as %s increment by %s minvalue %s maxvalue %s start with %s cache %s %s;',r.relname,format_type(r.seqtypid,null),r.seqincrement,r.seqmin,r.seqmax,r.seqstart,r.seqcache,case when r.seqcycle then 'cycle' else 'no cycle' end)||E'\n';
+ end loop;
+ for r in select c.oid,c.relname,c.relpersistence,c.reloptions from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not exists(select 1 from pg_depend d where d.classid='pg_class'::regclass and d.objid=c.oid and d.deptype='e') order by c.relname loop
+   stmt:='';
+   for a in select a.*,format_type(a.atttypid,a.atttypmod) as type_sql from pg_attribute a where a.attrelid=r.oid and a.attnum>0 and not a.attisdropped order by a.attnum loop
+     identity_sql:='';
+     if a.attidentity<>'' then
+       select format(' generated %s as identity (sequence name public.%I increment by %s minvalue %s maxvalue %s start with %s cache %s %s)',case when a.attidentity='a' then 'always' else 'by default' end,seq.relname,q.seqincrement,q.seqmin,q.seqmax,q.seqstart,q.seqcache,case when q.seqcycle then 'cycle' else 'no cycle' end)
+       into identity_sql from pg_depend d join pg_class seq on seq.oid=d.objid join pg_sequence q on q.seqrelid=seq.oid where d.classid='pg_class'::regclass and d.refclassid='pg_class'::regclass and d.deptype='i' and d.refobjid=r.oid and d.refobjsubid=a.attnum;
+       if identity_sql is null then raise exception 'Missing identity configuration'; end if;
+     end if;
+     stmt:=stmt||case when stmt='' then '' else E',\n' end||format('  %I %s%s%s%s',a.attname,a.type_sql,case when a.attcollation<>0 and a.attcollation<>(select typcollation from pg_type where oid=a.atttypid) then ' collate '||a.attcollation::regcollation::text else '' end,identity_sql,case when a.attnotnull then ' not null' else '' end);
+   end loop;
+   out_sql:=out_sql||format(E'create %stable public.%I (\n%s\n);',case when r.relpersistence='u' then 'unlogged ' else '' end,r.relname,stmt)||E'\n';
+   if r.reloptions is not null then out_sql:=out_sql||format('alter table public.%I set (%s);',r.relname,array_to_string(r.reloptions,', '))||E'\n'; end if;
+ end loop;
+ -- Function bodies are checked after restore; their referenced tables now exist.
+ for r in select p.oid from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind in ('f','p') and not exists(select 1 from pg_depend d where d.classid='pg_proc'::regclass and d.objid=p.oid and d.deptype='e') order by p.proname,p.oid loop
+   out_sql:=out_sql||pg_get_functiondef(r.oid)||E';\n';
+ end loop;
+ -- Defaults and constraints after functions. PK/unique/exclusion must precede foreign keys.
+ for r in select c.relname,a.attname,pg_get_expr(d.adbin,d.adrelid) as expr from pg_attrdef d join pg_class c on c.oid=d.adrelid join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid and a.attnum=d.adnum where n.nspname='public' order by c.relname,a.attnum loop
+   out_sql:=out_sql||format('alter table public.%I alter column %I set default %s;',r.relname,r.attname,r.expr)||E'\n';
+ end loop;
+ for r in select c.relname,con.conname,pg_get_constraintdef(con.oid,true) as def from pg_constraint con join pg_class c on c.oid=con.conrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and con.contype<>'f' order by c.relname,con.conname loop
+   out_sql:=out_sql||format('alter table public.%I add constraint %I %s;',r.relname,r.conname,r.def)||E'\n';
+ end loop;
+ for r in select pg_get_indexdef(i.indexrelid) as def from pg_index i join pg_class c on c.oid=i.indrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not exists(select 1 from pg_constraint con where con.conindid=i.indexrelid) order by c.relname,i.indexrelid loop
+   out_sql:=out_sql||r.def||E';\n';
+ end loop;
+ for r in select c.relname,con.conname,pg_get_constraintdef(con.oid,true) as def from pg_constraint con join pg_class c on c.oid=con.conrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and con.contype='f' order by c.relname,con.conname loop
+   out_sql:=out_sql||format('alter table public.%I add constraint %I %s;',r.relname,r.conname,r.def)||E'\n';
+ end loop;
+ for r in select seq.relname as seqname,c.relname,a.attname from pg_depend d join pg_class seq on seq.oid=d.objid and seq.relkind='S' join pg_class c on c.oid=d.refobjid join pg_namespace n on n.oid=seq.relnamespace join pg_attribute a on a.attrelid=c.oid and a.attnum=d.refobjsubid where d.classid='pg_class'::regclass and d.refclassid='pg_class'::regclass and d.deptype='a' and n.nspname='public' loop
+   out_sql:=out_sql||format('alter sequence public.%I owned by public.%I.%I;',r.seqname,r.relname,r.attname)||E'\n';
+ end loop;
+ -- Views topologically ordered; stop rather than silently break a dependency cycle.
+ select count(*) into view_count from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='v' and not exists(select 1 from pg_depend d where d.classid='pg_class'::regclass and d.objid=c.oid and d.deptype='e');
+ while cardinality(emitted_views)<view_count loop
+   candidates:=0;
+   for r in select c.oid,c.relname,c.reloptions from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='v' and not c.oid=any(emitted_views) and not exists(select 1 from pg_depend d where d.classid='pg_class'::regclass and d.objid=c.oid and d.deptype='e') and not exists(select 1 from pg_rewrite rw join pg_depend d on d.classid='pg_rewrite'::regclass and d.objid=rw.oid join pg_class dep on dep.oid=d.refobjid join pg_namespace dn on dn.oid=dep.relnamespace where rw.ev_class=c.oid and d.refclassid='pg_class'::regclass and dep.relkind='v' and dn.nspname='public' and dep.oid<>c.oid and not dep.oid=any(emitted_views)) order by c.relname loop
+     out_sql:=out_sql||format('create view public.%I%s as %s',r.relname,case when r.reloptions is null then '' else ' with ('||array_to_string(r.reloptions,', ')||')' end,pg_get_viewdef(r.oid,true))||E';\n';
+     emitted_views:=array_append(emitted_views,r.oid); candidates:=candidates+1;
+   end loop;
+   if candidates=0 then raise exception 'Unresolved view dependencies: use pg_dump'; end if;
+ end loop;
+ -- Application triggers on auth/storage are included, not managed platform triggers.
+ for r in select t.oid,t.tgname,t.tgenabled,c.relname,n.nspname from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace join pg_proc p on p.oid=t.tgfoid join pg_namespace pn on pn.oid=p.pronamespace where not t.tgisinternal and (n.nspname='public' or (n.nspname in ('auth','storage') and pn.nspname='public')) and not exists(select 1 from pg_depend d where d.classid='pg_trigger'::regclass and d.objid=t.oid and d.deptype='e') order by n.nspname,c.relname,t.tgname loop
+   out_sql:=out_sql||format('drop trigger if exists %I on %I.%I;',r.tgname,r.nspname,r.relname)||E'\n'||pg_get_triggerdef(r.oid,true)||E';\n';
+   if r.tgenabled<>'O' then out_sql:=out_sql||format('alter table %I.%I %s trigger %I;',r.nspname,r.relname,case r.tgenabled when 'D' then 'disable' when 'R' then 'enable replica' else 'enable always' end,r.tgname)||E'\n'; end if;
+ end loop;
+ for r in select c.relname,c.relrowsecurity,c.relforcerowsecurity,c.relreplident from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' loop
+   out_sql:=out_sql||format('alter table public.%I %s row level security;',r.relname,case when r.relrowsecurity then 'enable' else 'disable' end)||E'\n';
+   if r.relforcerowsecurity then out_sql:=out_sql||format('alter table public.%I force row level security;',r.relname)||E'\n'; end if;
+   if r.relreplident='f' then out_sql:=out_sql||format('alter table public.%I replica identity full;',r.relname)||E'\n';
+   elsif r.relreplident='n' then out_sql:=out_sql||format('alter table public.%I replica identity nothing;',r.relname)||E'\n';
+   elsif r.relreplident='i' then select ic.relname into stmt from pg_index i join pg_class ic on ic.oid=i.indexrelid where i.indrelid=(format('public.%I',r.relname))::regclass and i.indisreplident; out_sql:=out_sql||format('alter table public.%I replica identity using index %I;',r.relname,stmt)||E'\n'; end if;
+ end loop;
+ for r in select p.*,c.relname,n.nspname from pg_policy p join pg_class c on c.oid=p.polrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' or (n.nspname='storage' and c.relname in ('objects','buckets')) order by n.nspname,c.relname,p.polname loop
+   select string_agg(case when x=0 then 'PUBLIC' else quote_ident(pg_get_userbyid(x)) end,', ') into stmt from unnest(r.polroles) x;
+   out_sql:=out_sql||format('drop policy if exists %I on %I.%I;',r.polname,r.nspname,r.relname)||E'\n'||format('create policy %I on %I.%I as %s for %s to %s%s%s;',r.polname,r.nspname,r.relname,case when r.polpermissive then 'permissive' else 'restrictive' end,case r.polcmd when 'r' then 'select' when 'a' then 'insert' when 'w' then 'update' when 'd' then 'delete' else 'all' end,stmt,case when r.polqual is null then '' else ' using ('||pg_get_expr(r.polqual,r.polrelid)||')' end,case when r.polwithcheck is null then '' else ' with check ('||pg_get_expr(r.polwithcheck,r.polrelid)||')' end)||E'\n';
+ end loop;
+ -- Restore public-schema and enum permissions without relying on target defaults.
+ out_sql:=out_sql||E'revoke all on schema public from PUBLIC, anon, authenticated, service_role;\n';
+ for g in select x.* from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) x where n.nspname='public' loop
+   role_name:=case when g.grantee=0 then 'PUBLIC' else quote_ident(pg_get_userbyid(g.grantee)) end;
+   out_sql:=out_sql||format('grant %s on schema public to %s%s;',g.privilege_type,role_name,case when g.is_grantable then ' with grant option' else '' end)||E'\n';
+ end loop;
+ for r in select t.* from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public' and t.typtype='e' and not exists(select 1 from pg_depend d where d.classid='pg_type'::regclass and d.objid=t.oid and d.deptype='e') loop
+   out_sql:=out_sql||format('revoke all on type public.%I from PUBLIC, anon, authenticated, service_role;',r.typname)||E'\n';
+   for g in select * from aclexplode(coalesce(r.typacl,acldefault('T',r.typowner))) loop
+     role_name:=case when g.grantee=0 then 'PUBLIC' else quote_ident(pg_get_userbyid(g.grantee)) end;
+     out_sql:=out_sql||format('grant %s on type public.%I to %s%s;',g.privilege_type,r.typname,role_name,case when g.is_grantable then ' with grant option' else '' end)||E'\n';
+   end loop;
+ end loop;
+ -- Explicit ACL reconstruction prevents broad fresh-project default grants leaking private tables.
+ for r in select c.oid,c.relname,c.relkind,c.relowner,c.relacl from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','v','S') and not exists(select 1 from pg_depend d where d.classid='pg_class'::regclass and d.objid=c.oid and d.deptype='e') order by c.relname loop
+   stmt:=case when r.relkind='S' then 'sequence' else 'table' end;
+   out_sql:=out_sql||format('revoke all on %s public.%I from PUBLIC, anon, authenticated, service_role;',stmt,r.relname)||E'\n';
+   for g in select * from aclexplode(coalesce(r.relacl,acldefault(case when r.relkind='S' then 'S'::"char" else 'r'::"char" end,r.relowner))) loop
+     role_name:=case when g.grantee=0 then 'PUBLIC' else quote_ident(pg_get_userbyid(g.grantee)) end;
+     out_sql:=out_sql||format('grant %s on %s public.%I to %s%s;',g.privilege_type,stmt,r.relname,role_name,case when g.is_grantable then ' with grant option' else '' end)||E'\n';
+   end loop;
+   for a in select attname,attacl from pg_attribute where attrelid=r.oid and attnum>0 and not attisdropped and attacl is not null loop
+     for g in select * from aclexplode(a.attacl) loop
+       role_name:=case when g.grantee=0 then 'PUBLIC' else quote_ident(pg_get_userbyid(g.grantee)) end;
+       out_sql:=out_sql||format('grant %s (%I) on table public.%I to %s%s;',g.privilege_type,a.attname,r.relname,role_name,case when g.is_grantable then ' with grant option' else '' end)||E'\n';
+     end loop;
+   end loop;
+ end loop;
+ for r in select p.*,pg_get_function_identity_arguments(p.oid) args from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind in ('f','p') and not exists(select 1 from pg_depend d where d.classid='pg_proc'::regclass and d.objid=p.oid and d.deptype='e') loop
+   stmt:=case when r.prokind='p' then 'procedure' else 'function' end;
+   out_sql:=out_sql||format('revoke all on %s public.%I(%s) from PUBLIC, anon, authenticated, service_role;',stmt,r.proname,r.args)||E'\n';
+   for g in select * from aclexplode(coalesce(r.proacl,acldefault('f',r.proowner))) loop
+     role_name:=case when g.grantee=0 then 'PUBLIC' else quote_ident(pg_get_userbyid(g.grantee)) end;
+     out_sql:=out_sql||format('grant execute on %s public.%I(%s) to %s%s;',stmt,r.proname,r.args,role_name,case when g.is_grantable then ' with grant option' else '' end)||E'\n';
+   end loop;
+ end loop;
+ for r in select d.* from pg_default_acl d where d.defaclrole='postgres'::regrole and d.defaclnamespace='public'::regnamespace loop
+   stmt:=case r.defaclobjtype when 'r' then 'tables' when 'S' then 'sequences' when 'f' then 'functions' when 'T' then 'types' else null end;
+   if stmt is null then raise exception 'Unsupported default privilege type'; end if;
+   out_sql:=out_sql||format('alter default privileges for role postgres in schema public revoke all on %s from PUBLIC, anon, authenticated, service_role;',stmt)||E'\n';
+   for g in select * from aclexplode(r.defaclacl) loop
+     role_name:=case when g.grantee=0 then 'PUBLIC' else quote_ident(pg_get_userbyid(g.grantee)) end;
+     out_sql:=out_sql||format('alter default privileges for role postgres in schema public grant %s on %s to %s%s;',g.privilege_type,stmt,role_name,case when g.is_grantable then ' with grant option' else '' end)||E'\n';
+   end loop;
+ end loop;
+ -- Preserve bootstrap field registry rows (configuration, never business records).
+ for r in select * from public.client_setup_fields order by table_name,column_name loop
+   registry_sql:=registry_sql||format('insert into public.client_setup_fields(table_name,column_name) values (%L,%L);',r.table_name,r.column_name)||E'\n';
+ end loop;
+ out_sql:=out_sql||registry_sql;
+ -- Seed singleton defaults, then optionally overlay explicitly safe CURRENT values.
+ for r in select unnest(array['site_settings','ai_settings','diagnostic_log_settings']) as name loop
+   if to_regclass('public.'||r.name) is null then continue; end if;
+   out_sql:=out_sql||format('insert into public.%I(id) values (%s);',r.name,case when r.name='diagnostic_log_settings' then 'true' else '1' end)||E'\n';
+   execute format('select to_jsonb(s) from public.%I s limit 1',r.name) into config;
+   select coalesce(jsonb_object_agg(key,value),'{}'::jsonb) into filtered from jsonb_each(coalesce(config,'{}')) where p_copy_settings and key in (select column_name from public.client_setup_fields where table_name=r.name);
+   select omitted||jsonb_build_object(r.name,coalesce(jsonb_agg(key),'[]'::jsonb)) into omitted from jsonb_each(coalesce(config,'{}')) where key not in (select column_name from public.client_setup_fields where table_name=r.name) and key<>'id';
+   select string_agg(format('%I = %L::%s',a.attname,filtered->>a.attname,format_type(a.atttypid,a.atttypmod)),', ' order by a.attnum) into stmt from pg_attribute a where a.attrelid=to_regclass('public.'||r.name) and a.attnum>0 and not a.attisdropped and filtered ? a.attname;
+   if stmt is not null then out_sql:=out_sql||format('update public.%I set %s;',r.name,stmt)||E'\n'; select copied+count(*)::integer into copied from jsonb_object_keys(filtered); end if;
+ end loop;
+ out_sql:=out_sql||E'update public.site_settings set payment_crypto_enabled=false,payment_plisio_enabled=false,seo_indexing=false;\nupdate public.ai_settings set enabled=false,require_confirmation=true;\n';
+ -- Realtime memberships, bucket configuration and pg_cron declarations are configuration, not content.
+ for r in select b.id,b.name,b.public,b.file_size_limit,b.allowed_mime_types from storage.buckets b order by b.id loop
+   out_sql:=out_sql||format('insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values (%L,%L,%L,%L,%L) on conflict(id) do update set public=excluded.public,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;',r.id,r.name,r.public,r.file_size_limit,r.allowed_mime_types)||E'\n';
+ end loop;
+ for r in select p.pubname,c.relname from pg_publication_rel pr join pg_publication p on p.oid=pr.prpubid join pg_class c on c.oid=pr.prrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and p.pubname='supabase_realtime' loop
+   out_sql:=out_sql||format('alter publication supabase_realtime add table public.%I;',r.relname)||E'\n';
+ end loop;
+ if exists(select 1 from pg_extension where extname='pg_cron') then
+   for r in select jobname,schedule,command,active from cron.job where jobname like 'nemesis-%' order by jobname loop
+     if r.command !~* '^\s*select\s+public\.[a-z_][a-z0-9_]*\(\s*\)\s*;?\s*$' then raise exception 'Scheduled job % needs a reviewed configuration export',r.jobname; end if;
+     out_sql:=out_sql||format('select cron.schedule(%L,%L,%L);',r.jobname,r.schedule,r.command)||E'\n';
+     if not r.active then out_sql:=out_sql||format('select cron.alter_job((select jobid from cron.job where jobname=%L),active:=false);',r.jobname)||E'\n'; end if;
+   end loop;
+ end if;
+ out_sql:=out_sql||E'notify pgrst, ''reload schema'';\ncommit;\n-- Next: configure Auth URLs, create your own admin, deploy the client GitHub repository to Cloudflare Workers.\n';
+ return jsonb_build_object('sql',out_sql,'omitted_settings',omitted,'copied_fields',copied,'exported_at',clock_timestamp(),'scope','public schema + app auth/storage integration; no business rows');
+end;
+$export$;
+revoke all on function public.export_client_setup(boolean) from public,anon,authenticated;
+grant execute on function public.export_client_setup(boolean) to authenticated;
+
+-- =============================================================================
+-- 20261054000000_client_setup_export_resolution.sql
+-- (migration 20261054000000_client_setup_export_resolution.sql)
+-- =============================================================================
+
+-- Catalog aliases (notably `a`) also appear as PL/pgSQL record names. Resolve
+-- qualified catalog columns as columns; outer records still resolve when no
+-- matching SQL alias exists. Keep the full export definition in the prior migration.
+do $fix$
+declare definition text;
+begin
+ select pg_get_functiondef('public.export_client_setup(boolean)'::regprocedure) into definition;
+ if strpos(definition,'#variable_conflict use_column')=0 then
+   if strpos(definition,E'\ndeclare\n out_sql')=0 then
+     raise exception 'Unexpected export function definition; inspect before updating';
+   end if;
+   execute replace(definition,E'\ndeclare\n out_sql',E'\n#variable_conflict use_column\ndeclare\n out_sql');
+ end if;
+end;
+$fix$;
+
+-- =============================================================================
+-- 20261055000000_client_setup_export_guardrails.sql
+-- (migration 20261055000000_client_setup_export_guardrails.sql)
+-- =============================================================================
+
+-- Reject dependencies outside this bootstrap's deliberately supported scope.
+create function public.assert_client_setup_scope() returns void
+language plpgsql stable set search_path=pg_catalog,public,pg_temp as $$
+begin
+ if exists (
+   select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where c.relkind in ('r','p','v','m','S','f') and c.relowner='postgres'::regrole
+   and n.nspname !~ '^pg_' and n.nspname not in ('public','information_schema','auth','storage','realtime','extensions','vault','graphql','graphql_public','supabase_functions','supabase_migrations','cron','net','pgbouncer')
+   and not exists(select 1 from pg_depend d where d.classid='pg_class'::regclass and d.objid=c.oid and d.deptype='e')
+ ) or exists (
+   select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','v','S') and c.relowner<>'postgres'::regrole
+   and not exists(select 1 from pg_depend d where d.classid='pg_class'::regclass and d.objid=c.oid and d.deptype='e')
+ ) or exists (
+   select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proowner<>'postgres'::regrole
+   and not exists(select 1 from pg_depend d where d.classid='pg_proc'::regclass and d.objid=p.oid and d.deptype='e')
+ ) or exists (
+   select 1 from pg_collation c join pg_namespace n on n.oid=c.collnamespace where n.nspname='public'
+   and not exists(select 1 from pg_depend d where d.classid='pg_collation'::regclass and d.objid=c.oid and d.deptype='e')
+ ) or exists (
+   select 1 from pg_publication p left join pg_publication_rel pr on pr.prpubid=p.oid where p.pubname='supabase_realtime' and (p.puballtables or pr.prqual is not null or pr.prattrs is not null)
+ ) or exists (
+   select 1 from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public' and c.relname in ('site_settings','ai_settings','diagnostic_log_settings') and a.attnum>0 and not a.attisdropped and a.attnotnull and a.attname<>'id' and a.attidentity=''
+   and not exists(select 1 from pg_attrdef d where d.adrelid=c.oid and d.adnum=a.attnum)
+ ) then raise exception 'Application schemas, ownership, collations, publication filters or required settings defaults need a reviewed bootstrap'; end if;
+end;
+$$;
+revoke all on function public.assert_client_setup_scope() from public,anon,authenticated;
+
+alter function public.export_client_setup(boolean) set search_path=pg_catalog,public,pg_temp;
+-- Extend the body without duplicating a large SQL generator. Preserve its ACL.
+do $guard$
+declare definition text;
+begin
+ select pg_get_functiondef('public.export_client_setup(boolean)'::regprocedure) into definition;
+ if strpos(definition,'perform public.assert_client_setup_scope();')=0 then
+   if strpos(definition,' -- Fail visibly for unsupported constructs')=0 then raise exception 'Unexpected export function definition'; end if;
+   execute replace(definition,' -- Fail visibly for unsupported constructs',E' perform public.assert_client_setup_scope();\n -- Fail visibly for unsupported constructs');
+ end if;
+end;
+$guard$;
+-- Accidental registration of obviously sensitive/reference fields is disallowed.
+alter table public.client_setup_fields add constraint client_setup_no_sensitive_fields
+ check (column_name !~* '(password|secret|api_keys?|access_token|refresh_token|wallet|address|media_id|^id$|url$)');
+
+-- =============================================================================
+-- 20261056000000_client_setup_stored_generated.sql
+-- (migration 20261056000000_client_setup_stored_generated.sql)
+-- =============================================================================
+
+-- PostgreSQL 17: preserve stored generated-column position and expressions.
+-- Typed NULL stubs let tables/row types exist before user functions are restored;
+-- SET EXPRESSION then installs the real formula before defaults/constraints/seeds.
+-- No existing application columns, expressions or rows are changed here.
+do $patch$
+declare
+ definition text;
+ old_part text;
+ new_part text;
+begin
+ select pg_get_functiondef('public.export_client_setup(boolean)'::regprocedure) into definition;
+ if strpos(definition,'-- Stored generated placeholders preserve column order.')>0 then return; end if;
+
+ old_part := $old$where n.nspname='public' and a.attgenerated<>''$old$;
+ new_part := $new$where n.nspname='public' and a.attgenerated not in ('','s')$new$;
+ if strpos(definition,old_part)=0 then raise exception 'Unexpected export generated-column guard'; end if;
+ definition:=replace(definition,old_part,new_part);
+
+ old_part := $old$     identity_sql:='';
+     if a.attidentity<>'' then$old$;
+ new_part := $new$     identity_sql:='';
+     -- Stored generated placeholders preserve column order.
+     if a.attgenerated='s' then
+       identity_sql:=format(' generated always as (null::%s) stored',a.type_sql);
+     end if;
+     if a.attidentity<>'' then$new$;
+ if strpos(definition,old_part)=0 then raise exception 'Unexpected export column builder'; end if;
+ definition:=replace(definition,old_part,new_part);
+
+ old_part := $old$select c.relname,a.attname,pg_get_expr(d.adbin,d.adrelid) as expr from pg_attrdef$old$;
+ new_part := $new$select c.relname,a.attname,a.attgenerated,pg_get_expr(d.adbin,d.adrelid) as expr from pg_attrdef$new$;
+ if strpos(definition,old_part)=0 then raise exception 'Unexpected export default query'; end if;
+ definition:=replace(definition,old_part,new_part);
+
+ old_part := $old$   out_sql:=out_sql||format('alter table public.%I alter column %I set default %s;',r.relname,r.attname,r.expr)||E'\n';$old$;
+ new_part := $new$   if r.attgenerated='s' then
+     out_sql:=out_sql||format('alter table public.%I alter column %I set expression as (%s);',r.relname,r.attname,r.expr)||E'\n';
+   else
+     out_sql:=out_sql||format('alter table public.%I alter column %I set default %s;',r.relname,r.attname,r.expr)||E'\n';
+   end if;$new$;
+ if strpos(definition,old_part)=0 then raise exception 'Unexpected export default builder'; end if;
+ definition:=replace(definition,old_part,new_part);
+ execute definition;
+end;
+$patch$;
+notify pgrst, 'reload schema';
+
+-- =============================================================================
+-- 20261057000000_customer_intelligence.sql
+-- (migration 20261057000000_customer_intelligence.sql)
+-- =============================================================================
+
+-- Read-only Customer Intelligence. No new customer shadow table or mutation RPC.
+create index if not exists orders_customer_history_idx on public.orders(user_id,created_at desc,id desc);
+create index if not exists orders_guest_customer_key_idx on public.orders((md5(lower(btrim(customer_email))))) where user_id is null and nullif(btrim(customer_email),'') is not null;
+
+create function public.nemesis_customers_read(p jsonb default '{}', p_mode text default 'analytics') returns jsonb
+language plpgsql stable security definer set search_path=pg_catalog,public,pg_temp
+set statement_timeout='15s' as $$
+#variable_conflict use_column
+declare
+ result jsonb;
+ as_of timestamptz := coalesce((p->>'to')::timestamptz,statement_timestamp());
+ since timestamptz := coalesce((p->>'from')::timestamptz,case when p_mode in ('new','analytics') then as_of-interval '30 days' else '1970-01-01'::timestamptz end);
+ days integer := coalesce((p->>'inactiveDays')::integer,90);
+ min_purchases integer := coalesce((p->>'minPurchases')::integer,case when p_mode='repeat' then 2 else 0 end);
+ page_size integer := coalesce((p->>'limit')::integer,10);
+ page_no integer := coalesce((p->>'page')::integer,1);
+ exact_key text := p->>'customerKey';
+ q text := nullif(btrim(p->>'search'),'');
+ sort_by text := coalesce(p->>'sort',case when p_mode='new' then 'newest' when p_mode='inactive' then 'oldest' else 'spending' end);
+begin
+ if auth.uid() is null or not public.is_admin() then raise exception 'Administrator access required' using errcode='42501'; end if;
+ if p_mode not in ('details','history','search','top','inactive','repeat','new','analytics') then raise exception 'Invalid customer report'; end if;
+ if page_size not between 1 and 50 or page_no not between 1 and 10000 or days not between 1 and 3650 or min_purchases not between 0 and 100000 then raise exception 'Invalid customer pagination or thresholds'; end if;
+ if since>=as_of or as_of>statement_timestamp()+interval '1 minute' then raise exception 'Invalid customer date range'; end if;
+ if p_mode='repeat' then min_purchases:=greatest(2,min_purchases); end if;
+ if sort_by not in ('spending','purchases','newest','oldest','name') then raise exception 'Invalid customer sort'; end if;
+ if length(coalesce(q,''))>120 then raise exception 'Search is too long'; end if;
+ if exact_key is not null and exact_key !~ '^((u|o):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|e:[0-9a-f]{32})$' then raise exception 'Invalid customer key'; end if;
+ if p_mode in ('details','history') and exact_key is null then raise exception 'Select an exact customer, not a name'; end if;
+
+ with orders_as_of as materialized (
+   select o.id,o.user_id,o.customer_email,o.shipping_name,o.created_at,o.order_number,o.status,o.payment_status,o.total_micros,
+     case when o.user_id is not null then 'u:'||o.user_id::text
+       when nullif(btrim(o.customer_email),'') is not null then 'e:'||md5(lower(btrim(o.customer_email))) else 'o:'||o.id::text end as customer_key,
+     (o.status='completed' and o.payment_status='paid') as eligible
+   from public.orders o where o.created_at<as_of and (
+     exact_key is null
+     or (left(exact_key,2)='u:' and o.user_id=case when left(exact_key,2)='u:' then substring(exact_key from 3)::uuid end)
+     or (left(exact_key,2)='e:' and o.user_id is null and nullif(btrim(o.customer_email),'') is not null and md5(lower(btrim(o.customer_email)))=substring(exact_key from 3))
+     or (left(exact_key,2)='o:' and o.id=case when left(exact_key,2)='o:' then substring(exact_key from 3)::uuid end and o.user_id is null and nullif(btrim(o.customer_email),'') is null)
+   )
+ ), aggregate_orders as (
+   select customer_key,min(id::text)::uuid as anchor_id,count(*) as order_count,
+     count(*) filter(where eligible) as purchases,
+     coalesce(sum(total_micros) filter(where eligible),0) as spending,
+     min(created_at) filter(where eligible) as first_purchase,max(created_at) filter(where eligible) as last_purchase,
+     count(*) filter(where eligible and created_at>=since) as window_purchases,
+     coalesce(sum(total_micros) filter(where eligible and created_at>=since),0) as window_spending,
+     count(*) filter(where status='cancelled') as cancellations,
+     count(*) filter(where payment_status='refunded') as refunds
+   from orders_as_of group by customer_key
+ ), identities as (
+   select 'u:'||pr.id::text as customer_key from public.profiles pr where not pr.is_admin and pr.created_at<as_of and (exact_key is null or 'u:'||pr.id::text=exact_key)
+   union select customer_key from aggregate_orders
+ ), customers as materialized (
+   select i.customer_key as key,
+     case when i.customer_key like 'u:%' then 'registered' when i.customer_key like 'e:%' then 'guest_email_group' else 'unidentified_order' end as identity,
+     coalesce(nullif(pr.full_name,''),nullif(o.shipping_name,''),'Unnamed customer') as name,
+     coalesce(pr.email,o.customer_email) as email,
+     pr.created_at as registered_at,a.anchor_id,
+     coalesce(a.order_count,0) as orders,coalesce(a.purchases,0) as purchases,coalesce(a.spending,0) as spending,
+     coalesce(a.window_purchases,0) as window_purchases,coalesce(a.window_spending,0) as window_spending,
+     a.first_purchase,a.last_purchase,coalesce(a.cancellations,0) as cancellations,coalesce(a.refunds,0) as refunds
+   from identities i left join aggregate_orders a on a.customer_key=i.customer_key
+   left join public.profiles pr on i.customer_key='u:'||pr.id::text
+   left join public.orders o on o.id=a.anchor_id
+ ), matched as materialized (
+   select c.* from customers c where (exact_key is null or c.key=exact_key)
+     and (q is null or position(lower(q) in lower(c.name))>0 or position(lower(q) in lower(coalesce(c.email,'')))>0)
+     and c.window_purchases>=min_purchases
+     and (p_mode<>'top' or c.window_purchases>0)
+     and (p_mode<>'inactive' or (c.purchases>0 and c.last_purchase<as_of-make_interval(days=>days)))
+     and (p_mode<>'new' or (c.first_purchase>=since and c.first_purchase<as_of))
+ ), ranked as (
+   select c.*,row_number() over(order by
+     case when sort_by='spending' then window_spending end desc,
+     case when sort_by='purchases' then window_purchases end desc,
+     case when sort_by='newest' then first_purchase end desc nulls last,
+     case when sort_by='oldest' then last_purchase end asc nulls last,
+     case when sort_by='name' then lower(name) end asc,key) as rn
+   from matched c
+ ), metrics as (
+   select count(*) as customers,count(*) filter(where window_purchases>0) as buyers,
+     count(*) filter(where window_purchases>=2) as repeat_buyers,
+     count(*) filter(where first_purchase>=since and first_purchase<as_of) as new_buyers,
+     count(*) filter(where first_purchase<since and window_purchases>0) as returning_buyers,
+     count(*) filter(where purchases>0 and last_purchase<as_of-make_interval(days=>days)) as inactive_buyers,
+     count(*) filter(where purchases=0) as not_converted,
+     coalesce(sum(window_purchases),0) as purchases,coalesce(sum(window_spending),0) as spending
+   from matched
+ ), history as (
+   select id,order_number,created_at,status,payment_status,total_micros,eligible
+   from orders_as_of where customer_key=exact_key and created_at>=since
+   order by created_at desc,id desc limit page_size offset (page_no-1)*page_size
+ )
+ select jsonb_build_object(
+   'generatedAt',statement_timestamp(),'mode',p_mode,'baseCurrency','USD',
+   'filters',jsonb_build_object('from',since,'to',as_of,'inactiveDays',days,'minPurchases',min_purchases,'limit',page_size,'page',page_no,'sort',sort_by,'search',coalesce(q,''),'customerKey',exact_key),
+   'total',case when p_mode='history' then (select count(*) from orders_as_of where customer_key=exact_key and created_at>=since) else (select count(*) from matched) end,
+   'metrics',(select to_jsonb(m)||jsonb_build_object('aov',case when m.purchases=0 then null else round(m.spending/m.purchases) end) from metrics m),
+   'rows',coalesce((select jsonb_agg(to_jsonb(r)-'rn'-'email' order by r.rn) from ranked r where (p_mode='history' and rn=1) or (p_mode<>'history' and rn between (page_no-1)*page_size+1 and page_no*page_size)),'[]'::jsonb),
+   'history',case when p_mode='history' then coalesce((select jsonb_agg(to_jsonb(h) order by h.created_at desc,h.id desc) from history h),'[]'::jsonb) else '[]'::jsonb end,
+   'detail',case when p_mode='details' then (
+     select jsonb_build_object('email',c.email,'phone',coalesce(pr.phone,o.shipping_phone),
+       'address',case when o.id is null then null else concat_ws(', ',o.shipping_address_line1,o.shipping_address_line2,o.shipping_city,o.shipping_postal_code,o.shipping_country) end,
+       'contactSource','Registered profile when available; otherwise a recorded order. Shipping address is from a representative recorded order, not a verified current address.')
+     from matched c left join public.profiles pr on c.key='u:'||pr.id::text
+     left join public.orders o on o.id=c.anchor_id limit 1
+   ) else null end
+ ) into result;
+ if abs((result->'metrics'->>'spending')::numeric)>9007199254740991 or exists(select 1 from jsonb_array_elements(result->'rows') r where abs((r->>'spending')::numeric)>9007199254740991 or abs((r->>'window_spending')::numeric)>9007199254740991) or exists(select 1 from jsonb_array_elements(result->'history') h where abs((h->>'total_micros')::numeric)>9007199254740991) then raise exception 'Customer amounts exceed supported exact integer range'; end if;
+ return result;
+end;
+$$;
+revoke all on function public.nemesis_customers_read(jsonb,text) from public,anon,authenticated;
+grant execute on function public.nemesis_customers_read(jsonb,text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- =============================================================================
+-- 20261058000000_product_queries.sql
+-- (migration 20261058000000_product_queries.sql)
+-- =============================================================================
+
+-- Reusable, bounded, read-only catalog queries. No model-generated SQL or writes.
+-- Internal fixed-operator evaluator; not exposed through the API.
+create function public.nemesis_product_number_matches(n numeric, rule jsonb) returns boolean
+language plpgsql immutable set search_path=pg_catalog,public,pg_temp as $$
+declare op text; value jsonb; threshold numeric; matches boolean := true;
+begin
+ if rule is null or rule='null'::jsonb then return true; end if;
+ if jsonb_typeof(rule)<>'object' then raise exception 'Numeric filter must be an object'; end if;
+ for op,value in select * from jsonb_each(rule) loop
+   if op not in ('gt','gte','lt','lte','eq','ne') then raise exception 'Unsupported comparison %',op; end if;
+   if value='null'::jsonb then continue; end if;
+   if jsonb_typeof(value)<>'number' then raise exception 'Comparison requires a number'; end if;
+   threshold:=value::numeric;
+   if abs(threshold)>9007199254740991 then raise exception 'Comparison is outside supported precision'; end if;
+   matches:=matches and coalesce(case op when 'gt' then n>threshold when 'gte' then n>=threshold
+     when 'lt' then n<threshold when 'lte' then n<=threshold when 'eq' then n=threshold when 'ne' then n<>threshold end,false);
+ end loop;
+ return matches;
+end $$;
+revoke all on function public.nemesis_product_number_matches(numeric,jsonb) from public,anon,authenticated;
+
+create function public.nemesis_products_read(p jsonb default '{}') returns jsonb
+language plpgsql stable security definer set search_path=pg_catalog,public,pg_temp
+set statement_timeout='15s' as $$
+#variable_conflict use_column
+declare
+ k text; v jsonb; cond jsonb; result jsonb; category_count integer;
+ page_no integer:=coalesce((p->>'page')::integer,1); page_size integer:=coalesce((p->>'limit')::integer,10);
+ scope text:=coalesce(p->>'scope','products'); state text:=coalesce(p->>'status','all');
+ variant_state text:=coalesce(p->>'variationStatus','active'); stock_state text:=coalesce(p->>'stockStatus','all');
+ product_type text:=coalesce(p->>'type','all'); sort_by text:=coalesce(p->>'sortBy','name'); direction text:=coalesce(p->>'sortDirection','asc');
+ currency_code text; fx numeric;
+begin
+ if auth.uid() is null or not public.is_admin() then raise exception 'Administrator access required' using errcode='42501'; end if;
+ if p is null or jsonb_typeof(p)<>'object' then raise exception 'Filters must be an object'; end if;
+ for k,v in select * from jsonb_each(p) loop
+   if k not in ('scope','status','variationStatus','stockStatus','type','sortBy','sortDirection','page','limit','currency',
+     'stock','price','anyOf','id','productId','ids','search','name','sku','brand','category','categorySlug','categoryId','categorySlugs',
+     'featured','onSale','createdFrom','createdTo','updatedFrom','updatedTo') then raise exception 'Unsupported product filter %',k; end if;
+   if v='null'::jsonb then continue; end if;
+   if k in ('featured','onSale') then
+     if jsonb_typeof(v)<>'boolean' then raise exception 'Invalid boolean filter'; end if;
+   elsif k in ('stock','price') then perform public.nemesis_product_number_matches(null,v);
+   elsif k in ('page','limit') then
+     if jsonb_typeof(v)<>'number' or v::numeric<>trunc(v::numeric) then raise exception 'Invalid page/limit'; end if;
+   elsif k in ('ids','categorySlugs') then
+     if jsonb_typeof(v)<>'array' then raise exception 'Expected a list'; end if;
+     if jsonb_array_length(v) not between 1 and 50 then raise exception 'Invalid list length'; end if;
+     for cond in select * from jsonb_array_elements(v) loop
+       if jsonb_typeof(cond)<>'string' or length(cond#>>'{}') not between 1 and 200 then raise exception 'Invalid list entry'; end if;
+       if k='ids' then perform (cond#>>'{}')::uuid; end if;
+     end loop;
+   elsif k='anyOf' then
+     if jsonb_typeof(v)<>'array' then raise exception 'Expected numeric OR list'; end if;
+     if jsonb_array_length(v) not between 1 and 10 then raise exception 'Invalid numeric OR list'; end if;
+     for cond in select * from jsonb_array_elements(v) loop
+       if jsonb_typeof(cond)<>'object' or cond='{}'::jsonb then raise exception 'Empty numeric OR condition'; end if;
+       if exists(select 1 from jsonb_object_keys(cond) as x(key) where key not in ('stock','price')) then raise exception 'Unsupported OR filter'; end if;
+       perform public.nemesis_product_number_matches(null,cond->'stock');
+       perform public.nemesis_product_number_matches(null,cond->'price');
+       if not exists(select 1 from jsonb_each(coalesce(nullif(cond->'stock','null'::jsonb),'{}')) where value<>'null'::jsonb)
+         and not exists(select 1 from jsonb_each(coalesce(nullif(cond->'price','null'::jsonb),'{}')) where value<>'null'::jsonb) then raise exception 'Empty numeric OR condition'; end if;
+     end loop;
+   else
+     if jsonb_typeof(v)<>'string' or length(v#>>'{}') not between 1 and 200 then raise exception 'Invalid text filter %',k; end if;
+     if k in ('id','productId','categoryId') then perform (v#>>'{}')::uuid; end if;
+     if k in ('createdFrom','createdTo','updatedFrom','updatedTo') then perform (v#>>'{}')::timestamptz; end if;
+   end if;
+ end loop;
+ if page_no not between 1 and 10000 or page_size not between 1 and 50 then raise exception 'Invalid pagination'; end if;
+ if scope not in ('products','variations','skus') or state not in ('active','draft','all') or variant_state not in ('active','draft','all')
+   or stock_state not in ('all','tracked','untracked','in_stock','out_of_stock') or product_type not in ('all','simple','variable')
+   or sort_by not in ('name','stock','price','created_at','updated_at') or direction not in ('asc','desc') then raise exception 'Invalid query option'; end if;
+ if scope='products' and variant_state<>'active' then raise exception 'variationStatus only applies to variation scope'; end if;
+ if (p->>'createdFrom')::timestamptz >= (p->>'createdTo')::timestamptz or (p->>'updatedFrom')::timestamptz >= (p->>'updatedTo')::timestamptz then raise exception 'Invalid date range'; end if;
+ -- Unknown categories must never drop a filter and broaden a read.
+ if p->>'category' is not null then
+   select count(*) into category_count from public.categories c where lower(c.name)=lower(p->>'category') or lower(c.slug)=lower(p->>'category');
+   if category_count<>1 then raise exception 'Category missing or ambiguous; use an exact slug or ID'; end if;
+ end if;
+ if p->>'categorySlug' is not null and not exists(select 1 from public.categories c where c.slug=p->>'categorySlug') then raise exception 'Unknown category slug'; end if;
+ if p->>'categoryId' is not null and not exists(select 1 from public.categories c where c.id=(p->>'categoryId')::uuid) then raise exception 'Unknown category ID'; end if;
+ if p->'categorySlugs' is not null and p->'categorySlugs'<>'null'::jsonb and exists(
+   select 1 from jsonb_array_elements_text(coalesce(nullif(p->'categorySlugs','null'::jsonb),'[]'::jsonb)) s(slug) where not exists(select 1 from public.categories c where c.slug=s.slug)
+ ) then raise exception 'Unknown category in categorySlugs'; end if;
+ select coalesce(p->>'currency',case when s.currency='BDT' and s.usd_to_bdt_rate>0 then 'BDT' else 'USD' end),s.usd_to_bdt_rate
+   into currency_code,fx from public.site_settings s where s.id=1;
+ currency_code:=coalesce(currency_code,p->>'currency','USD');
+ if currency_code not in ('USD','BDT') then raise exception 'Unsupported currency'; end if;
+ if currency_code='USD' then fx:=1; elsif fx is null or fx<=0 then raise exception 'Configure USD to BDT rate before querying BDT prices'; end if;
+
+ with base as materialized (
+   select pr.id,pr.name,pr.slug,pr.sku,pr.brand,pr.type,pr.manage_stock,pr.stock,pr.price_micros,pr.compare_at_price_micros,
+     pr.is_active,pr.is_featured,pr.created_at,pr.updated_at,pr.image_url,pr.image_media_id,c.name as category,c.slug as category_slug
+   from public.products pr left join public.categories c on c.id=pr.category_id
+   where (state='all' or pr.is_active=(state='active')) and (product_type='all' or pr.type=product_type)
+     and (p->>'productId' is null or pr.id=(p->>'productId')::uuid)
+     and (p->>'brand' is null or lower(pr.brand)=lower(p->>'brand'))
+     and (p->>'featured' is null or pr.is_featured=(p->>'featured')::boolean)
+     and (p->>'category' is null or lower(c.name)=lower(p->>'category') or lower(c.slug)=lower(p->>'category'))
+     and (p->>'categorySlug' is null or c.slug=p->>'categorySlug')
+     and (p->>'categoryId' is null or c.id=(p->>'categoryId')::uuid)
+     and (p->'categorySlugs' is null or p->'categorySlugs'='null'::jsonb or c.slug in(select jsonb_array_elements_text(coalesce(nullif(p->'categorySlugs','null'::jsonb),'[]'::jsonb))))
+ ), variants as materialized (
+   select pv.* from public.product_variations pv join base b on b.id=pv.product_id where b.type='variable'
+ ), aggregates as (
+   select product_id,sum(stock) filter(where is_active) as stock,min(price_micros) filter(where is_active) as price,
+     bool_or(compare_at_price_micros>price_micros) filter(where is_active) as on_sale
+   from variants group by product_id
+ ), catalog as (
+   select b.id,b.id as product_id,null::uuid as variation_id,b.name,b.name as product_name,b.slug,b.sku,b.brand,b.type,b.category,b.category_slug,
+     case when b.manage_stock then case when b.type='variable' then coalesce(a.stock,0) else b.stock end end as stock,
+     b.manage_stock as stock_managed,case when b.type='variable' then a.price else b.price_micros end as price_micros,
+     case when b.type='variable' then null else b.compare_at_price_micros end as compare_at_price_micros,
+     coalesce(case when b.type='variable' then a.on_sale else b.compare_at_price_micros>b.price_micros end,false) as on_sale,
+     b.is_featured as featured,case when b.is_active then 'active' else 'draft' end as status,null::text as variation_status,
+     b.created_at,b.updated_at,b.image_url,b.image_media_id,
+     lower(concat_ws(' ',b.name,b.slug,b.sku,b.brand,(select string_agg(concat_ws(' ',v.sku,v.label),' ') from variants v where v.product_id=b.id and v.is_active))) as search_text
+   from base b left join aggregates a on a.product_id=b.id where scope in ('products','skus') and (scope='products' or b.type='simple')
+     and (p->>'sku' is null or lower(b.sku)=lower(p->>'sku') or exists(select 1 from variants v where v.product_id=b.id and v.is_active and lower(v.sku)=lower(p->>'sku')))
+   union all
+   select v.id,b.id,v.id,b.name||case when v.label<>'' then ' — '||v.label else '' end,b.name,b.slug,v.sku,b.brand,b.type,b.category,b.category_slug,
+     case when b.manage_stock then v.stock end,b.manage_stock,v.price_micros,v.compare_at_price_micros,
+     coalesce(v.compare_at_price_micros>v.price_micros,false),b.is_featured,case when b.is_active then 'active' else 'draft' end,
+     case when v.is_active then 'active' else 'draft' end,v.created_at,v.updated_at,coalesce(v.image_url,b.image_url),coalesce(v.image_media_id,b.image_media_id),
+     lower(concat_ws(' ',b.name,b.slug,b.brand,v.sku,v.label))
+   from variants v join base b on b.id=v.product_id where scope in ('variations','skus') and (variant_state='all' or v.is_active=(variant_state='active'))
+     and (p->>'sku' is null or lower(v.sku)=lower(p->>'sku'))
+ ), priced as (
+   -- Compare what the administrator sees (rounded cents/poisha), not raw FX micros.
+   select c.*,round(c.price_micros::numeric*fx/10000)/100 as display_price from catalog c
+ ), matched as materialized (
+   select c.* from priced c where (p->>'id' is null or c.id=(p->>'id')::uuid)
+     and (p->'ids' is null or p->'ids'='null'::jsonb or c.id in(select value::uuid from jsonb_array_elements_text(coalesce(nullif(p->'ids','null'::jsonb),'[]'::jsonb))))
+     and (p->>'name' is null or position(lower(p->>'name') in lower(c.name))>0)
+     and (p->>'search' is null or position(lower(p->>'search') in c.search_text)>0)
+     and (p->>'onSale' is null or c.on_sale=(p->>'onSale')::boolean)
+     and (stock_state='all' or (stock_state='tracked' and c.stock_managed) or (stock_state='untracked' and not c.stock_managed)
+       or (stock_state='in_stock' and c.stock>0) or (stock_state='out_of_stock' and c.stock=0))
+     and public.nemesis_product_number_matches(c.stock,p->'stock') and public.nemesis_product_number_matches(c.display_price,p->'price')
+     and (p->'anyOf' is null or p->'anyOf'='null'::jsonb or exists(select 1 from jsonb_array_elements(coalesce(nullif(p->'anyOf','null'::jsonb),'[]'::jsonb)) x(cond)
+       where public.nemesis_product_number_matches(c.stock,cond->'stock') and public.nemesis_product_number_matches(c.display_price,cond->'price')))
+     and (p->>'createdFrom' is null or c.created_at>=(p->>'createdFrom')::timestamptz)
+     and (p->>'createdTo' is null or c.created_at<(p->>'createdTo')::timestamptz)
+     and (p->>'updatedFrom' is null or c.updated_at>=(p->>'updatedFrom')::timestamptz)
+     and (p->>'updatedTo' is null or c.updated_at<(p->>'updatedTo')::timestamptz)
+ ), ranked as (
+   select c.*,row_number() over(order by
+     case when sort_by='name' and direction='asc' then lower(c.name) end asc nulls last,
+     case when sort_by='name' and direction='desc' then lower(c.name) end desc nulls last,
+     case when sort_by='stock' and direction='asc' then c.stock end asc nulls last,
+     case when sort_by='stock' and direction='desc' then c.stock end desc nulls last,
+     case when sort_by='price' and direction='asc' then c.display_price end asc nulls last,
+     case when sort_by='price' and direction='desc' then c.display_price end desc nulls last,
+     case when sort_by='created_at' and direction='asc' then c.created_at when sort_by='updated_at' and direction='asc' then c.updated_at end asc nulls last,
+     case when sort_by='created_at' and direction='desc' then c.created_at when sort_by='updated_at' and direction='desc' then c.updated_at end desc nulls last,c.id) as rn
+   from matched c
+ ), page_rows as (
+   select r.*,m.path as image_path from ranked r left join public.media m on m.id=r.image_media_id
+   where rn>(page_no-1)*page_size and rn<=page_no*page_size
+ )
+ select jsonb_build_object('generatedAt',statement_timestamp(),'filters',p,'money',jsonb_build_object('currency',currency_code,'rate',fx),
+   'total',(select count(*) from matched),'hasMore',(select count(*) from matched)>page_no*page_size,
+   'metrics',(select jsonb_build_object('tracked',count(*) filter(where stock_managed),'untracked',count(*) filter(where not stock_managed),
+     'trackedUnits',coalesce(sum(stock),0),'outOfStock',count(*) filter(where stock=0),'lowStock',count(*) filter(where stock between 1 and 3)) from matched),
+   'rows',coalesce((select jsonb_agg(to_jsonb(r)-'rn'-'search_text'-'display_price'-'image_media_id' order by rn) from page_rows r),'[]'::jsonb)) into result;
+ return result;
+end $$;
+revoke all on function public.nemesis_products_read(jsonb) from public,anon;
+grant execute on function public.nemesis_products_read(jsonb) to authenticated;
+comment on function public.nemesis_products_read(jsonb) is 'Admin-only read-only full-catalog filters, exact cohort metrics and bounded product/variation pages. No cost/private financial fields.';
+
+-- =============================================================================
+-- 20261059000000_typography.sql
+-- (migration 20261059000000_typography.sql)
+-- =============================================================================
+
+-- Reuse the singleton settings row; NULL/legacy configurations use app defaults.
+-- Existing theme, currency and customer data are untouched.
+alter table public.site_settings add column if not exists typography jsonb;
+alter table public.site_settings add constraint site_settings_typography_valid check (
+ typography is null or (typography=jsonb_build_object('store',jsonb_build_object('title',typography#>>'{store,title}','body',typography#>>'{store,body}','button',typography#>>'{store,button}'),'admin',jsonb_build_object('title',typography#>>'{admin,title}','body',typography#>>'{admin,body}','button',typography#>>'{admin,button}'))
+ and jsonb_path_query_array(typography,'$.*.*') <@ '["Inter", "Poppins", "Roboto", "DM Sans", "Montserrat", "Plus Jakarta Sans", "Open Sans", "Lato", "Playfair Display", "Manrope", "Outfit", "Nunito Sans", "Lora", "Source Sans 3", "Work Sans", "Rubik", "Sora", "Space Grotesk", "Oswald", "Merriweather", "Geist", "IBM Plex Sans", "Public Sans"]'::jsonb)
+);
+comment on column public.site_settings.typography is 'Independent store/admin title, body and button font names; whitelisted self-hosted families. NULL uses application defaults.';
+
+-- Atomic partial-scope merge: saving Store never overwrites a concurrent Admin save.
+-- SECURITY INVOKER retains existing admin-only UPDATE RLS on site_settings.
+create function public.save_typography(p jsonb) returns jsonb
+language plpgsql security invoker set search_path=pg_catalog,public,pg_temp
+set statement_timeout='10s' as $$
+declare result jsonb;
+begin
+ if auth.uid() is null or not public.is_admin() then raise exception 'Administrator access required' using errcode='42501'; end if;
+ if p is null or jsonb_typeof(p)<>'object' or p='{}'::jsonb then raise exception 'Invalid typography changes'; end if;
+ if exists(select 1 from jsonb_object_keys(p) x(key) where key not in ('store','admin')) then raise exception 'Unknown typography scope'; end if;
+ update public.site_settings set typography=coalesce(typography,'{"store": {"title": "Plus Jakarta Sans", "body": "Inter", "button": "Inter"}, "admin": {"title": "Inter", "body": "Inter", "button": "Inter"}}'::jsonb)||p where id=1 returning typography into result;
+ if not found then raise exception 'Settings record is missing'; end if;
+ return result;
+end $$;
+revoke all on function public.save_typography(jsonb) from public,anon;
+grant execute on function public.save_typography(jsonb) to authenticated;
+
+-- Opt this non-secret configuration into the existing client bootstrap export.
+do $$ begin
+ if to_regclass('public.client_setup_fields') is not null then
+   insert into public.client_setup_fields(table_name,column_name) values('site_settings','typography') on conflict do nothing;
+ end if;
+end $$;
+
+-- =============================================================================
+-- 20261060000000_static_homepage.sql
+-- (migration 20261060000000_static_homepage.sql)
+-- =============================================================================
+
+-- NULL keeps the current storefront. Stable identity survives page slug changes;
+-- deletion restores the default without retaining a dangling reference.
+alter table public.site_settings
+  add column if not exists home_page_id uuid references public.pages(id) on delete set null;
+comment on column public.site_settings.home_page_id is
+  'Published CMS page rendered at /; NULL uses the built-in storefront. Draft/missing pages fall back at runtime.';
+-- Do not add this content-specific foreign key to client_setup_fields: exported
+-- client setups intentionally do not contain the source store's page rows.
+
+-- =============================================================================
+-- 20261061000000_coupons_reviews.sql
+-- (migration 20261061000000_coupons_reviews.sql)
+-- =============================================================================
+
+-- =============================================================================
+--  Woo Solution – coupons & product reviews
+--
+--  COUPONS
+--    coupons             one row per promo code: percent or fixed-amount
+--                        discount, optional free shipping, minimum spend,
+--                        max-discount cap, optional start/expiry, total and
+--                        per-customer usage limits, first-order-only flag and
+--                        a scope (whole order / sale categories / products).
+--    coupon_redemptions  one row per order that used a coupon (the ledger
+--                        behind the per-customer limits; cancelling the
+--                        order releases the redemption again).
+--    orders gains `discount_micros`, `coupon_code` and `coupon_id`.
+--    `place_order(jsonb, jsonb, text)` re-prices AND re-validates the coupon
+--    server-side (the 2-argument version is dropped), and `preview_coupon()`
+--    prices a cart without placing anything so the cart/checkout can show
+--    the saving instantly. Coupon rows are never readable by customers –
+--    only these two SECURITY DEFINER functions look a code up.
+--
+--  REVIEWS
+--    product_reviews     rating 1–5, title, body, moderation status, a
+--                        verified-purchase flag computed from completed
+--                        orders, an author snapshot (like order_messages),
+--                        a store response and a denormalised helpful count.
+--                        Verified purchases publish immediately; every other
+--                        review waits for an admin in Nemesis → Reviews.
+--    review_helpful_votes one vote per customer per review (toggle RPC).
+--    product_rating_stats view behind the stars on cards / product pages.
+--    New *pending* reviews notify every admin (kind `product_review`).
+--
+--  Run in the Supabase SQL Editor *after* 20261060000000_static_homepage.sql,
+--  together with the matching app release (checkout calls the new
+--  3-argument `place_order`). Idempotent where practical: safe to re-run.
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+--  1. COUPONS
+-- -----------------------------------------------------------------------------
+create table if not exists public.coupons (
+  id                   uuid primary key default gen_random_uuid(),
+  code                 text not null check (length(trim(code)) between 3 and 40),
+  description          text check (description is null or length(description) <= 200),
+  discount_type        text not null default 'percent' check (discount_type in ('percent', 'fixed')),
+  percent_off          numeric(5, 2),
+  amount_off_micros    bigint,
+  max_discount_micros  bigint check (max_discount_micros is null or max_discount_micros >= 0),
+  min_subtotal_micros  bigint not null default 0 check (min_subtotal_micros >= 0),
+  free_shipping        boolean not null default false,
+  scope_type           text not null default 'all' check (scope_type in ('all', 'categories', 'products')),
+  scope_ids            uuid[] not null default '{}',
+  first_order_only     boolean not null default false,
+  starts_at            timestamptz,
+  expires_at           timestamptz,
+  usage_limit          integer check (usage_limit is null or usage_limit > 0),
+  per_user_limit       integer not null default 1 check (per_user_limit > 0),
+  times_redeemed       integer not null default 0 check (times_redeemed >= 0),
+  is_active            boolean not null default true,
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now(),
+  check (
+    (discount_type = 'percent' and percent_off > 0 and percent_off <= 100 and amount_off_micros is null)
+    or (discount_type = 'fixed' and amount_off_micros > 0 and percent_off is null)
+    or (free_shipping and percent_off is null and amount_off_micros is null)
+  ),
+  check (starts_at is null or expires_at is null or expires_at > starts_at),
+  check (scope_type = 'all' or cardinality(scope_ids) > 0)
+);
+
+create unique index if not exists coupons_code_upper_idx on public.coupons (upper(code));
+create index if not exists coupons_active_idx on public.coupons (is_active, expires_at);
+
+comment on table public.coupons is 'Promo codes managed under Nemesis → Coupons (admin-only reads; checkout uses SECURITY DEFINER RPCs)';
+comment on column public.coupons.scope_ids is 'Category or product ids the discount is limited to when scope_type <> ''all''';
+
+drop trigger if exists coupons_set_updated_at on public.coupons;
+create trigger coupons_set_updated_at
+  before update on public.coupons
+  for each row execute function public.set_updated_at();
+
+create table if not exists public.coupon_redemptions (
+  id              uuid primary key default gen_random_uuid(),
+  coupon_id       uuid not null references public.coupons (id) on delete cascade,
+  user_id         uuid not null references public.profiles (id) on delete cascade,
+  order_id        uuid not null unique references public.orders (id) on delete cascade,
+  discount_micros bigint not null default 0 check (discount_micros >= 0),
+  released_at     timestamptz,
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists coupon_redemptions_coupon_idx on public.coupon_redemptions (coupon_id);
+create index if not exists coupon_redemptions_user_active_idx
+  on public.coupon_redemptions (user_id, coupon_id) where released_at is null;
+
+comment on table public.coupon_redemptions is 'One row per order that redeemed a coupon; released_at is stamped when the order is cancelled';
+
+alter table public.coupons enable row level security;
+alter table public.coupon_redemptions enable row level security;
+
+drop policy if exists "Admins can manage coupons" on public.coupons;
+create policy "Admins can manage coupons"
+  on public.coupons for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists "Admins can manage coupon redemptions" on public.coupon_redemptions;
+create policy "Admins can manage coupon redemptions"
+  on public.coupon_redemptions for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists "Customers can read their own coupon redemptions" on public.coupon_redemptions;
+create policy "Customers can read their own coupon redemptions"
+  on public.coupon_redemptions for select to authenticated
+  using (user_id = auth.uid());
+
+revoke all on public.coupons from anon;
+revoke all on public.coupon_redemptions from anon;
+grant select, insert, update, delete on public.coupons to authenticated;
+grant select on public.coupon_redemptions to authenticated;
+grant all on public.coupons to service_role;
+grant all on public.coupon_redemptions to service_role;
+
+-- -----------------------------------------------------------------------------
+--  2. ORDERS remember the coupon they were placed with
+-- -----------------------------------------------------------------------------
+alter table public.orders
+  add column if not exists discount_micros bigint not null default 0,
+  add column if not exists coupon_code text,
+  add column if not exists coupon_id uuid references public.coupons (id) on delete set null;
+
+alter table public.orders drop constraint if exists orders_discount_nonnegative;
+alter table public.orders add constraint orders_discount_nonnegative check (discount_micros >= 0);
+
+comment on column public.orders.discount_micros is 'Coupon discount in USD micros, already subtracted inside total_micros';
+comment on column public.orders.coupon_code is 'Snapshot of the redeemed code (survives the coupon being renamed/deleted)';
+
+-- -----------------------------------------------------------------------------
+--  3. PRODUCT REVIEWS
+-- -----------------------------------------------------------------------------
+create table if not exists public.product_reviews (
+  id                   uuid primary key default gen_random_uuid(),
+  product_id           uuid not null references public.products (id) on delete cascade,
+  user_id              uuid references public.profiles (id) on delete set null,
+  author_name          text not null default 'Customer',
+  author_avatar_url    text,
+  rating               integer not null check (rating between 1 and 5),
+  title                text check (title is null or length(title) <= 120),
+  body                 text not null check (length(trim(body)) between 1 and 2000),
+  status               text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  is_verified_purchase boolean not null default false,
+  helpful_count        integer not null default 0 check (helpful_count >= 0),
+  response_text        text check (response_text is null or length(response_text) <= 1000),
+  response_at          timestamptz,
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now()
+);
+
+create unique index if not exists product_reviews_product_user_idx
+  on public.product_reviews (product_id, user_id) where user_id is not null;
+create index if not exists product_reviews_product_status_idx
+  on public.product_reviews (product_id, status, created_at desc);
+create index if not exists product_reviews_status_idx
+  on public.product_reviews (status, created_at desc);
+
+comment on table public.product_reviews is 'Customer reviews; verified purchases auto-approve, the rest wait in Nemesis → Reviews';
+comment on column public.product_reviews.author_name is 'Snapshot at submission time, so the review keeps rendering after a profile edit/deletion';
+
+drop trigger if exists product_reviews_set_updated_at on public.product_reviews;
+create trigger product_reviews_set_updated_at
+  before update on public.product_reviews
+  for each row execute function public.set_updated_at();
+
+create table if not exists public.review_helpful_votes (
+  review_id  uuid not null references public.product_reviews (id) on delete cascade,
+  user_id    uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (review_id, user_id)
+);
+
+alter table public.product_reviews enable row level security;
+alter table public.review_helpful_votes enable row level security;
+
+drop policy if exists "Approved reviews are viewable by everyone" on public.product_reviews;
+create policy "Approved reviews are viewable by everyone"
+  on public.product_reviews for select
+  using (status = 'approved' or user_id = auth.uid() or public.is_admin());
+
+drop policy if exists "Admins can moderate reviews" on public.product_reviews;
+create policy "Admins can moderate reviews"
+  on public.product_reviews for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists "Customers can read their own helpful votes" on public.review_helpful_votes;
+create policy "Customers can read their own helpful votes"
+  on public.review_helpful_votes for select to authenticated
+  using (user_id = auth.uid() or public.is_admin());
+
+grant select on public.product_reviews to anon, authenticated;
+grant update, delete on public.product_reviews to authenticated;
+grant select on public.review_helpful_votes to authenticated;
+grant all on public.product_reviews to service_role;
+grant all on public.review_helpful_votes to service_role;
+
+-- helpful_count follows the votes table
+create or replace function public.sync_review_helpful_count()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    update public.product_reviews set helpful_count = helpful_count + 1 where id = new.review_id;
+    return new;
+  elsif tg_op = 'DELETE' then
+    update public.product_reviews set helpful_count = greatest(helpful_count - 1, 0) where id = old.review_id;
+    return old;
+  end if;
+  return null;
+end $$;
+
+drop trigger if exists review_helpful_votes_sync_count on public.review_helpful_votes;
+create trigger review_helpful_votes_sync_count
+  after insert or delete on public.review_helpful_votes
+  for each row execute function public.sync_review_helpful_count();
+
+-- Stars on cards / product pages read this (approved reviews only)
+create or replace view public.product_rating_stats as
+  select product_id,
+         count(*)::integer as review_count,
+         round(avg(rating)::numeric, 2) as avg_rating
+    from public.product_reviews
+   where status = 'approved'
+   group by product_id;
+
+grant select on public.product_rating_stats to anon, authenticated;
+
+-- -----------------------------------------------------------------------------
+--  4. NOTIFICATIONS: pending reviews reach every admin
+-- -----------------------------------------------------------------------------
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('new_order', 'order_status', 'order_cancelled', 'payment', 'order_message', 'product_review'));
+
+create or replace function public.notify_admins_new_review()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_product_name text;
+begin
+  if new.status <> 'pending' then
+    return new;
+  end if;
+  select name into v_product_name from public.products where id = new.product_id;
+  insert into public.notifications (recipient_id, kind, title, body, href, order_id, actor_name)
+  select a.id, 'product_review',
+         'New review to moderate',
+         left(coalesce(nullif(new.title, ''), new.body), 140),
+         '/nemesis/reviews', null,
+         coalesce(v_product_name, new.author_name)
+    from public.notification_admins(new.user_id) as a(id);
+  return new;
+end $$;
+
+drop trigger if exists product_reviews_notify_admins on public.product_reviews;
+create trigger product_reviews_notify_admins
+  after insert on public.product_reviews
+  for each row execute function public.notify_admins_new_review();
+
+-- -----------------------------------------------------------------------------
+--  5. COUPON PRICING (shared maths for preview + checkout)
+-- -----------------------------------------------------------------------------
+create or replace function public.coupon_discount_for(p_coupon public.coupons, p_eligible_micros bigint)
+returns bigint
+language plpgsql
+immutable
+set search_path = public
+as $$
+declare
+  v_discount bigint := 0;
+begin
+  if coalesce(p_eligible_micros, 0) <= 0 then
+    return 0;
+  end if;
+  if p_coupon.discount_type = 'percent' and p_coupon.percent_off is not null then
+    v_discount := floor(p_eligible_micros * p_coupon.percent_off / 100)::bigint;
+  elsif p_coupon.discount_type = 'fixed' and p_coupon.amount_off_micros is not null then
+    v_discount := least(p_coupon.amount_off_micros, p_eligible_micros);
+  end if;
+  if p_coupon.max_discount_micros is not null then
+    v_discount := least(v_discount, p_coupon.max_discount_micros);
+  end if;
+  return greatest(least(v_discount, p_eligible_micros), 0);
+end $$;
+
+revoke all on function public.coupon_discount_for(public.coupons, bigint) from public;
+
+-- Prices a cart and validates a code without placing anything. Readable answers
+-- only: an unknown code and an expired code look the same from the outside.
+create or replace function public.preview_coupon(p_code text, p_items jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_code text := nullif(upper(trim(coalesce(p_code, ''))), '');
+  v_coupon public.coupons%rowtype;
+  v_item jsonb;
+  v_product public.products%rowtype;
+  v_variation_id uuid;
+  v_qty integer;
+  v_price bigint;
+  v_subtotal bigint := 0;
+  v_eligible bigint := 0;
+  v_discount bigint := 0;
+  v_shipping bigint := 0;
+  v_used integer;
+begin
+  if v_code is null then
+    return jsonb_build_object('ok', false, 'message', 'Enter a coupon code.');
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    return jsonb_build_object('ok', false, 'message', 'Your cart is empty.');
+  end if;
+
+  select * into v_coupon from public.coupons where upper(code) = v_code;
+  if not found or not v_coupon.is_active
+     or (v_coupon.starts_at is not null and v_coupon.starts_at > now())
+     or (v_coupon.expires_at is not null and v_coupon.expires_at <= now())
+     or (v_coupon.usage_limit is not null and v_coupon.times_redeemed >= v_coupon.usage_limit) then
+    return jsonb_build_object('ok', false, 'message', 'That coupon code is not valid.');
+  end if;
+
+  if v_user_id is not null then
+    select count(*) into v_used
+      from public.coupon_redemptions
+     where coupon_id = v_coupon.id and user_id = v_user_id and released_at is null;
+    if v_used >= v_coupon.per_user_limit then
+      return jsonb_build_object('ok', false, 'message', 'You have already used this coupon.');
+    end if;
+    if v_coupon.first_order_only and exists (
+      select 1 from public.orders where user_id = v_user_id and status <> 'cancelled'
+    ) then
+      return jsonb_build_object('ok', false, 'message', 'This coupon is for first orders only.');
+    end if;
+  end if;
+
+  for v_item in select * from jsonb_array_elements(p_items) loop
+    v_qty := coalesce((v_item ->> 'quantity')::integer, 0);
+    if v_qty <= 0 then
+      return jsonb_build_object('ok', false, 'message', 'Invalid quantity in your cart.');
+    end if;
+
+    select * into v_product from public.products
+     where id = (v_item ->> 'product_id')::uuid and is_active = true;
+    if not found then
+      return jsonb_build_object('ok', false, 'message', 'A product in your cart is no longer available.');
+    end if;
+
+    v_variation_id := nullif(coalesce(v_item ->> 'variation_id', ''), '')::uuid;
+    if v_product.type = 'variable' and v_variation_id is null then
+      return jsonb_build_object('ok', false, 'message', 'Choose an available variation in your cart first.');
+    end if;
+    if v_variation_id is not null then
+      select price_micros into v_price from public.product_variations
+       where id = v_variation_id and product_id = v_product.id and is_active;
+      if v_price is null then
+        return jsonb_build_object('ok', false, 'message', 'An option in your cart is no longer available.');
+      end if;
+    else
+      v_price := v_product.price_micros;
+    end if;
+
+    v_subtotal := v_subtotal + v_price * v_qty;
+    if v_coupon.scope_type = 'all'
+       or (v_coupon.scope_type = 'categories' and v_product.category_id = any (v_coupon.scope_ids))
+       or (v_coupon.scope_type = 'products' and v_product.id = any (v_coupon.scope_ids)) then
+      v_eligible := v_eligible + v_price * v_qty;
+    end if;
+  end loop;
+
+  if v_eligible <= 0 then
+    return jsonb_build_object('ok', false, 'message', 'This coupon does not apply to the items in your cart.');
+  end if;
+  if v_eligible < v_coupon.min_subtotal_micros then
+    return jsonb_build_object('ok', false, 'message', 'Your cart does not reach the minimum spend for this coupon.');
+  end if;
+
+  v_discount := public.coupon_discount_for(v_coupon, v_eligible);
+  if v_discount <= 0 and not v_coupon.free_shipping then
+    return jsonb_build_object('ok', false, 'message', 'This coupon does not apply to the items in your cart.');
+  end if;
+
+  v_shipping := case when v_coupon.free_shipping then 0 else public.calculate_shipping(v_subtotal - v_discount) end;
+
+  return jsonb_build_object(
+    'ok', true,
+    'code', v_coupon.code,
+    'description', v_coupon.description,
+    'discount_type', v_coupon.discount_type,
+    'percent_off', v_coupon.percent_off,
+    'amount_off_micros', v_coupon.amount_off_micros,
+    'free_shipping', v_coupon.free_shipping,
+    'discount_micros', v_discount,
+    'subtotal_micros', v_subtotal,
+    'eligible_micros', v_eligible,
+    'shipping_micros', v_shipping,
+    'total_micros', v_subtotal - v_discount + v_shipping,
+    'expires_at', v_coupon.expires_at
+  );
+end $$;
+
+revoke all on function public.preview_coupon(text, jsonb) from public;
+grant execute on function public.preview_coupon(text, jsonb) to anon, authenticated;
+
+-- -----------------------------------------------------------------------------
+--  6. PLACE ORDER – the 20261027000000 body (with the 20261050000000
+--     per-product stock patch applied) plus coupon redemption. The old
+--     2-argument signature is dropped at the end of this migration.
+-- -----------------------------------------------------------------------------
+create or replace function public.place_order(p_items jsonb, p_shipping jsonb, p_coupon_code text default null)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id     uuid := auth.uid();
+  v_email       text;
+  v_order_id    uuid;
+  v_item        jsonb;
+  v_product     public.products%rowtype;
+  v_variation   public.product_variations%rowtype;
+  v_variation_id uuid;
+  v_qty         integer;
+  v_price       bigint;
+  v_stock       integer;
+  v_label       text;
+  v_subtotal    bigint := 0;
+  v_shipping    bigint;
+  v_managed     boolean;
+  v_currency    text := 'USD';
+  v_rate        numeric := 1;
+  v_coupon      public.coupons%rowtype;
+  v_coupon_code text := nullif(upper(trim(coalesce(p_coupon_code, ''))), '');
+  v_eligible    bigint := 0;
+  v_discount    bigint := 0;
+  v_used        integer;
+begin
+  if v_user_id is null then
+    raise exception 'You must be signed in to place an order.';
+  end if;
+
+  if p_items is null
+     or jsonb_typeof(p_items) <> 'array'
+     or jsonb_array_length(p_items) = 0 then
+    raise exception 'Your cart is empty.';
+  end if;
+
+  if coalesce(p_shipping ->> 'name', '') = ''
+     or coalesce(p_shipping ->> 'address_line1', '') = ''
+     or coalesce(p_shipping ->> 'city', '') = ''
+     or coalesce(p_shipping ->> 'country', '') = '' then
+    raise exception 'Please fill in all required shipping fields.';
+  end if;
+
+  select email into v_email from auth.users where id = v_user_id;
+
+  -- the currency the customer is looking at right now (BDT only with a usable rate)
+  select case when s.currency = 'BDT' and coalesce(s.usd_to_bdt_rate, 0) > 0 then 'BDT' else 'USD' end,
+         case when s.currency = 'BDT' and coalesce(s.usd_to_bdt_rate, 0) > 0 then s.usd_to_bdt_rate else 1 end
+    into v_currency, v_rate
+    from public.site_settings s
+   where s.id = 1;
+  if v_currency is null then
+    v_currency := 'USD';
+    v_rate := 1;
+  end if;
+
+  -- lock the coupon row first so concurrent checkouts cannot race its limits
+  if v_coupon_code is not null then
+    select * into v_coupon from public.coupons where upper(code) = v_coupon_code for update;
+    if not found or not v_coupon.is_active
+       or (v_coupon.starts_at is not null and v_coupon.starts_at > now())
+       or (v_coupon.expires_at is not null and v_coupon.expires_at <= now())
+       or (v_coupon.usage_limit is not null and v_coupon.times_redeemed >= v_coupon.usage_limit) then
+      raise exception 'That coupon code is not valid.';
+    end if;
+
+    select count(*) into v_used
+      from public.coupon_redemptions
+     where coupon_id = v_coupon.id and user_id = v_user_id and released_at is null;
+    if v_used >= v_coupon.per_user_limit then
+      raise exception 'You have already used this coupon.';
+    end if;
+
+    if v_coupon.first_order_only and exists (
+      select 1 from public.orders where user_id = v_user_id and status <> 'cancelled'
+    ) then
+      raise exception 'This coupon is for first orders only.';
+    end if;
+  end if;
+
+  insert into public.orders (
+    user_id, customer_email, payment_method,
+    shipping_name, shipping_phone,
+    shipping_address_line1, shipping_address_line2,
+    shipping_city, shipping_postal_code, shipping_country,
+    notes, currency, exchange_rate
+  ) values (
+    v_user_id, v_email, 'cod',
+    p_shipping ->> 'name', nullif(p_shipping ->> 'phone', ''),
+    p_shipping ->> 'address_line1', nullif(p_shipping ->> 'address_line2', ''),
+    p_shipping ->> 'city', nullif(p_shipping ->> 'postal_code', ''), p_shipping ->> 'country',
+    nullif(p_shipping ->> 'notes', ''), v_currency, v_rate
+  )
+  returning id into v_order_id;
+
+  for v_item in select * from jsonb_array_elements(p_items) loop
+    v_qty := (v_item ->> 'quantity')::integer;
+
+    if v_qty is null or v_qty <= 0 then
+      raise exception 'Invalid quantity.';
+    end if;
+
+    -- lock the product row so concurrent checkouts cannot oversell
+    select * into v_product
+    from public.products
+    where id = (v_item ->> 'product_id')::uuid
+      and is_active = true
+    for update;
+
+    if not found then
+      raise exception 'A product in your cart is no longer available.';
+    end if;
+
+    v_managed := v_product.manage_stock;
+    v_variation_id := nullif(coalesce(v_item ->> 'variation_id', ''), '')::uuid;
+    v_label        := null;
+    if v_product.type = 'variable' and v_variation_id is null then
+      raise exception 'Choose an available variation for %.', v_product.name;
+    end if;
+    if v_product.type <> 'variable' and v_variation_id is not null then
+      raise exception 'This product does not have variations.';
+    end if;
+
+    if v_variation_id is not null then
+      -- a variable product: price and stock come from the chosen combination
+      select * into v_variation
+      from public.product_variations
+      where id = v_variation_id
+        and product_id = v_product.id
+        and is_active
+      for update;
+
+      if not found then
+        raise exception 'That option of % is no longer available.', v_product.name;
+      end if;
+
+      v_price := v_variation.price_micros;
+      v_stock := v_variation.stock;
+      v_label := coalesce(nullif(v_variation.label, ''), 'Selected option');
+
+      if v_managed and v_stock < v_qty then
+        raise exception 'Only % left of % – %.', v_stock, v_product.name, v_label;
+      end if;
+
+      insert into public.order_items (
+        order_id, product_id, product_name, product_slug, image_url,
+        unit_price_micros, quantity, variation_id, variation_label, stock_deducted
+      ) values (
+        v_order_id, v_product.id, v_product.name, v_product.slug,
+        coalesce(v_variation.image_url, v_product.image_url),
+        v_price, v_qty, v_variation.id, v_label, v_managed
+      );
+
+      if v_managed then
+        update public.product_variations set stock = stock - v_qty where id = v_variation.id;
+      end if;
+    else
+      v_price := v_product.price_micros;
+      v_stock := v_product.stock;
+
+      if v_managed and v_stock < v_qty then
+        raise exception 'Only % left of %.', v_stock, v_product.name;
+      end if;
+
+      insert into public.order_items (
+        order_id, product_id, product_name, product_slug, image_url, unit_price_micros, quantity, stock_deducted
+      ) values (
+        v_order_id, v_product.id, v_product.name, v_product.slug,
+        v_product.image_url, v_price, v_qty, v_managed
+      );
+
+      if v_managed then
+        update public.products set stock = stock - v_qty where id = v_product.id;
+      end if;
+    end if;
+
+    v_subtotal := v_subtotal + v_price * v_qty;
+    if v_coupon_code is not null and (
+      v_coupon.scope_type = 'all'
+      or (v_coupon.scope_type = 'categories' and v_product.category_id = any (v_coupon.scope_ids))
+      or (v_coupon.scope_type = 'products' and v_product.id = any (v_coupon.scope_ids))
+    ) then
+      v_eligible := v_eligible + v_price * v_qty;
+    end if;
+  end loop;
+
+  if v_coupon_code is not null then
+    if v_eligible <= 0 then
+      raise exception 'This coupon does not apply to the items in your cart.';
+    end if;
+    if v_eligible < v_coupon.min_subtotal_micros then
+      raise exception 'Your cart does not reach the minimum spend for this coupon.';
+    end if;
+    v_discount := public.coupon_discount_for(v_coupon, v_eligible);
+    if v_discount <= 0 and not v_coupon.free_shipping then
+      raise exception 'This coupon does not apply to the items in your cart.';
+    end if;
+  end if;
+
+  v_shipping := case
+    when v_coupon_code is not null and v_coupon.free_shipping then 0
+    else public.calculate_shipping(v_subtotal - v_discount)
+  end;
+
+  update public.orders
+     set subtotal_micros = v_subtotal,
+         discount_micros = v_discount,
+         coupon_code     = case when v_coupon_code is not null then v_coupon.code else null end,
+         coupon_id       = case when v_coupon_code is not null then v_coupon.id else null end,
+         shipping_micros = v_shipping,
+         total_micros    = v_subtotal - v_discount + v_shipping
+   where id = v_order_id;
+
+  if v_coupon_code is not null then
+    insert into public.coupon_redemptions (coupon_id, user_id, order_id, discount_micros)
+    values (v_coupon.id, v_user_id, v_order_id, v_discount);
+    update public.coupons set times_redeemed = times_redeemed + 1 where id = v_coupon.id;
+  end if;
+
+  return v_order_id;
+end $$;
+
+revoke all on function public.place_order(jsonb, jsonb, text) from public;
+grant execute on function public.place_order(jsonb, jsonb, text) to authenticated;
+
+-- one checkout entry point only (deploy this migration with the app release)
+drop function if exists public.place_order(jsonb, jsonb);
+
+-- Cancelling an order gives the coupon use back
+create or replace function public.release_coupon_on_cancel()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_coupon_id uuid;
+begin
+  if old.status <> 'cancelled' and new.status = 'cancelled' then
+    for v_coupon_id in
+      update public.coupon_redemptions
+         set released_at = now()
+       where order_id = new.id and released_at is null
+      returning coupon_id
+    loop
+      update public.coupons
+         set times_redeemed = greatest(times_redeemed - 1, 0)
+       where id = v_coupon_id;
+    end loop;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists orders_release_coupon_on_cancel on public.orders;
+create trigger orders_release_coupon_on_cancel
+  after update of status on public.orders
+  for each row execute function public.release_coupon_on_cancel();
+
+-- -----------------------------------------------------------------------------
+--  7. REVIEW SUBMISSION + HELPFUL VOTES (the storefront's only write paths)
+-- -----------------------------------------------------------------------------
+create or replace function public.submit_product_review(p_product_id uuid, p_rating integer, p_title text, p_body text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_title text := nullif(left(trim(coalesce(p_title, '')), 120), '');
+  v_body text := left(trim(coalesce(p_body, '')), 2000);
+  v_name text;
+  v_avatar text;
+  v_verified boolean := false;
+  v_review public.product_reviews%rowtype;
+begin
+  if v_user_id is null then
+    raise exception 'Please sign in to write a review.';
+  end if;
+  if p_rating is null or p_rating < 1 or p_rating > 5 then
+    raise exception 'Please choose a star rating.';
+  end if;
+  if length(v_body) < 3 then
+    raise exception 'Please write a little more about the product.';
+  end if;
+  if not exists (select 1 from public.products where id = p_product_id and is_active) then
+    raise exception 'That product is no longer available.';
+  end if;
+
+  select coalesce(nullif(trim(full_name), ''), 'Customer'), avatar_url
+    into v_name, v_avatar
+    from public.profiles where id = v_user_id;
+
+  v_verified := exists (
+    select 1
+      from public.orders o
+      join public.order_items oi on oi.order_id = o.id
+     where o.user_id = v_user_id and o.status = 'completed' and oi.product_id = p_product_id
+  );
+
+  insert into public.product_reviews (
+    product_id, user_id, author_name, author_avatar_url, rating, title, body,
+    status, is_verified_purchase
+  ) values (
+    p_product_id, v_user_id, coalesce(v_name, 'Customer'), v_avatar, p_rating, v_title, v_body,
+    case when v_verified then 'approved' else 'pending' end, v_verified
+  )
+  on conflict (product_id, user_id) where user_id is not null
+  do update set rating = excluded.rating,
+                title = excluded.title,
+                body = excluded.body,
+                author_name = excluded.author_name,
+                author_avatar_url = excluded.author_avatar_url,
+                status = excluded.status,
+                is_verified_purchase = excluded.is_verified_purchase
+  returning * into v_review;
+
+  return to_jsonb(v_review);
+end $$;
+
+revoke all on function public.submit_product_review(uuid, integer, text, text) from public;
+grant execute on function public.submit_product_review(uuid, integer, text, text) to authenticated;
+
+create or replace function public.toggle_review_helpful(p_review_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_review public.product_reviews%rowtype;
+  v_helpful boolean;
+begin
+  if v_user_id is null then
+    raise exception 'Please sign in to vote.';
+  end if;
+  select * into v_review from public.product_reviews where id = p_review_id and status = 'approved';
+  if not found then
+    raise exception 'That review is no longer available.';
+  end if;
+  if v_review.user_id = v_user_id then
+    raise exception 'You cannot vote on your own review.';
+  end if;
+
+  if exists (select 1 from public.review_helpful_votes where review_id = p_review_id and user_id = v_user_id) then
+    delete from public.review_helpful_votes where review_id = p_review_id and user_id = v_user_id;
+    v_helpful := false;
+  else
+    insert into public.review_helpful_votes (review_id, user_id) values (p_review_id, v_user_id);
+    v_helpful := true;
+  end if;
+
+  select helpful_count into v_review.helpful_count from public.product_reviews where id = p_review_id;
+  return jsonb_build_object('helpful', v_helpful, 'helpful_count', coalesce(v_review.helpful_count, 0));
+end $$;
+
+revoke all on function public.toggle_review_helpful(uuid) from public;
+grant execute on function public.toggle_review_helpful(uuid) to authenticated;
+
+notify pgrst, 'reload schema';
+
 
 -- =============================================================================
 --  API role grants
@@ -4317,3 +6420,51 @@ on conflict (slug) do update set
   stock                   = excluded.stock,
   is_featured             = excluded.is_featured,
   created_at              = excluded.created_at;
+
+-- ── Demo coupons (migration 20261061000000) ─────────────────────────────────
+-- Safe to re-run: an existing code (any case) is left untouched.
+insert into public.coupons (
+  code, description, discount_type, percent_off, amount_off_micros,
+  min_subtotal_micros, free_shipping, first_order_only, usage_limit, per_user_limit
+) values
+  ('WELCOME10', '10% off your first order – welcome aboard!', 'percent', 10, null, 0, false, true, null, 1),
+  ('FREESHIP',  'Free shipping on orders over $75',            'percent', null, null, 75 * 1000000, true, false, null, 5),
+  ('SAVE20',    '$20 off orders over $100',                    'fixed',   null, 20 * 1000000, 100 * 1000000, false, false, 100, 1)
+on conflict ((upper(code))) do nothing;
+
+-- ── Demo reviews (migration 20261061000000) ─────────────────────────────────
+-- Snapshot authors (no demo auth users exist at seed time). Guarded by
+-- author name + product so re-running the seed never duplicates them.
+insert into public.product_reviews (
+  product_id, user_id, author_name, rating, title, body, status,
+  is_verified_purchase, helpful_count, response_text, response_at, created_at
+)
+select p.id, null, d.author, d.rating, d.title, d.body, 'approved', true, d.helpful, d.response,
+       case when d.response is null then null else now() - interval '2 days' end,
+       now() - (d.days_ago * interval '1 day')
+  from public.products p
+  join (values
+    ('wireless-noise-canceling-headphones', 'Amelia R.', 5, 'Worth every penny',
+     'The noise cancelling on a long-haul flight was unreal – engine hum just disappeared. Battery easily lasted the whole trip and the case feels premium.', 14, null, 3),
+    ('wireless-noise-canceling-headphones', 'Daniel K.', 5, 'Best headphones I have owned',
+     'Upgraded from an older pair and the difference is night and day. Calls are crystal clear even on a windy street.', 9,
+     'Thank you, Daniel! Tip: the companion EQ preset "Excited" makes calls even clearer outdoors.', 6),
+    ('wireless-noise-canceling-headphones', 'Priya S.', 4, 'Great sound, snug fit',
+     'Sound quality and ANC are excellent. They felt a little tight during the first week but have loosened up nicely since.', 3, null, 11),
+    ('smart-watch-pro-edition', 'Marcus T.', 5, 'Replaced my fitness tracker and my watch',
+     'GPS accuracy on runs matches my chest-strap setup, and sleep tracking has genuinely changed my routine. Titanium body still looks brand new.', 11, null, 4),
+    ('smart-watch-pro-edition', 'Lena W.', 4, 'Excellent, app could be simpler',
+     'The hardware is flawless and the display is gorgeous outdoors. The companion app buries a few settings, but updates keep improving it.', 4, null, 9),
+    ('quietcomfort-ultra-wireless-earbuds', 'Omar H.', 5, 'Tiny, mighty, silent',
+     'I work next to a construction site and these turn it into a library. Spatial audio for movies is a lovely bonus.', 7, null, 2),
+    ('quietcomfort-ultra-wireless-earbuds', 'Sofia M.', 3, 'Good buds, case is bulky',
+     'Comfort and ANC are top tier, but the charging case is bigger than rivals and noticeably fills a jeans pocket.', 1,
+     'Thanks for the honest feedback, Sofia – we have passed the case-size note to our buying team for the next range review.', 7),
+    ('ultraslim-pro-14-laptop', 'James L.', 5, 'My whole office in 1.2 kg',
+     'Compiles our monorepo faster than my desktop did, stays quiet, and I stopped carrying the charger for day trips.', 18, null, 5)
+  ) as d(slug, author, rating, title, body, helpful, response, days_ago)
+    on d.slug = p.slug
+ where not exists (
+   select 1 from public.product_reviews r
+    where r.product_id = p.id and r.author_name = d.author
+ );

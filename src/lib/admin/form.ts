@@ -70,6 +70,8 @@ export function friendlyError(e: unknown): string {
     return "The menu table is missing – run supabase/migrations/20261023000000_menus.sql in the Supabase SQL Editor, then try again.";
   if (/ai_settings/i.test(message) && /does not exist|schema cache|Could not find/i.test(message))
     return "The AI settings table is missing – run supabase/migrations/20261049000000_ai_settings.sql in the Supabase SQL Editor, then try again.";
+  if (/(coupons|coupon_redemptions|product_reviews|review_helpful_votes)/i.test(message) && /does not exist|schema cache|Could not find/i.test(message))
+    return "The coupon/review tables are missing – run supabase/migrations/20261061000000_coupons_reviews.sql in the Supabase SQL Editor, then try again.";
   return message || "Something went wrong. Please try again.";
 }
 

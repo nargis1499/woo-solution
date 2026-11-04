@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AddToCartButton } from "./add-to-cart-button";
+import { Stars } from "./reviews/stars";
 import { Price } from "./price";
 import { ProductImage } from "./product-image";
 import { QuickCheckoutButton } from "./quick-checkout-modal";
@@ -113,6 +114,13 @@ export function ProductCard({
             {product.name}
           </Link>
         </h3>
+
+        {product.rating_count && product.rating_avg ? (
+          <p className="mt-1.5 flex items-center gap-1.5" data-testid="product-card-rating">
+            <Stars value={product.rating_avg} starClassName="size-3.5" />
+            <span className="text-xs font-medium text-muted-foreground">({product.rating_count})</span>
+          </p>
+        ) : null}
 
         {product.description && (
           <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">

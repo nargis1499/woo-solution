@@ -10,6 +10,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CartTotals } from "./cart-totals";
+import { CouponField } from "./coupon-field";
 import { useMoney, useShipping } from "./money-provider";
 import { ProductImage } from "./product-image";
 import { QuantityInput } from "./quantity-input";
@@ -91,7 +92,9 @@ export function CartView() {
         <CardHeader>
           <CardTitle>Cart totals</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <CouponField items={items} />
+          <Separator />
           <CartTotals subtotalMicros={subtotal} />
         </CardContent>
         <CardFooter className="flex-col gap-3">
