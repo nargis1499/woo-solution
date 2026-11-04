@@ -366,6 +366,19 @@ export function productJsonLd(product: Product, settings: SiteSettings): Record<
     ...(product.brand ? { brand: { "@type": "Brand", name: product.brand } } : {}),
     ...(product.category ? { category: product.category.name } : {}),
     ...(additionalProperty.length > 0 ? { additionalProperty } : {}),
+    // Approved-review aggregate (migration 20261061) – this is what earns the
+    // star row in Google results; omitted entirely while a product has none.
+    ...(product.rating_count && product.rating_count > 0 && product.rating_avg
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: String(Math.round(product.rating_avg * 100) / 100),
+            reviewCount: product.rating_count,
+            bestRating: "5",
+            worstRating: "1",
+          },
+        }
+      : {}),
     offers,
   };
 }

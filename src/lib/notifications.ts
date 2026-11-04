@@ -7,14 +7,14 @@
  * so one component can render a customer's bell and an admin's bell alike.
  */
 
-export const NOTIFICATION_KINDS = ["new_order", "order_status", "order_cancelled", "payment", "order_message"] as const;
+export const NOTIFICATION_KINDS = ["new_order", "order_status", "order_cancelled", "payment", "order_message", "product_review"] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export type NotificationCategory = "orders" | "messages";
 
 /** Which tab a notification belongs to. */
 export function notificationCategory(kind: NotificationKind): NotificationCategory {
-  return kind === "order_message" ? "messages" : "orders";
+  return kind === "order_message" || kind === "product_review" ? "messages" : "orders";
 }
 
 /** The filter tabs of the notifications page (and of `?tab=`). */
@@ -133,4 +133,5 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
   order_cancelled: "Cancelled",
   payment: "Payment",
   order_message: "Message",
+  product_review: "Review",
 };

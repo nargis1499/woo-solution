@@ -238,3 +238,51 @@ on conflict (slug) do update set
   stock                   = excluded.stock,
   is_featured             = excluded.is_featured,
   created_at              = excluded.created_at;
+
+-- ── Demo coupons (migration 20261061000000) ─────────────────────────────────
+-- Safe to re-run: an existing code (any case) is left untouched.
+insert into public.coupons (
+  code, description, discount_type, percent_off, amount_off_micros,
+  min_subtotal_micros, free_shipping, first_order_only, usage_limit, per_user_limit
+) values
+  ('WELCOME10', '10% off your first order – welcome aboard!', 'percent', 10, null, 0, false, true, null, 1),
+  ('FREESHIP',  'Free shipping on orders over $75',            'percent', null, null, 75 * 1000000, true, false, null, 5),
+  ('SAVE20',    '$20 off orders over $100',                    'fixed',   null, 20 * 1000000, 100 * 1000000, false, false, 100, 1)
+on conflict ((upper(code))) do nothing;
+
+-- ── Demo reviews (migration 20261061000000) ─────────────────────────────────
+-- Snapshot authors (no demo auth users exist at seed time). Guarded by
+-- author name + product so re-running the seed never duplicates them.
+insert into public.product_reviews (
+  product_id, user_id, author_name, rating, title, body, status,
+  is_verified_purchase, helpful_count, response_text, response_at, created_at
+)
+select p.id, null, d.author, d.rating, d.title, d.body, 'approved', true, d.helpful, d.response,
+       case when d.response is null then null else now() - interval '2 days' end,
+       now() - (d.days_ago * interval '1 day')
+  from public.products p
+  join (values
+    ('wireless-noise-canceling-headphones', 'Amelia R.', 5, 'Worth every penny',
+     'The noise cancelling on a long-haul flight was unreal – engine hum just disappeared. Battery easily lasted the whole trip and the case feels premium.', 14, null, 3),
+    ('wireless-noise-canceling-headphones', 'Daniel K.', 5, 'Best headphones I have owned',
+     'Upgraded from an older pair and the difference is night and day. Calls are crystal clear even on a windy street.', 9,
+     'Thank you, Daniel! Tip: the companion EQ preset "Excited" makes calls even clearer outdoors.', 6),
+    ('wireless-noise-canceling-headphones', 'Priya S.', 4, 'Great sound, snug fit',
+     'Sound quality and ANC are excellent. They felt a little tight during the first week but have loosened up nicely since.', 3, null, 11),
+    ('smart-watch-pro-edition', 'Marcus T.', 5, 'Replaced my fitness tracker and my watch',
+     'GPS accuracy on runs matches my chest-strap setup, and sleep tracking has genuinely changed my routine. Titanium body still looks brand new.', 11, null, 4),
+    ('smart-watch-pro-edition', 'Lena W.', 4, 'Excellent, app could be simpler',
+     'The hardware is flawless and the display is gorgeous outdoors. The companion app buries a few settings, but updates keep improving it.', 4, null, 9),
+    ('quietcomfort-ultra-wireless-earbuds', 'Omar H.', 5, 'Tiny, mighty, silent',
+     'I work next to a construction site and these turn it into a library. Spatial audio for movies is a lovely bonus.', 7, null, 2),
+    ('quietcomfort-ultra-wireless-earbuds', 'Sofia M.', 3, 'Good buds, case is bulky',
+     'Comfort and ANC are top tier, but the charging case is bigger than rivals and noticeably fills a jeans pocket.', 1,
+     'Thanks for the honest feedback, Sofia – we have passed the case-size note to our buying team for the next range review.', 7),
+    ('ultraslim-pro-14-laptop', 'James L.', 5, 'My whole office in 1.2 kg',
+     'Compiles our monorepo faster than my desktop did, stays quiet, and I stopped carrying the charger for day trips.', 18, null, 5)
+  ) as d(slug, author, rating, title, body, helpful, response, days_ago)
+    on d.slug = p.slug
+ where not exists (
+   select 1 from public.product_reviews r
+    where r.product_id = p.id and r.author_name = d.author
+ );

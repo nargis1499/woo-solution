@@ -121,6 +121,19 @@ export default async function AdminOrderPage({
                   {formatMoney(order.subtotal_micros, orderMoney(order))}
                 </dd>
               </div>
+              {order.discount_micros ? (
+                <div className="flex justify-between text-emerald-600 dark:text-emerald-400" data-testid="admin-order-discount-row">
+                  <dt>
+                    Coupon{order.coupon_code ? (
+                      <>
+                        {" "}
+                        <span className="font-mono text-xs font-bold">{order.coupon_code}</span>
+                      </>
+                    ) : null}
+                  </dt>
+                  <dd className="tabular-nums">−{formatMoney(order.discount_micros, orderMoney(order))}</dd>
+                </div>
+              ) : null}
               <div className="flex justify-between text-muted-foreground">
                 <dt>Shipping</dt>
                 <dd className="tabular-nums">

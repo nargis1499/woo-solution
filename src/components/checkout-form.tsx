@@ -40,6 +40,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useMoney, useShipping } from "./money-provider";
 import { CartTotals } from "./cart-totals";
+import { CouponField } from "./coupon-field";
 import { PlisioCoinSelector, PlisioLiveInvoiceConsole } from "./plisio-payment-console";
 import { ProductImage } from "./product-image";
 
@@ -109,6 +110,7 @@ export function CheckoutForm({
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore(selectCartSubtotal);
   const clear = useCartStore((s) => s.clear);
+  const coupon = useCartStore((s) => s.coupon);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -234,6 +236,7 @@ export function CheckoutForm({
           country: field("country"),
           notes: rawNotes,
         },
+        couponCode: coupon?.code ?? null,
         payment:
           paymentMode === "plisio"
             ? {
@@ -676,6 +679,9 @@ export function CheckoutForm({
               ))}
             </ul>
             <Separator className="my-4" />
+            <div className="mb-4">
+              <CouponField items={items} />
+            </div>
             <CartTotals subtotalMicros={subtotal} />
           </CardContent>
           <CardFooter className="flex-col items-stretch gap-3">

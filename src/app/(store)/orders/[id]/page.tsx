@@ -104,6 +104,19 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
               <dt className="text-muted-foreground">Subtotal</dt>
               <dd className="tabular-nums">{formatMoney(order.subtotal_micros, orderMoney(order))}</dd>
             </div>
+            {order.discount_micros ? (
+              <div className="flex justify-between text-emerald-600 dark:text-emerald-400" data-testid="order-discount-row">
+                <dt>
+                  Coupon{order.coupon_code ? (
+                    <>
+                      {" "}
+                      <span className="font-mono text-xs font-bold">{order.coupon_code}</span>
+                    </>
+                  ) : null}
+                </dt>
+                <dd className="font-medium tabular-nums">−{formatMoney(order.discount_micros, orderMoney(order))}</dd>
+              </div>
+            ) : null}
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Shipping</dt>
               <dd className="tabular-nums">{order.shipping_micros === 0 ? "Free" : formatMoney(order.shipping_micros, orderMoney(order))}</dd>

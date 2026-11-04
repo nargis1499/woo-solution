@@ -11,6 +11,7 @@ import {
   PackageCheckIcon,
   PackageXIcon,
   ShoppingBagIcon,
+  StarIcon,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -53,6 +54,10 @@ const ICONS: Record<NotificationKind, { icon: LucideIcon; tile: string }> = {
   order_message: {
     icon: MessageSquareIcon,
     tile: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  },
+  product_review: {
+    icon: StarIcon,
+    tile: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
   },
 };
 

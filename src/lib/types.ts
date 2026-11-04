@@ -133,6 +133,62 @@ export type Product = {
   image_media?: MediaRef | null;
   /** Extra images from the media library (storefront gallery), in display order. */
   gallery?: ProductGalleryItem[];
+  /** Approved-review average (migration 20261061 `product_rating_stats`); absent before it ran. */
+  rating_avg?: number | null;
+  /** Approved-review count (migration 20261061 `product_rating_stats`); absent before it ran. */
+  rating_count?: number;
+};
+
+/* ─── Coupons & reviews (migration 20261061) ──────────────────────────────── */
+
+export type CouponDiscountType = "percent" | "fixed";
+export type CouponScopeType = "all" | "categories" | "products";
+
+export type Coupon = {
+  id: string;
+  code: string;
+  description: string | null;
+  discount_type: CouponDiscountType;
+  percent_off: number | string | null;
+  amount_off_micros: number | null;
+  max_discount_micros: number | null;
+  min_subtotal_micros: number;
+  free_shipping: boolean;
+  scope_type: CouponScopeType;
+  scope_ids: string[];
+  first_order_only: boolean;
+  starts_at: string | null;
+  expires_at: string | null;
+  usage_limit: number | null;
+  per_user_limit: number;
+  times_redeemed: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  /** Admin list only: lifetime savings from `coupon_redemptions`. */
+  total_discount_micros?: number;
+};
+
+export type ReviewStatus = "pending" | "approved" | "rejected";
+
+export type ProductReview = {
+  id: string;
+  product_id: string;
+  user_id: string | null;
+  author_name: string;
+  author_avatar_url: string | null;
+  rating: number;
+  title: string | null;
+  body: string;
+  status: ReviewStatus;
+  is_verified_purchase: boolean;
+  helpful_count: number;
+  response_text: string | null;
+  response_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Storefront only: the signed-in customer marked this review helpful. */
+  helpful_by_me?: boolean;
 };
 
 /** The slice of a media row that products embed (enough to render a thumbnail / alt text). */
@@ -271,6 +327,10 @@ export type Order = {
   /** USD → `currency` rate stamped at checkout (1 for USD; missing before migration 12) */
   exchange_rate?: number | string | null;
   subtotal_micros: number;
+  /** Coupon discount already subtracted inside `total_micros` (migration 20261061; absent before it ran). */
+  discount_micros?: number;
+  coupon_code?: string | null;
+  coupon_id?: string | null;
   shipping_micros: number;
   total_micros: number;
   customer_email: string | null;

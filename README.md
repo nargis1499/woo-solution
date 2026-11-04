@@ -9,7 +9,8 @@ A WooCommerce-style storefront built with **Next.js 16** (App Router, Cache Comp
 | Area | What's included |
 | --- | --- |
 | Catalog | Home page with categories, featured products and an optional filtered product list (sections switchable under **UI → Home page**), `/shop` with category filter + search, product detail pages with related products. Both product lists show **12 products per page** with a pager once a category has more – `/shop` through shareable `?page=` links, the home-page filter in place |
-| Cart | Guest-friendly cart persisted in `localStorage` (Zustand), quantity controls, stock limits, shipping preview |
+| Cart | Guest-friendly cart persisted in `localStorage` (Zustand), quantity controls, stock limits, shipping preview, **coupon codes** with a server-priced preview |
+| Reviews | Star ratings on cards and product pages (summary, distribution filters, sort, helpful votes, store responses); verified purchases publish instantly, the rest are moderated under **Nemesis → Reviews**; `aggregateRating` JSON-LD for Google stars — see [Coupons & reviews](docs/coupons-and-reviews.md) |
 | Blog | `/blog` publishing area with the same modular block editor as Pages, featured images, shared tags, excerpts, SEO/canonical/robots/Open Graph fields, social cards, article metadata and sitemap entries |
 | Auth | E-mail + password **and "Continue with Google"** (Supabase Auth, PKCE flow), sign out, protected routes, open-redirect-safe `?next=` handling |
 | Checkout | Shipping form → atomic `place_order()` Postgres function (prices re-read from DB, stock locked & decremented, order number generated) |
@@ -68,6 +69,7 @@ For a separate client, use the live **Settings → Advanced** export and the [cl
    24. [`supabase/migrations/20261037000000_category_icon_color.sql`](supabase/migrations/20261037000000_category_icon_color.sql) – **Category icon colour**: `categories.icon_color` (`#rrggbb`, checked) – the fill behind that icon; `null` uses the theme's primary colour. Safe to run on an existing project
    25. [`supabase/migrations/20261038000000_category_no_icon.sql`](supabase/migrations/20261038000000_category_no_icon.sql) – **Category "Remove icon"**: `categories.icon_disabled` – the admin's switch to drop the icon from a category that has a picture, so the *Shop by category* tile shows the image alone. Safe to run on an existing project (default `false`, so every tile looks exactly as before)
    After the existing migrations, apply [`supabase/migrations/20261048000000_blog_posts.sql`](supabase/migrations/20261048000000_blog_posts.sql) – **Blog posts**: separate editorial posts with the same block editor model, SEO fields, tags, media tracking, publish state and admin/public RLS. Adds `/blog` navigation links; safe to apply to an existing database.
+   Finally apply [`supabase/migrations/20261061000000_coupons_reviews.sql`](supabase/migrations/20261061000000_coupons_reviews.sql) – **Coupons & reviews**: `coupons` / `coupon_redemptions`, `product_reviews` / `review_helpful_votes` / `product_rating_stats`, the coupon-aware `place_order(items, shipping, coupon_code)` plus `preview_coupon()` / `submit_product_review()` / `toggle_review_helpful()` RPCs. Deploy it **together with the matching app release** (the old 2-argument `place_order` is dropped; the checkout action falls back to it only for coupon-less orders on an unmigrated database). See [docs/coupons-and-reviews.md](docs/coupons-and-reviews.md)
 3. Paste [`supabase/seed.sql`](supabase/seed.sql) and run it to load the 12 demo products.
 4. Make yourself an admin (after signing up once in the app – see [Admin dashboard](#admin-dashboard)):
 
@@ -168,6 +170,8 @@ Reload the page and an **Admin** link appears in the header. From then on you ca
 | Pages | Static content pages (About, Contact, Privacy policy, FAQ …) with a rich-text editor, featured image, tags, draft / published workflow, preview and per-page SEO – see [Pages](#pages) below. Each published page is live at `/<slug>` |
 | Products | Create, edit, delete; search & filter; draft/active, featured, stock, **regular price** (+ optional **sale price**); **main image** + **gallery** picked from the Media Library (upload a new file or select an existing one – see [Media](#media)), or paste any image URL. Each product is **Simple** or **Variable** – see [Variable products](#variable-products) |
 | Categories | Create, rename, delete (products become uncategorised); **drag the handle** (mouse, touch long-press, or ↑/↓ on a focused handle) to reorder – the shop's category filter and the sitemap follow the saved order. Which categories appear in the storefront navigation is decided under **UI → Menu** |
+| Coupons | Create, pause, duplicate and delete promo codes — percent/fixed/free-shipping, minimum spend, caps, schedules, usage limits, first-order-only and category/product scopes, with redemption + savings stats (see [Coupons & reviews](docs/coupons-and-reviews.md)) |
+| Reviews | Moderation queue for product reviews — approve / reject / delete and reply publicly as the store; pending reviews also arrive as a notification |
 | Orders | Filter by status, view items & shipping address, reply in the **order inquiry thread** (see [Order inquiries](#order-inquiries)), change order / payment status (cancelling restocks the items, re-opening reserves them again), delete |
 | Notifications | The admin bell’s full page (see [Notifications](#notifications)): All / Unread / Orders / Messages, per-page selector, bulk mark-read / delete |
 | Users | View customers with their order history, edit name/phone, grant or revoke **Administrator**, delete a user (their orders are kept), and **create** an account from the **New user** dialog (name, e-mail, phone, role, password — see [Creating users](#creating-users)). You can't demote or delete yourself |
@@ -557,11 +561,12 @@ Works out of the box on [Vercel](https://vercel.com): import the repo, add the e
 - [x] **Create users from the dashboard** – Users → *New user*: name, e-mail, phone, role and a generated / revealed / copyable password
 - [ ] Admin extras – CSV export, audit log, per-section roles
 - [ ] **Server-side cart** (`cart_items` table) synced across devices, merged on login
-- [ ] **Coupons & discounts**, tax rules, multiple shipping methods
+- [x] **Coupons & discounts** – percent/fixed/free-shipping codes with spend/scope/schedule/usage rules, re-validated inside `place_order()`
+- [ ] Tax rules, multiple shipping methods
 - [ ] **Transactional e-mails** (order confirmation) via Resend / Supabase Edge Functions
 - [ ] **Account page** – edit profile, saved addresses, password reset
 - [ ] More social providers (GitHub, Facebook, Apple) – same pattern as Google, one `provider` string away
-- [ ] Product variants (size / colour), reviews, wishlists
+- [x] Product variants (size / colour), **reviews** (verified purchase badges, moderation, store responses, Google stars) and wishlists
 
 ---
 

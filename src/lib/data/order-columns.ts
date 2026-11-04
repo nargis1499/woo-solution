@@ -12,7 +12,9 @@ export const BASE_ORDER_COLUMNS =
   "id, order_number, user_id, status, payment_method, payment_status, currency, subtotal_micros, shipping_micros, total_micros, customer_email, shipping_name, shipping_phone, shipping_address_line1, shipping_address_line2, shipping_city, shipping_postal_code, shipping_country, notes, created_at";
 
 export const ORDER_COLUMNS_NO_PAYMENT = `${BASE_ORDER_COLUMNS}, exchange_rate`;
-export const ORDER_COLUMNS = `${ORDER_COLUMNS_NO_PAYMENT}, payment_protocol, payment_network, payment_address, payment_tx_id`;
+export const ORDER_COLUMNS_NO_COUPON = `${ORDER_COLUMNS_NO_PAYMENT}, payment_protocol, payment_network, payment_address, payment_tx_id`;
+/** Coupon columns arrived with migration 20261061 (`discount_micros`, `coupon_code`, `coupon_id`). */
+export const ORDER_COLUMNS = `${ORDER_COLUMNS_NO_COUPON}, discount_micros, coupon_code, coupon_id`;
 
 /** `order_items` columns for the order detail views (variation columns arrived with migration 14). */
 export const ORDER_ITEM_COLUMNS =

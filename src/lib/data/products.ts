@@ -12,6 +12,7 @@ import {
   PRODUCT_DETAIL_COLUMNS_NO_BRAND,
 } from "@/lib/data/product-columns";
 import { withSortedVariations } from "@/lib/variations";
+import { withRatings } from "./reviews";
 import { PRODUCTS_PER_PAGE } from "@/lib/catalog";
 import { pageCount } from "@/lib/pagination";
 import { categoryColumnSets, isMissingCategoryColumn } from "@/lib/data/category-columns";
@@ -73,9 +74,9 @@ export async function getProducts(options: {
     if (!isMissingVariationSchema(error)) throw new Error(`Failed to load products: ${error.message}`);
     const retry = await build(PRODUCT_COLUMNS_LEGACY);
     if (retry.error) throw new Error(`Failed to load products: ${retry.error.message}`);
-    return (retry.data ?? []) as unknown as Product[];
+    return withRatings((retry.data ?? []) as unknown as Product[]);
   }
-  return (data ?? []) as unknown as Product[];
+  return withRatings((data ?? []) as unknown as Product[]);
 }
 
 export type ProductPage = { items: Product[]; total: number; page: number; pages: number; perPage: number };
@@ -113,7 +114,7 @@ export async function getProductPage(options: { categoryId?: string; search?: st
   if (error && isMissingBrandColumn(error)) ({ data, error } = await run(PRODUCT_COLUMNS_NO_BRAND));
   if (error && isMissingVariationSchema(error)) ({ data, error } = await run(PRODUCT_COLUMNS_LEGACY));
   if (error) throw new Error(`Failed to load products: ${error.message}`);
-  return { items: (data ?? []) as unknown as Product[], total, page, pages, perPage };
+  return { items: await withRatings((data ?? []) as unknown as Product[]), total, page, pages, perPage };
 }
 
 export async function getProductBySlug(slug: string): Promise<Product | null> {
@@ -130,7 +131,9 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
   // Before the media migration ran the embeds don't resolve – fall back to the plain row.
   if (error && isMissingMediaSchema(error.message)) ({ data, error } = await load(PRODUCT_COLUMNS_LEGACY));
   if (error) throw new Error(`Failed to load product: ${error.message}`);
-  return data ? withSortedVariations(withSortedGallery(data as unknown as Product)) : null;
+  if (!data) return null;
+  const [product] = await withRatings([withSortedVariations(withSortedGallery(data as unknown as Product))]);
+  return product ?? null;
 }
 
 /** Active simple products by id (used by CMS pages rendering `simple_product` blocks). */

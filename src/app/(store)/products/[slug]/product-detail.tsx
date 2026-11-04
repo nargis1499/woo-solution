@@ -12,6 +12,7 @@ import {
   TruckIcon,
 } from "lucide-react";
 import { AddToCartButton } from "@/components/add-to-cart-button";
+import { Stars } from "@/components/reviews/stars";
 import { ProductGallery } from "@/components/product-gallery";
 import { Price } from "@/components/price";
 import { QuantityInput } from "@/components/quantity-input";
@@ -121,6 +122,14 @@ export function ProductShowcase({
 
         <div>
           <h1 id="product-title" className="text-3xl font-bold tracking-tight text-white sm:text-4xl xl:text-[2.7rem]">{product.name}</h1>
+          {product.rating_count && product.rating_avg ? (
+            <a href="#reviews" className="mt-2.5 inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-amber-400/50 hover:text-white" data-testid="product-rating-summary">
+              <Stars value={product.rating_avg} starClassName="size-3.5" showValue />
+              <span className="text-slate-400">
+                {product.rating_count} review{product.rating_count === 1 ? "" : "s"}
+              </span>
+            </a>
+          ) : null}
           {product.description && <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">{product.description}</p>}
         </div>
 

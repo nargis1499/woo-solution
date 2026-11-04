@@ -3,6 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, cache } from "react";
 import { getProductBySlug, getProducts } from "@/lib/data/products";
+import { getProductReviews } from "@/lib/data/reviews";
+import { getCurrentUser } from "@/lib/auth";
+import { ProductReviews } from "@/components/reviews/product-reviews";
 import { StorefrontBlockContent } from "@/components/storefront-block-content";
 import { slidesFor, mediaUrl } from "@/lib/media/shared";
 import {
@@ -123,10 +126,33 @@ export default async function ProductPage({ params }: { params: Params }) {
         <ProductInformationTabs product={product} />
 
         <Suspense fallback={null}>
+          <ReviewsSection productId={product.id} slug={product.slug} storeName={settings.store_name} />
+        </Suspense>
+
+        <Suspense fallback={null}>
           <RelatedProducts product={product} />
         </Suspense>
       </div>
     </div>
+  );
+}
+
+/**
+ * Ratings & reviews (migration 20261061). Hidden entirely while the
+ * database has not run the migration yet (`available: false`).
+ */
+async function ReviewsSection({ productId, slug, storeName }: { productId: string; slug: string; storeName: string }) {
+  const user = await getCurrentUser();
+  const { reviews, available } = await getProductReviews(productId, user?.id);
+  if (!available) return null;
+  return (
+    <ProductReviews
+      productId={productId}
+      slug={slug}
+      storeName={storeName}
+      initialReviews={reviews}
+      currentUser={user}
+    />
   );
 }
 

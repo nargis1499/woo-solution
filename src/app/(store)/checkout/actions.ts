@@ -10,13 +10,26 @@ import { createPlisioOrderInvoice } from "@/lib/plisio.server";
 import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import {
+  isMissingCouponCheckout,
+  isMissingCouponsSchema,
+  normalizeCouponCode,
+  percentOffNumber,
+  type AppliedCoupon,
+} from "@/lib/coupons";
 import type { ShippingInput } from "@/lib/types";
 
 export type PlaceOrderInput = {
   items: { product_id: string; variation_id?: string | null; quantity: number }[];
   shipping: ShippingInput;
   payment?: OrderPaymentInput;
+  /** Promo code to redeem (migration 20261061). `place_order()` re-validates it server-side. */
+  couponCode?: string | null;
 };
+
+export type CouponPreviewResult =
+  | { ok: true; coupon: AppliedCoupon; subtotalMicros: number; shippingMicros: number; totalMicros: number }
+  | { ok: false; error: string };
 
 export type PlaceOrderResult =
   | { ok: true; orderId: string; plisioInvoice?: PlisioInvoiceSession }
@@ -28,21 +41,76 @@ function clean(value: unknown, max = 200): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+type CartLineInput = { product_id: string; variation_id: string | null; quantity: number };
+
+/** The same line shaping the order itself uses – shared with the coupon preview. */
+function shapeItems(input: unknown): CartLineInput[] {
+  return Array.isArray(input)
+    ? input
+        .filter((i) => i && UUID_RE.test(String((i as { product_id?: unknown }).product_id)))
+        .map((i) => {
+          const line = i as { product_id: unknown; variation_id?: unknown; quantity?: unknown };
+          return {
+            product_id: String(line.product_id),
+            variation_id:
+              line.variation_id && UUID_RE.test(String(line.variation_id)) ? String(line.variation_id) : null,
+            quantity: Math.floor(Number(line.quantity)),
+          };
+        })
+        .filter((i) => Number.isFinite(i.quantity) && i.quantity > 0)
+        .slice(0, 100)
+    : [];
+}
+
+/**
+ * Prices a promo code against the current cart (no order is placed).
+ * Everything is recomputed from the database by `preview_coupon()`.
+ */
+export async function previewCoupon(input: {
+  code: string;
+  items: { product_id: string; variation_id?: string | null; quantity: number }[];
+}): Promise<CouponPreviewResult> {
+  const code = normalizeCouponCode(clean(input?.code, 40));
+  if (!code) return { ok: false, error: "Enter a coupon code." };
+  const items = shapeItems(input?.items);
+  if (items.length === 0) return { ok: false, error: "Your cart is empty." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("preview_coupon", { p_code: code, p_items: items });
+  if (error) {
+    if (isMissingCouponsSchema(error) || isMissingCouponCheckout(error)) {
+      return { ok: false, error: "Coupons aren't available right now." };
+    }
+    return { ok: false, error: "We couldn't check that coupon. Please try again." };
+  }
+
+  const result = (data ?? {}) as Record<string, unknown>;
+  if (result.ok !== true) {
+    return { ok: false, error: typeof result.message === "string" ? result.message : "That coupon code is not valid." };
+  }
+
+  const micros = (value: unknown) => Math.max(0, Math.round(Number(value ?? 0)) || 0);
+  return {
+    ok: true,
+    coupon: {
+      code: typeof result.code === "string" ? result.code : code,
+      description: typeof result.description === "string" ? result.description : null,
+      discountMicros: micros(result.discount_micros),
+      freeShipping: result.free_shipping === true,
+      discountType: result.discount_type === "fixed" ? "fixed" : "percent",
+      percentOff: percentOffNumber(result.percent_off as number | string | null),
+      expiresAt: typeof result.expires_at === "string" ? result.expires_at : null,
+    },
+    subtotalMicros: micros(result.subtotal_micros),
+    shippingMicros: micros(result.shipping_micros),
+    totalMicros: micros(result.total_micros),
+  };
+}
+
 export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
   // ── validate payload shape (the DB function validates business rules) ──
-  const items = Array.isArray(input?.items)
-    ? input.items
-        .filter((i) => i && UUID_RE.test(String(i.product_id)))
-        .map((i) => ({
-          product_id: String(i.product_id),
-          variation_id:
-            i.variation_id && UUID_RE.test(String(i.variation_id))
-              ? String(i.variation_id)
-              : null,
-          quantity: Math.floor(Number(i.quantity)),
-        }))
-        .filter((i) => Number.isFinite(i.quantity) && i.quantity > 0)
-    : [];
+  const items = shapeItems(input?.items);
+  const couponCode = input?.couponCode ? normalizeCouponCode(clean(input.couponCode, 40)) || null : null;
 
   if (items.length === 0) return { ok: false, error: "Your cart is empty." };
 
@@ -118,10 +186,24 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     return { ok: false, error: "Please sign in to place your order." };
   }
 
-  const { data, error } = await supabase.rpc("place_order", {
+  let { data, error } = await supabase.rpc("place_order", {
     p_items: items,
     p_shipping: shipping,
+    p_coupon_code: couponCode,
   });
+
+  // A database that has not run migration 20261061 yet only knows the
+  // 2-argument place_order. Orders without a coupon keep working there;
+  // with one we must fail loudly instead of silently charging full price.
+  if (error && isMissingCouponCheckout(error)) {
+    if (couponCode) {
+      return { ok: false, error: "Coupons aren't available right now. Please remove the coupon and try again." };
+    }
+    ({ data, error } = await supabase.rpc("place_order", {
+      p_items: items,
+      p_shipping: shipping,
+    }));
+  }
 
   if (error) {
     // `raise exception` messages from place_order are user-friendly already

@@ -11,7 +11,9 @@ import { normaliseSiteSettings } from "@/lib/site-settings";
 import { PAGE_COLUMNS, PAGE_DETAIL_COLUMNS, withTags } from "@/lib/data/pages";
 import { categoryColumnSets, isMissingCategoryColumn } from "@/lib/data/category-columns";
 import type { PageSort } from "@/lib/pages/shared";
-import type { AdminStats, Category, MediaRef, MenuItem, MenuLocation, Order, OrderStatus, Page, PageStatus, Product, Profile, SettingsMedia, SiteSettingsRow, Tag } from "@/lib/types";
+import type { AdminStats, Category, Coupon, MediaRef, MenuItem, MenuLocation, Order, OrderStatus, Page, PageStatus, Product, ProductReview, Profile, ReviewStatus, SettingsMedia, SiteSettingsRow, Tag } from "@/lib/types";
+import { isMissingCouponsSchema } from "@/lib/coupons";
+import { isMissingReviewsSchema } from "@/lib/reviews";
 
 /*
  * Admin read models. Every helper calls `requireAdmin()` first (cheap – the
@@ -584,4 +586,97 @@ export async function adminListPageOptions(): Promise<PageOption[]> {
     if (!data || data.length < 500) break;
   }
   return options;
+}
+
+// ─── Coupons (migration 20261061) ───────────────────────────────────────────
+
+const COUPON_COLUMNS =
+  "id, code, description, discount_type, percent_off, amount_off_micros, max_discount_micros, min_subtotal_micros, free_shipping, scope_type, scope_ids, first_order_only, starts_at, expires_at, usage_limit, per_user_limit, times_redeemed, is_active, created_at, updated_at";
+
+/** Every coupon, newest first, with its lifetime savings from the redemption ledger. */
+export async function adminListCoupons(): Promise<Coupon[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("coupons").select(COUPON_COLUMNS).order("created_at", { ascending: false }).limit(200);
+  if (error) {
+    if (isMissingCouponsSchema(error)) return [];
+    throw new Error(`Failed to load coupons: ${error.message}`);
+  }
+  const coupons = (data ?? []) as unknown as Coupon[];
+  if (coupons.length > 0) {
+    const { data: redemptions } = await supabase
+      .from("coupon_redemptions")
+      .select("coupon_id, discount_micros")
+      .is("released_at", null)
+      .limit(5000);
+    const totals = new Map<string, number>();
+    for (const row of (redemptions ?? []) as { coupon_id: string; discount_micros: number }[]) {
+      totals.set(row.coupon_id, (totals.get(row.coupon_id) ?? 0) + Number(row.discount_micros ?? 0));
+    }
+    for (const coupon of coupons) coupon.total_discount_micros = totals.get(coupon.id) ?? 0;
+  }
+  return coupons;
+}
+
+export async function adminGetCoupon(id: string): Promise<Coupon | null> {
+  await requireAdmin();
+  if (!isUuid(id)) return null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("coupons").select(COUPON_COLUMNS).eq("id", id).maybeSingle();
+  if (error) {
+    if (isMissingCouponsSchema(error)) return null;
+    throw new Error(`Failed to load coupon: ${error.message}`);
+  }
+  return (data as unknown as Coupon) ?? null;
+}
+
+// ─── Reviews (migration 20261061) ───────────────────────────────────────────
+
+export type AdminReview = ProductReview & {
+  product: { id: string; name: string; slug: string; image_url: string | null } | null;
+};
+
+export type ReviewListOptions = PageRequest & { status?: ReviewStatus | "" };
+
+const ADMIN_REVIEW_COLUMNS =
+  "id, product_id, user_id, author_name, author_avatar_url, rating, title, body, status, is_verified_purchase, helpful_count, response_text, response_at, created_at, updated_at, product:products(id, name, slug, image_url)";
+
+/** One page of the moderation queue (newest first), optionally filtered by status. */
+export async function adminListReviews(options: ReviewListOptions = {}): Promise<ListPage<AdminReview>> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const filtered = (head: boolean) => {
+    let q = supabase.from("product_reviews").select(head ? "id" : ADMIN_REVIEW_COLUMNS, { count: "exact", head });
+    if (options.status) q = q.eq("status", options.status);
+    return q;
+  };
+  const { count, error: countError } = await filtered(true);
+  if (countError) {
+    if (isMissingReviewsSchema(countError)) return { items: [], total: 0, page: 1, perPage: options.perPage ?? 10 };
+    throw new Error(`Failed to load reviews: ${countError.message}`);
+  }
+  const { perPage, page, from, to } = pageWindow(options, count ?? 0);
+  const { data, error } = await filtered(false).order("created_at", { ascending: false }).range(from, to);
+  if (error) throw new Error(`Failed to load reviews: ${error.message}`);
+  return { items: (data ?? []) as unknown as AdminReview[], total: count ?? 0, page, perPage };
+}
+
+/** Queue health for the Reviews header cards. */
+export async function adminReviewCounts(): Promise<{ pending: number; approved: number; rejected: number }> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const statuses: ReviewStatus[] = ["pending", "approved", "rejected"];
+  const counts: Record<ReviewStatus, number> = { pending: 0, approved: 0, rejected: 0 };
+  for (const status of statuses) {
+    const { count, error } = await supabase
+      .from("product_reviews")
+      .select("id", { count: "exact", head: true })
+      .eq("status", status);
+    if (error) {
+      if (isMissingReviewsSchema(error)) return counts;
+      throw new Error(`Failed to load reviews: ${error.message}`);
+    }
+    counts[status] = count ?? 0;
+  }
+  return counts;
 }

@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { useSyncExternalStore } from "react";
 import { MAX_QTY_PER_LINE } from "./config";
+import type { AppliedCoupon } from "./coupons";
 
 export type CartItem = {
   productId: string;
@@ -23,9 +24,16 @@ export type CartItem = {
 
 type CartState = {
   items: CartItem[];
+  /**
+   * The last server-validated coupon preview (migration 20261061). Display
+   * snapshot only – checkout sends the code and `place_order()` recomputes
+   * the real discount, so a stale snapshot can never undercharge the store.
+   */
+  coupon: AppliedCoupon | null;
   addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
   setQuantity: (lineKey: string, quantity: number) => void;
   removeItem: (lineKey: string) => void;
+  setCoupon: (coupon: AppliedCoupon | null) => void;
   clear: () => void;
 };
 
@@ -51,6 +59,7 @@ export const useCartStore = create<CartState>()(
   persist(
     (set) => ({
       items: [],
+      coupon: null,
 
       addItem: (item, quantity = 1) =>
         set((state) => {
@@ -76,19 +85,23 @@ export const useCartStore = create<CartState>()(
 
       removeItem: (key) => set((state) => ({ items: state.items.filter((i) => lineKey(i) !== key) })),
 
-      clear: () => set({ items: [] }),
+      setCoupon: (coupon) => set({ coupon }),
+
+      clear: () => set({ items: [], coupon: null }),
     }),
     {
       name: "woo-solution-cart",
       // v1 stored `priceCents`; v2 stores `priceMicros` (1 USD = 1,000,000) – a cart saved by
       // an older release is scaled up here instead of being read as a fraction of the price.
-      version: 2,
+      // v3 adds the applied-coupon snapshot; older carts simply start without one.
+      version: 3,
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ items: state.items }),
+      partialize: (state) => ({ items: state.items, coupon: state.coupon }),
       migrate: (persisted) => {
-        const old = persisted as { items?: (Omit<CartItem, "priceMicros"> & { priceMicros?: number; priceCents?: number })[] } | undefined;
+        const old = persisted as { items?: (Omit<CartItem, "priceMicros"> & { priceMicros?: number; priceCents?: number })[]; coupon?: AppliedCoupon | null } | undefined;
         return {
           items: (old?.items ?? []).map((item) => ({ ...item, priceMicros: item.priceMicros ?? (item.priceCents ?? 0) * 10_000 })) as CartItem[],
+          coupon: old?.coupon ?? null,
         } as CartState;
       },
     },
