@@ -26,7 +26,9 @@ import {
   resolveOrderTracking,
 } from "@/lib/order-tracking";
 import { normaliseSiteSettings } from "@/lib/site-settings";
+import { resolveQuickCheckoutTiers } from "@/lib/quick-checkout";
 import { stripeMinorUnitsFromUsdMicros } from "@/lib/stripe";
+import type { Product } from "@/lib/types";
 
 describe("International multi-currency support", () => {
   it("supports 14 global currencies with positive suggested rates and round-trip minor conversion", () => {
@@ -219,3 +221,54 @@ describe("Order tracking & fulfillment helpers", () => {
     expect(result.error).toBeNull();
   });
 });
+
+describe("Quick Checkout shipping & tier calculation", () => {
+  it("applies flat shipping rate below free-shipping threshold and unlocks free shipping on higher tiers", () => {
+    const product: Product = {
+      id: "00000000-0000-0000-0000-000000000001",
+      name: "Verified Business Proxy",
+      slug: "verified-business-proxy",
+      description: null,
+      price_micros: 39_900_000,
+      compare_at_price_micros: null,
+      sku: "VBP-1",
+      stock: 100,
+      manage_stock: true,
+      type: "simple",
+      image_url: null,
+      category_id: null,
+      is_active: true,
+      is_featured: false,
+      created_at: "2026-11-03T00:00:00Z",
+      updated_at: "2026-11-03T00:00:00Z",
+    };
+
+    const tiers = resolveQuickCheckoutTiers(product);
+    const shippingConfig = {
+      enabled: true,
+      rateMicros: 5_000_000,
+      freeThresholdMicros: 108_695_652, // €100.00 at 0.92 EUR/USD
+    };
+
+    // 1x tier ($39.90 / €36.71) is below threshold -> adds $5.00 (€4.60) shipping
+    const tier1x = tiers.find((t) => t.quantity === 1)!;
+    expect(tier1x.priceMicros).toBe(39_900_000);
+    const ship1x = calculateShippingMicros(tier1x.priceMicros, shippingConfig);
+    expect(ship1x).toBe(5_000_000);
+    expect(tier1x.priceMicros + ship1x).toBe(44_900_000);
+    expect(getShippingThresholdStatus(tier1x.priceMicros, shippingConfig)?.unlocked).toBe(
+      false,
+    );
+
+    // 5x tier ($199.50 / €183.54) exceeds threshold -> shipping is 0 (Free)
+    const tier5x = tiers.find((t) => t.quantity === 5)!;
+    expect(tier5x.priceMicros).toBe(199_500_000);
+    const ship5x = calculateShippingMicros(tier5x.priceMicros, shippingConfig);
+    expect(ship5x).toBe(0);
+    expect(tier5x.priceMicros + ship5x).toBe(199_500_000);
+    expect(getShippingThresholdStatus(tier5x.priceMicros, shippingConfig)?.unlocked).toBe(
+      true,
+    );
+  });
+});
+

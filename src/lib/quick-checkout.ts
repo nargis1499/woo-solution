@@ -99,7 +99,11 @@ export function resolveQuickCheckoutTiers(product: Product): QuickCheckoutTier[]
     if (allQuantities.length > 0) {
       const popularIndex =
         allQuantities.length >= 3 ? Math.min(2, Math.floor(allQuantities.length / 2)) : -1;
-      const baseUnitMicros = Math.max(0, product.price_micros);
+      const fallbackVar = activeVariations[0];
+      const baseUnitMicros = Math.max(
+        0,
+        fallbackVar ? fallbackVar.price_micros : product.price_micros,
+      );
 
       return allQuantities.map((qty, idx) => {
         const matchedVar = variationByQty.get(qty);
@@ -128,7 +132,14 @@ export function resolveQuickCheckoutTiers(product: Product): QuickCheckoutTier[]
 
   // Default quantity pattern for Simple products or Variable products without a Quantity attribute selected:
   // (1, 2, 5, 10, 20, 50, 100)
-  const baseUnitMicros = Math.max(0, product.price_micros);
+  const fallbackVar =
+    product.type === "variable"
+      ? (product.variations ?? []).find((v) => v.is_active !== false)
+      : undefined;
+  const baseUnitMicros = Math.max(
+    0,
+    fallbackVar ? fallbackVar.price_micros : product.price_micros,
+  );
   return DEFAULT_QUICK_CHECKOUT_QUANTITIES.map((qty, idx) => ({
     id: `default-qty-${qty}`,
     quantity: qty,
