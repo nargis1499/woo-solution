@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getSiteSettings } from "@/lib/site-settings";
+import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { getStripePaymentAvailability } from "@/lib/stripe.server";
 import { isMissingMediaSchema, withSortedGallery } from "@/lib/media/shared";
 import {
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     }
 
     const [settings, stripe, profileRes] = await Promise.all([
-      getSiteSettings(),
+      getSiteSettingsFresh(),
       getStripePaymentAvailability(),
       supabase
         .from("profiles")
@@ -149,6 +149,11 @@ export async function GET(request: NextRequest) {
       authenticated: true,
       storeName: settings.store_name,
       customer,
+      shipping: {
+        enabled: settings.shipping_enabled,
+        rateMicros: settings.shipping_rate_micros,
+        freeThresholdMicros: settings.free_shipping_threshold_micros,
+      },
       payment: {
         codEnabled: settings.payment_cod_enabled,
         stripeEnabled: stripe.enabled,

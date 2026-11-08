@@ -21,11 +21,17 @@ import {
   ShieldCheckIcon,
   SparklesIcon,
   StarIcon,
+  TruckIcon,
   XIcon,
   ZapIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { placeOrder } from "@/app/(store)/checkout/actions";
+import {
+  calculateShippingMicros,
+  getShippingThresholdStatus,
+  type ShippingConfig,
+} from "@/lib/config";
 import {
   DEFAULT_CRYPTO_PROTOCOLS,
   shortNetworkTag,
@@ -42,7 +48,7 @@ import { generateQrMatrix } from "@/lib/qr-code";
 import { resolveQuickCheckoutTiers, type QuickCheckoutTier } from "@/lib/quick-checkout";
 import type { Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useMoney } from "./money-provider";
+import { useMoney, useShipping } from "./money-provider";
 import { PlisioCoinSelector, PlisioLiveInvoiceConsole } from "./plisio-payment-console";
 
 const PENDING_QC_STORAGE_KEY = "woo_pending_quick_checkout";
@@ -67,6 +73,7 @@ type QuickCheckoutPayload = {
   authenticated?: boolean;
   storeName?: string;
   customer?: QuickCheckoutCustomer;
+  shipping?: ShippingConfig;
   payment?: QuickCheckoutPayment;
   products?: Product[];
 };
@@ -189,6 +196,7 @@ export function QuickCheckoutModal({
 }) {
   const router = useRouter();
   const money = useMoney();
+  const contextShippingConfig = useShipping();
   const [storeName, setStoreName] = useState<string>(
     initialData?.storeName || "Woo Solution",
   );
@@ -212,6 +220,13 @@ export function QuickCheckoutModal({
   const [country, setCountry] = useState<string>("United States");
   const [notes, setNotes] = useState<string>("");
   const [contactErrors, setContactErrors] = useState<{ fullName?: string; email?: string }>({});
+
+  // Shipping configuration (from /api/quick-checkout or RootLayout ShippingProvider)
+  const [loadedShippingConfig, setLoadedShippingConfig] = useState<ShippingConfig | null>(
+    initialData?.shipping ?? null,
+  );
+  const shippingConfig: ShippingConfig =
+    loadedShippingConfig ?? initialData?.shipping ?? contextShippingConfig;
 
   // Step 3: Payment state
   const [paymentConfig, setPaymentConfig] = useState<QuickCheckoutPayment>(
@@ -258,7 +273,8 @@ export function QuickCheckoutModal({
       initialData?.products &&
       initialData.products.length > 0 &&
       initialData.customer &&
-      initialData.payment
+      initialData.payment &&
+      initialData.shipping
     ) {
       return;
     }
@@ -294,6 +310,9 @@ export function QuickCheckoutModal({
           setFullName((prev) => prev || data.customer?.fullName || "");
           setEmail((prev) => prev || data.customer?.email || "");
           setWhatsapp((prev) => prev || data.customer?.phone || "");
+        }
+        if (data.shipping) {
+          setLoadedShippingConfig(data.shipping);
         }
         if (data.payment) {
           setPaymentConfig(data.payment);
@@ -352,6 +371,15 @@ export function QuickCheckoutModal({
     tiers.find((t) => t.quantity === 5) ?? tiers[Math.min(1, tiers.length - 1)] ?? tiers[0];
   const activeTierId = selectedTierByProduct[selectedProduct.id] ?? preferredDefaultTier?.id;
   const selectedTier = tiers.find((t) => t.id === activeTierId) ?? preferredDefaultTier ?? tiers[0];
+
+  const subtotalMicros = selectedTier ? selectedTier.priceMicros : 0;
+  const shippingMicros = selectedTier
+    ? calculateShippingMicros(subtotalMicros, shippingConfig)
+    : 0;
+  const totalMicros = subtotalMicros + shippingMicros;
+  const shippingThreshold = selectedTier
+    ? getShippingThresholdStatus(subtotalMicros, shippingConfig)
+    : null;
 
   const activeProtocols = paymentConfig.cryptoProtocols;
   const defaultProtocol =
@@ -733,6 +761,20 @@ export function QuickCheckoutModal({
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Subtotal:</span>
+                  <span className="font-semibold text-foreground tabular-nums">
+                    {formatMoney(subtotalMicros, money)} {money.currency}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Shipping:</span>
+                  <span className="font-semibold text-foreground tabular-nums">
+                    {shippingMicros === 0
+                      ? "Free"
+                      : `${formatMoney(shippingMicros, money)} ${money.currency}`}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
                   <span className="text-muted-foreground">Payment Protocol:</span>
                   <span className="font-semibold text-foreground">
                     {paymentMode === "stripe"
@@ -786,7 +828,7 @@ export function QuickCheckoutModal({
                       : "Total Due:"}
                   </span>
                   <span className="text-primary tabular-nums">
-                    {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                    {formatMoney(totalMicros, money)} {money.currency}
                   </span>
                 </div>
               </div>
@@ -842,7 +884,10 @@ export function QuickCheckoutModal({
                           <button
                             key={item.id}
                             type="button"
-                            onClick={() => setSelectedProductId(item.id)}
+                            onClick={() => {
+                              setSelectedProductId(item.id);
+                              setPlisioInvoice(null);
+                            }}
                             data-testid={`quick-checkout-product-option-${item.slug}`}
                             data-selected={isSelected ? "true" : "false"}
                             className={cn(
@@ -900,12 +945,13 @@ export function QuickCheckoutModal({
                           <button
                             key={tier.id}
                             type="button"
-                            onClick={() =>
+                            onClick={() => {
                               setSelectedTierByProduct((prev) => ({
                                 ...prev,
                                 [selectedProduct.id]: tier.id,
-                              }))
-                            }
+                              }));
+                              setPlisioInvoice(null);
+                            }}
                             data-testid={`quick-checkout-tier-${tier.quantity}`}
                             data-selected={isSelected ? "true" : "false"}
                             className={cn(
@@ -953,35 +999,135 @@ export function QuickCheckoutModal({
                   {/* 3. Selected Package & Final Price Summary Card */}
                   {selectedTier && (
                     <div
-                      className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/80 bg-muted/25 px-5 py-4"
+                      className="space-y-3 rounded-2xl border border-border/80 bg-muted/25 px-5 py-4"
                       data-testid="quick-checkout-summary"
                     >
-                      <div className="min-w-0 space-y-0.5">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          Selected Package:
-                        </p>
-                        <p
-                          className="truncate text-base font-extrabold text-foreground sm:text-lg"
-                          data-testid="quick-checkout-summary-package"
-                        >
-                          {selectedProduct.name} ({selectedTier.quantity}{" "}
-                          {selectedTier.quantity === 1 ? "Unit" : "Units"})
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Estimated Unit Cost: {formatMoney(selectedTier.unitPriceMicros, money)}
-                          /unit
-                        </p>
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Selected Package:
+                          </p>
+                          <p
+                            className="truncate text-base font-extrabold text-foreground sm:text-lg"
+                            data-testid="quick-checkout-summary-package"
+                          >
+                            {selectedProduct.name} ({selectedTier.quantity}{" "}
+                            {selectedTier.quantity === 1 ? "Unit" : "Units"})
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Estimated Unit Cost: {formatMoney(selectedTier.unitPriceMicros, money)}
+                            /unit
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="text-xs font-medium text-muted-foreground">Total Due:</p>
+                          <p
+                            className="text-2xl font-black tracking-tight text-primary tabular-nums sm:text-3xl"
+                            data-testid="quick-checkout-total-due"
+                          >
+                            {formatMoney(totalMicros, money)} {money.currency}
+                          </p>
+                        </div>
                       </div>
 
-                      <div className="text-right">
-                        <p className="text-xs font-medium text-muted-foreground">Total Due:</p>
-                        <p
-                          className="text-2xl font-black tracking-tight text-primary tabular-nums sm:text-3xl"
-                          data-testid="quick-checkout-total-due"
-                        >
-                          {formatMoney(selectedTier.priceMicros, money)} {money.currency}
-                        </p>
+                      {/* Subtotal & Shipping Rate Breakdown */}
+                      <div
+                        className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-2.5 text-xs text-muted-foreground"
+                        data-testid="quick-checkout-shipping-breakdown"
+                      >
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                          <span>
+                            Subtotal:{" "}
+                            <strong
+                              className="font-bold text-foreground tabular-nums"
+                              data-testid="quick-checkout-subtotal"
+                            >
+                              {formatMoney(subtotalMicros, money)} {money.currency}
+                            </strong>
+                          </span>
+                          <span>
+                            Shipping:{" "}
+                            <strong
+                              className={cn(
+                                "font-bold tabular-nums",
+                                shippingMicros === 0
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-foreground",
+                              )}
+                              data-testid="quick-checkout-shipping"
+                            >
+                              {!shippingConfig.enabled
+                                ? "Free (disabled)"
+                                : shippingMicros === 0
+                                  ? "Free"
+                                  : `${formatMoney(shippingMicros, money)} ${money.currency}`}
+                            </strong>
+                          </span>
+                        </div>
+                        {shippingConfig.enabled && (
+                          <span className="text-[11px] font-medium">
+                            {shippingMicros === 0
+                              ? "Free shipping applied"
+                              : `Flat rate ${formatMoney(shippingConfig.rateMicros, money)}`}
+                          </span>
+                        )}
                       </div>
+
+                      {/* Free-Shipping Threshold Progress Banner */}
+                      {shippingThreshold && (
+                        <div
+                          data-testid="quick-checkout-free-shipping-banner"
+                          className={cn(
+                            "rounded-xl border px-3.5 py-2.5 text-xs",
+                            shippingThreshold.unlocked
+                              ? "border-emerald-500/30 bg-emerald-500/[0.08] text-emerald-700 dark:text-emerald-300"
+                              : "border-primary/25 bg-primary/[0.06] text-foreground",
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-2 font-semibold">
+                            <span className="inline-flex items-center gap-1.5">
+                              {shippingThreshold.unlocked ? (
+                                <CheckIcon
+                                  className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                  aria-hidden
+                                />
+                              ) : (
+                                <TruckIcon
+                                  className="size-3.5 shrink-0 text-primary"
+                                  aria-hidden
+                                />
+                              )}
+                              {shippingThreshold.unlocked ? (
+                                <span>
+                                  Free shipping unlocked (orders{" "}
+                                  {formatMoney(shippingThreshold.thresholdMicros, money)}+)
+                                </span>
+                              ) : (
+                                <span>
+                                  Add{" "}
+                                  <strong className="font-extrabold text-primary tabular-nums">
+                                    {formatMoney(shippingThreshold.remainingMicros, money)}
+                                  </strong>{" "}
+                                  more for free shipping (flat rate{" "}
+                                  {formatMoney(shippingConfig.rateMicros, money)}).
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[11px] font-bold tabular-nums opacity-80">
+                              {shippingThreshold.progressPercent}%
+                            </span>
+                          </div>
+                          {!shippingThreshold.unlocked && (
+                            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-primary/15">
+                              <div
+                                className="h-full rounded-full bg-primary transition-all duration-300"
+                                style={{ width: `${shippingThreshold.progressPercent}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1199,6 +1345,41 @@ export function QuickCheckoutModal({
 
               {step === 3 && selectedTier && (
                 <div className="space-y-5" data-testid="quick-checkout-step-3-panel">
+                  {/* Subtotal + Shipping + Total Due summary bar */}
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/80 bg-muted/25 px-4 py-3 text-xs sm:text-sm"
+                    data-testid="qc-step3-shipping-summary"
+                  >
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
+                      <span>
+                        Subtotal ({selectedTier.title}):{" "}
+                        <strong className="font-bold text-foreground tabular-nums">
+                          {formatMoney(subtotalMicros, money)} {money.currency}
+                        </strong>
+                      </span>
+                      <span>
+                        Shipping:{" "}
+                        <strong
+                          className={cn(
+                            "font-bold tabular-nums",
+                            shippingMicros === 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-foreground",
+                          )}
+                        >
+                          {!shippingConfig.enabled
+                            ? "Free (disabled)"
+                            : shippingMicros === 0
+                              ? "Free"
+                              : `${formatMoney(shippingMicros, money)} ${money.currency}`}
+                        </strong>
+                      </span>
+                    </div>
+                    <p className="font-extrabold text-primary tabular-nums">
+                      Total Due: {formatMoney(totalMicros, money)} {money.currency}
+                    </p>
+                  </div>
+
                   {/* 1. Cash on Delivery Option on Top (when enabled) */}
                   {paymentConfig.codEnabled && (
                     <div className="space-y-2.5" data-testid="qc-cod-section">
@@ -1211,7 +1392,7 @@ export function QuickCheckoutModal({
                             className="text-xs font-extrabold text-primary tabular-nums sm:text-sm"
                             data-testid="qc-payment-total-due"
                           >
-                            Total Due: {formatMoney(selectedTier.priceMicros, money)}{" "}
+                            Total Due: {formatMoney(totalMicros, money)}{" "}
                             {money.currency}
                           </p>
                         )}
@@ -1251,7 +1432,7 @@ export function QuickCheckoutModal({
                         </div>
 
                         <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
-                          {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                          {formatMoney(totalMicros, money)} {money.currency}
                         </span>
                       </button>
                     </div>
@@ -1301,7 +1482,7 @@ export function QuickCheckoutModal({
                           </div>
                         </div>
                         <span className="shrink-0 text-xs font-extrabold text-primary tabular-nums sm:text-sm">
-                          {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                          {formatMoney(totalMicros, money)} {money.currency}
                         </span>
                       </button>
 
@@ -1334,8 +1515,8 @@ export function QuickCheckoutModal({
                       currencies={activePlisioCurrencies}
                       selectedCid={selectedPlisioCurrency.cid}
                       active={paymentMode === "plisio"}
-                      totalMicros={selectedTier.priceMicros}
-                      formattedStoreTotal={`${formatMoney(selectedTier.priceMicros, money)} ${money.currency}`}
+                      totalMicros={totalMicros}
+                      formattedStoreTotal={`${formatMoney(totalMicros, money)} ${money.currency}`}
                       onSelectCoin={(coin) => {
                         setPaymentMode("plisio");
                         setSelectedPlisioCid(coin.cid);
@@ -1355,7 +1536,7 @@ export function QuickCheckoutModal({
                           className="text-xs font-extrabold text-primary tabular-nums sm:text-sm"
                           data-testid="qc-payment-total-due"
                         >
-                          Total Due: {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                          Total Due: {formatMoney(totalMicros, money)} {money.currency}
                         </p>
                       </div>
 
@@ -1438,7 +1619,7 @@ export function QuickCheckoutModal({
                                 Amount to Send:
                               </p>
                               <p className="text-lg font-black tracking-tight text-primary tabular-nums sm:text-2xl">
-                                {formatMoney(selectedTier.priceMicros, money)} {money.currency}{" "}
+                                {formatMoney(totalMicros, money)} {money.currency}{" "}
                                 equivalent
                               </p>
                             </div>
@@ -1559,7 +1740,7 @@ export function QuickCheckoutModal({
                     <>
                       <PlisioLiveInvoiceConsole
                         invoice={plisioInvoice}
-                        formattedStoreTotal={`${formatMoney(selectedTier.priceMicros, money)} ${money.currency}`}
+                        formattedStoreTotal={`${formatMoney(totalMicros, money)} ${money.currency}`}
                         onConfirmed={({ txId: verifiedTx }) => {
                           setPlisioConfirmedTxId(verifiedTx);
                           setSubmittedOrderId(plisioInvoice.orderId);
@@ -1582,6 +1763,22 @@ export function QuickCheckoutModal({
                         </div>
 
                         <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Subtotal:</span>
+                          <span className="font-semibold text-foreground tabular-nums">
+                            {formatMoney(subtotalMicros, money)} {money.currency}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Shipping:</span>
+                          <span className="font-semibold text-foreground tabular-nums">
+                            {shippingMicros === 0
+                              ? "Free"
+                              : `${formatMoney(shippingMicros, money)} ${money.currency}`}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
                           <span className="text-muted-foreground">Payment Protocol:</span>
                           <span className="font-semibold text-muted-foreground">
                             {selectedPlisioCurrency.name} · Plisio (
@@ -1593,7 +1790,7 @@ export function QuickCheckoutModal({
                           <span className="text-primary">Total Due:</span>
                           <span className="text-primary tabular-nums">
                             {plisioInvoice.cryptoAmount} {plisioInvoice.code} (
-                            {formatMoney(selectedTier.priceMicros, money)}{" "}
+                            {formatMoney(totalMicros, money)}{" "}
                             {money.currency})
                           </span>
                         </div>
@@ -1680,6 +1877,22 @@ export function QuickCheckoutModal({
                         </div>
 
                         <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Subtotal:</span>
+                          <span className="font-semibold text-foreground tabular-nums">
+                            {formatMoney(subtotalMicros, money)} {money.currency}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Shipping:</span>
+                          <span className="font-semibold text-foreground tabular-nums">
+                            {shippingMicros === 0
+                              ? "Free"
+                              : `${formatMoney(shippingMicros, money)} ${money.currency}`}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
                           <span className="text-muted-foreground">Payment Protocol:</span>
                           <span className="font-semibold text-muted-foreground">
                             {paymentMode === "stripe"
@@ -1695,7 +1908,7 @@ export function QuickCheckoutModal({
                             {paymentMode === "crypto" ? "Total Paid:" : "Total Due:"}
                           </span>
                           <span className="text-primary tabular-nums">
-                            {formatMoney(selectedTier.priceMicros, money)} {money.currency}
+                            {formatMoney(totalMicros, money)} {money.currency}
                           </span>
                         </div>
                       </div>
