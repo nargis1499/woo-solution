@@ -198,8 +198,10 @@ export function CheckoutForm({
     );
   }
 
-  const shippingMicros = calculateShippingMicros(subtotal, shippingConfig);
-  const totalMicros = subtotal + shippingMicros;
+  const discountMicros = coupon ? Math.min(Math.max(0, coupon.discountMicros), subtotal) : 0;
+  const discountedSubtotal = subtotal - discountMicros;
+  const shippingMicros = coupon?.freeShipping ? 0 : calculateShippingMicros(discountedSubtotal, shippingConfig);
+  const totalMicros = discountedSubtotal + shippingMicros;
 
   async function handleCopyDepositAddress(address: string) {
     try {

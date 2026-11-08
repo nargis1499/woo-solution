@@ -19,7 +19,8 @@ import {
   normaliseHomeCategorySections,
 } from "@/lib/home-sections";
 import { normaliseColors, normaliseGradients, type ThemeColors, type ThemeGradientSets } from "@/lib/theme";
-import { DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
+import { CURRENCIES, DEFAULT_PRICE_MICROS, MAX_EXCHANGE_RATE, USD_MONEY, inputFromMicros, isCurrencyCode, parseExchangeRate, parseMoneyInput, toBaseMicros, type Money } from "@/lib/money";
+import { isFulfillmentStatus, isValidTrackingUrl } from "@/lib/order-tracking";
 import { isCategoryIconId } from "@/lib/category-icons";
 import { normaliseCryptoProtocols, type CryptoProtocol } from "@/lib/crypto-protocols";
 import { normalisePlisioCurrencies, type PlisioCurrency } from "@/lib/plisio";
@@ -959,29 +960,106 @@ export async function deleteCategory(formData: FormData): Promise<AdminFormState
  * ────────────────────────────────────────────────────────────────────────── */
 
 export async function updateOrder(_prev: AdminFormState, formData: FormData): Promise<AdminFormState> {
+  const values = echo(formData);
   const id = str(formData, "id", 40);
-  if (!UUID_RE.test(id)) return { error: "Invalid order id." };
+  if (!UUID_RE.test(id)) return { error: "Invalid order id.", values };
 
   const status = str(formData, "status", 20) as OrderStatus;
   const paymentStatus = str(formData, "payment_status", 20) as PaymentStatus;
-  if (!ORDER_STATUSES.includes(status)) return { error: "Invalid order status." };
-  if (!PAYMENT_STATUSES.includes(paymentStatus)) return { error: "Invalid payment status." };
+  if (!ORDER_STATUSES.includes(status)) return { error: "Invalid order status.", values };
+  if (!PAYMENT_STATUSES.includes(paymentStatus)) return { error: "Invalid payment status.", values };
+
+  const hasTrackingFields =
+    formData.has("fulfillment_status") ||
+    formData.has("shipping_carrier") ||
+    formData.has("tracking_number") ||
+    formData.has("tracking_url");
+
+  const fulfillmentInput = str(formData, "fulfillment_status", 20);
+  const carrierInput = str(formData, "shipping_carrier", 120);
+  const trackingNumberInput = str(formData, "tracking_number", 200);
+  const trackingUrlInput = str(formData, "tracking_url", 1000);
+
+  const fieldErrors: Record<string, string> = {};
+  if (fulfillmentInput && !isFulfillmentStatus(fulfillmentInput)) {
+    fieldErrors.fulfillment_status = "Choose a valid fulfillment status.";
+  }
+  if (trackingUrlInput && !isValidTrackingUrl(trackingUrlInput)) {
+    fieldErrors.tracking_url = "Enter a full https:// tracking URL without spaces (or leave blank to auto-generate).";
+  }
+  if (Object.keys(fieldErrors).length > 0) {
+    return { error: "Please fix the highlighted fields.", fieldErrors, values };
+  }
 
   try {
     const { supabase } = await adminClient();
-    const { data, error } = await supabase
+    const basePatch: Record<string, unknown> = { status, payment_status: paymentStatus };
+
+    if (hasTrackingFields) {
+      const { data: current } = await supabase
+        .from("orders")
+        .select("fulfillment_status, fulfilled_at, shipped_at, delivered_at")
+        .eq("id", id)
+        .maybeSingle();
+
+      const nowIso = new Date().toISOString();
+      let fulfillmentStatus = isFulfillmentStatus(fulfillmentInput) ? fulfillmentInput : "unfulfilled";
+      // Entering a tracking number while fulfillment is still "unfulfilled" automatically marks it "shipped"
+      // unless the order was explicitly cancelled.
+      if (
+        trackingNumberInput &&
+        fulfillmentStatus === "unfulfilled" &&
+        (!current?.fulfillment_status || current.fulfillment_status === "unfulfilled" || current.fulfillment_status === "unknown") &&
+        status !== "cancelled"
+      ) {
+        fulfillmentStatus = "shipped";
+      }
+
+      const shippingStatus =
+        fulfillmentStatus === "delivered"
+          ? "delivered"
+          : fulfillmentStatus === "shipped"
+            ? "in_transit"
+            : "pending";
+
+      basePatch.fulfillment_status = fulfillmentStatus;
+      basePatch.shipping_status = shippingStatus;
+      basePatch.shipping_carrier = carrierInput || null;
+      basePatch.tracking_number = trackingNumberInput || null;
+      basePatch.tracking_url = trackingUrlInput || null;
+
+      if (fulfillmentStatus === "shipped" || fulfillmentStatus === "delivered") {
+        basePatch.fulfilled_at = current?.fulfilled_at ?? nowIso;
+        basePatch.shipped_at = current?.shipped_at ?? nowIso;
+      }
+      if (fulfillmentStatus === "delivered") {
+        basePatch.delivered_at = current?.delivered_at ?? nowIso;
+      }
+    }
+
+    let { data, error } = await supabase
       .from("orders")
-      .update({ status, payment_status: paymentStatus })
+      .update(basePatch)
       .eq("id", id)
       .select("id")
       .maybeSingle();
+
+    if (error && (error.code === "42703" || /fulfillment_|shipping_|tracking_|shipped_at|delivered_at/i.test(error.message ?? ""))) {
+      ({ data, error } = await supabase
+        .from("orders")
+        .update({ status, payment_status: paymentStatus })
+        .eq("id", id)
+        .select("id")
+        .maybeSingle());
+    }
+
     if (error) throw error;
-    if (!data) return { error: "Order not found." };
+    if (!data) return { error: "Order not found.", values };
 
     revalidateStore();
     return { success: "Order updated." };
   } catch (e) {
-    return { error: friendlyError(e) };
+    return { error: friendlyError(e), values };
   }
 }
 
@@ -1228,6 +1306,7 @@ const META_FALLBACK_KEYS = [
   "footer_text",
   "shipping_enabled",
   "shipping_rate_micros",
+  "free_shipping_threshold_micros",
   "reviews_enabled",
   "payment_cod_enabled",
   "payment_plisio_enabled",
@@ -1436,11 +1515,20 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
   const shippingEnabled = formData.has("shipping_enabled") ? bool(formData, "shipping_enabled") : true;
   const reviewsEnabled = formData.has("reviews_enabled") ? bool(formData, "reviews_enabled") : null;
   const shippingRateInput = str(formData, "shipping_rate", 20);
+  const freeThresholdInput = str(formData, "free_shipping_threshold", 20);
   const fieldErrors: Record<string, string> = {};
-  if (!currency) fieldErrors.currency = "Pick USD or BDT.";
-  // The rate only matters (and is only shown) for BDT; a USD store keeps the last rate for later.
-  const rate = currency === "BDT" ? parseExchangeRate(rateInput) : null;
-  if (currency === "BDT" && (rate === null || Number.isNaN(rate))) fieldErrors.usd_to_bdt_rate = `Enter how many BDT one USD is worth, e.g. 120 (up to ${MAX_EXCHANGE_RATE.toLocaleString("en-US")}).`;
+  if (!currency) fieldErrors.currency = "Pick a store currency.";
+  // The rate is required for any non-USD currency; a USD store keeps the last rate for later.
+  const rate = currency && currency !== "USD" ? parseExchangeRate(rateInput) : null;
+  if (currency && currency !== "USD" && (rate === null || Number.isNaN(rate))) {
+    const example = CURRENCIES[currency].suggestedRate;
+    fieldErrors.usd_to_bdt_rate = `Enter how many ${currency} one USD is worth, e.g. ${example} (up to ${MAX_EXCHANGE_RATE.toLocaleString("en-US")}).`;
+  }
+
+  const effectiveMoney: Money =
+    currency && currency !== "USD" && rate && !Number.isNaN(rate)
+      ? { currency, rate }
+      : USD_MONEY;
 
   let shippingRateMicros: number | null = null;
   if (shippingEnabled && formData.has("shipping_rate")) {
@@ -1448,8 +1536,21 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
     if (minor === null || Number.isNaN(minor) || minor < 0) {
       fieldErrors.shipping_rate = "Enter a valid shipping rate (0 or higher).";
     } else {
-      const effectiveMoney: Money = currency === "BDT" && rate && !Number.isNaN(rate) ? { currency: "BDT", rate } : USD_MONEY;
       shippingRateMicros = toBaseMicros(minor, effectiveMoney);
+    }
+  }
+
+  let freeShippingThresholdMicros: number | null | undefined = undefined;
+  if (shippingEnabled && formData.has("free_shipping_threshold")) {
+    if (!freeThresholdInput.trim()) {
+      freeShippingThresholdMicros = null;
+    } else {
+      const minor = parseMoneyInput(freeThresholdInput);
+      if (minor === null || Number.isNaN(minor) || minor < 0) {
+        fieldErrors.free_shipping_threshold = "Enter a valid minimum order amount (or leave blank for none).";
+      } else {
+        freeShippingThresholdMicros = minor > 0 ? toBaseMicros(minor, effectiveMoney) : null;
+      }
     }
   }
 
@@ -1461,6 +1562,7 @@ export async function updateShopSettings(_prev: AdminFormState, formData: FormDa
       ...(rate ? { usd_to_bdt_rate: rate } : {}),
       shipping_enabled: shippingEnabled,
       ...(shippingRateMicros !== null ? { shipping_rate_micros: shippingRateMicros } : {}),
+      ...(freeShippingThresholdMicros !== undefined ? { free_shipping_threshold_micros: freeShippingThresholdMicros } : {}),
       ...(reviewsEnabled !== null ? { reviews_enabled: reviewsEnabled } : {}),
     });
     if (problem) return { error: problem, values };

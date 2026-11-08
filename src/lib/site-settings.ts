@@ -45,6 +45,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   usd_to_bdt_rate: null,
   shipping_enabled: true,
   shipping_rate_micros: FLAT_SHIPPING_MICROS,
+  free_shipping_threshold_micros: null,
   reviews_enabled: true,
   payment_cod_enabled: true,
   payment_plisio_enabled: false,
@@ -84,6 +85,10 @@ const flag = (v: unknown, fallback: boolean): boolean => (typeof v === "boolean"
 const positive = (v: unknown): number | null => {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : Number.NaN;
   return Number.isFinite(n) && n > 0 ? n : null;
+};
+const positiveInt = (v: unknown): number | null => {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : Number.NaN;
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 };
 const nonNegative = (v: unknown, fallback: number): number => {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : Number.NaN;
@@ -133,6 +138,7 @@ export function normaliseSiteSettings(row: Record<string, unknown> | null | unde
     usd_to_bdt_rate: positive(row.usd_to_bdt_rate),
     shipping_enabled: flag(row.shipping_enabled ?? meta.shipping_enabled, true),
     shipping_rate_micros: nonNegative(row.shipping_rate_micros ?? meta.shipping_rate_micros, FLAT_SHIPPING_MICROS),
+    free_shipping_threshold_micros: positiveInt(row.free_shipping_threshold_micros ?? meta.free_shipping_threshold_micros),
     reviews_enabled: flag(row.reviews_enabled ?? meta.reviews_enabled, true),
     payment_cod_enabled: flag(row.payment_cod_enabled ?? meta.payment_cod_enabled, true),
     payment_plisio_enabled: flag(row.payment_plisio_enabled ?? meta.payment_plisio_enabled, false),

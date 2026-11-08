@@ -8,6 +8,7 @@ import { redirectIfClamped, resolveListParams } from "@/lib/admin/list-params";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
 import { parseOrderPaymentInfo } from "@/lib/order-payment";
+import { resolveOrderTracking } from "@/lib/order-tracking";
 import { deleteOrder, deleteOrders } from "@/app/nemesis/actions";
 import { OrderStatusBadge, PaymentStatusBadge } from "@/components/order-status-badge";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -67,6 +68,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
           rows={orders.map((o) => {
             const items = (o.order_items ?? []).reduce((n, i) => n + i.quantity, 0);
             const paymentInfo = parseOrderPaymentInfo(o);
+            const tracking = resolveOrderTracking(o);
             return {
               id: o.id,
               href: detailHref(o.id),
@@ -81,7 +83,23 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
                   <p className="truncate">{o.shipping_name}</p>
                   <p className="truncate text-xs text-muted-foreground">{o.customer_email ?? "—"}</p>
                 </div>,
-                <OrderStatusBadge key="s" status={o.status} />,
+                <div key="s" className="min-w-0">
+                  <OrderStatusBadge status={o.status} />
+                  {tracking.hasTracking && (
+                    <p
+                      className="mt-1 max-w-[180px] truncate text-xs text-muted-foreground"
+                      title={
+                        [tracking.fulfillmentLabel, tracking.carrier, tracking.trackingNumber]
+                          .filter(Boolean)
+                          .join(" · ")
+                      }
+                    >
+                      {tracking.fulfillmentLabel}
+                      {tracking.carrier ? ` · ${tracking.carrier}` : ""}
+                      {tracking.trackingNumber ? ` · ${tracking.trackingNumber}` : ""}
+                    </p>
+                  )}
+                </div>,
                 <div key="p" className="min-w-0">
                   <PaymentStatusBadge status={o.payment_status} />
                   <p className="mt-1 text-xs font-medium text-muted-foreground uppercase">

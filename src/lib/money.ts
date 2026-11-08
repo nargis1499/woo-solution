@@ -3,39 +3,68 @@
  *
  * Every amount in `products`, `orders`, `order_items` and the cart is an integer number of
  * **micro-dollars** – the base unit: 1 USD = 1,000,000 micros, so 1 cent = 10,000 micros and
- * a micro is a ten-thousandth of a cent. Settings → WooCommerce → Currency decides what people
- * see: USD shows the base amount in cents, BDT shows base × the USD→BDT rate in poisha. Prices
- * typed into the admin while BDT is selected are converted back to micros before they are
- * stored, so switching currency never rewrites the catalogue – and the taka amount the admin
- * typed is still the exact amount that comes back.
- *
- * A whole *cent* is too coarse for that. At a rate of 120 one cent is 1.20 ৳, so 100 ৳ would
- * have to be stored as 83 ¢ and would read back as 99.60 ৳ (and 1 ৳ as 1.20 ৳). A micro-dollar
- * is 0.00012 ৳ at the same rate, so any amount an admin can type round-trips exactly while it
- * stays a safe JavaScript integer (Postgres columns are `bigint`, good for ~$9,000,000).
+ * a micro is a ten-thousandth of a cent. Settings → E-commerce → General → Currency decides
+ * what people see: USD shows the base amount in cents, while any international currency shows
+ * base × the configured USD→currency rate in its minor units. Prices typed into the admin are
+ * converted back to micros before they are stored, so switching currency never rewrites the
+ * catalogue – and the amount the admin typed is still the exact amount that comes back.
  *
  * Pure helpers – shared by server components, actions and client components.
  */
 import type { SiteSettings } from "@/lib/types";
 
-export type CurrencyCode = "USD" | "BDT";
+export type CurrencyCode =
+  | "USD"
+  | "EUR"
+  | "GBP"
+  | "CAD"
+  | "AUD"
+  | "SGD"
+  | "CHF"
+  | "AED"
+  | "SAR"
+  | "INR"
+  | "BDT"
+  | "MYR"
+  | "BRL"
+  | "MXN";
 
 export const BASE_CURRENCY: CurrencyCode = "USD";
 
 /** Base unit: 1 USD = 1,000,000 micros (1 cent = 10,000 micros). */
 export const MICROS_PER_USD = 1_000_000;
 export const MICROS_PER_CENT = 10_000;
-/** Every base ↔ display conversion divides by this: micros × rate ÷ 10,000 = cents/poisha. */
+/** Every base ↔ display conversion divides by this: micros × rate ÷ 10,000 = minor units (cents/pence/poisha). */
 const DISPLAY_DIVISOR = MICROS_PER_CENT;
 
-export const CURRENCIES: Record<CurrencyCode, { code: CurrencyCode; symbol: string; name: string; label: string }> = {
-  USD: { code: "USD", symbol: "$", name: "US dollar", label: "USD ($)" },
-  BDT: { code: "BDT", symbol: "৳", name: "Bangladeshi taka", label: "BDT (৳)" },
+export type CurrencyMeta = {
+  code: CurrencyCode;
+  symbol: string;
+  name: string;
+  label: string;
+  suggestedRate: number;
+};
+
+export const CURRENCIES: Record<CurrencyCode, CurrencyMeta> = {
+  USD: { code: "USD", symbol: "$", name: "US dollar", label: "USD ($) — US dollar", suggestedRate: 1 },
+  EUR: { code: "EUR", symbol: "€", name: "Euro", label: "EUR (€) — Euro", suggestedRate: 0.92 },
+  GBP: { code: "GBP", symbol: "£", name: "British pound", label: "GBP (£) — British pound", suggestedRate: 0.79 },
+  CAD: { code: "CAD", symbol: "CA$", name: "Canadian dollar", label: "CAD (CA$) — Canadian dollar", suggestedRate: 1.38 },
+  AUD: { code: "AUD", symbol: "A$", name: "Australian dollar", label: "AUD (A$) — Australian dollar", suggestedRate: 1.52 },
+  SGD: { code: "SGD", symbol: "S$", name: "Singapore dollar", label: "SGD (S$) — Singapore dollar", suggestedRate: 1.34 },
+  CHF: { code: "CHF", symbol: "CHF ", name: "Swiss franc", label: "CHF — Swiss franc", suggestedRate: 0.88 },
+  AED: { code: "AED", symbol: "AED ", name: "UAE dirham", label: "AED — UAE dirham", suggestedRate: 3.67 },
+  SAR: { code: "SAR", symbol: "SAR ", name: "Saudi riyal", label: "SAR — Saudi riyal", suggestedRate: 3.75 },
+  INR: { code: "INR", symbol: "₹", name: "Indian rupee", label: "INR (₹) — Indian rupee", suggestedRate: 84 },
+  BDT: { code: "BDT", symbol: "৳", name: "Bangladeshi taka", label: "BDT (৳) — Bangladeshi taka", suggestedRate: 120 },
+  MYR: { code: "MYR", symbol: "RM", name: "Malaysian ringgit", label: "MYR (RM) — Malaysian ringgit", suggestedRate: 4.45 },
+  BRL: { code: "BRL", symbol: "R$", name: "Brazilian real", label: "BRL (R$) — Brazilian real", suggestedRate: 5.75 },
+  MXN: { code: "MXN", symbol: "MX$", name: "Mexican peso", label: "MXN (MX$) — Mexican peso", suggestedRate: 20 },
 };
 
 export const CURRENCY_CODES = Object.keys(CURRENCIES) as CurrencyCode[];
 
-/** Largest USD→BDT rate the settings accept (a sanity bound, not a forecast). */
+/** Largest USD→currency rate the settings accept (a sanity bound, not a forecast). */
 export const MAX_EXCHANGE_RATE = 100000;
 
 /** Display currency + the base→display rate (always 1 for the base currency). */
@@ -56,12 +85,20 @@ export function usdMicros(usd: number): number {
 }
 
 /**
- * The effective display currency from the settings row. BDT needs a usable rate –
- * without one the store keeps showing USD rather than multiplying by nothing.
+ * The effective display currency from the settings row. Any non-USD currency needs a usable
+ * positive rate – without one the store keeps showing USD rather than multiplying by nothing.
  */
 export function moneyFromSettings(settings: Pick<SiteSettings, "currency" | "usd_to_bdt_rate">): Money {
   const rate = settings.usd_to_bdt_rate;
-  if (settings.currency === "BDT" && typeof rate === "number" && Number.isFinite(rate) && rate > 0) return { currency: "BDT", rate };
+  if (
+    isCurrencyCode(settings.currency) &&
+    settings.currency !== BASE_CURRENCY &&
+    typeof rate === "number" &&
+    Number.isFinite(rate) &&
+    rate > 0
+  ) {
+    return { currency: settings.currency, rate };
+  }
   return USD_MONEY;
 }
 
@@ -72,7 +109,7 @@ export function orderMoney(order: { currency: string; exchange_rate?: number | s
   return USD_MONEY;
 }
 
-/** Base micros → minor units of the display currency (cents for USD, poisha for BDT). */
+/** Base micros → minor units of the display currency (cents, pence, euro-cents, poisha, etc.). */
 export function toDisplayMinor(micros: number, money: Money): number {
   return Math.round((Number(micros) * money.rate) / DISPLAY_DIVISOR);
 }
@@ -93,7 +130,7 @@ export function formatMinor(minor: number, currency: CurrencyCode): string {
   return `${sign}${CURRENCIES[currency].symbol}${amount}`;
 }
 
-/** Base micros → "$1,234.56" / "৳148,147.20" in the given display currency. */
+/** Base micros → "$1,234.56" / "€1,135.80" / "৳148,147.20" in the given display currency. */
 export function formatMoney(micros: number, money: Money = USD_MONEY): string {
   return formatMinor(toDisplayMinor(micros, money), money.currency);
 }
@@ -117,7 +154,7 @@ export function parseMoneyInput(value: string): number | null {
   return Math.round(n * 100);
 }
 
-/** "120" / "121.5" → a usable USD→BDT rate (4 decimals), NaN when not positive. */
+/** "120" / "0.92" → a usable USD→currency rate (4 decimals), NaN when not positive. */
 export function parseExchangeRate(value: string): number {
   const n = Number(value.trim().replace(",", "."));
   if (!Number.isFinite(n) || n <= 0 || n > MAX_EXCHANGE_RATE) return Number.NaN;

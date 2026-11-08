@@ -1,4 +1,4 @@
-import type { Money } from "@/lib/money";
+import type { CurrencyCode, Money } from "@/lib/money";
 export const COMPARISONS = ["gt", "gte", "lt", "lte", "eq", "ne"] as const;
 export type NumericRule = Partial<Record<(typeof COMPARISONS)[number], number>>;
 export type ProductFilters = {
@@ -23,7 +23,7 @@ export type ProductFilters = {
   stockStatus: "all" | "tracked" | "untracked" | "in_stock" | "out_of_stock";
   featured?: boolean;
   onSale?: boolean;
-  currency?: "USD" | "BDT";
+  currency?: CurrencyCode;
   createdFrom?: string;
   createdTo?: string;
   updatedFrom?: string;

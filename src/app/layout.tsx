@@ -37,6 +37,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const shipping = {
     enabled: settings.shipping_enabled,
     rateMicros: settings.shipping_rate_micros,
+    freeThresholdMicros: settings.free_shipping_threshold_micros,
   };
   return (
     // suppressHydrationWarning: next-themes sets the `class`/`style` on <html> before React hydrates

@@ -328,6 +328,14 @@ export type Order = {
   stripe_customer_id?: string | null;
   stripe_checkout_status?: string | null;
   stripe_payment_status?: string | null;
+  /** Shipment & tracking fields (migration 20261051 / 20261064). */
+  fulfillment_status?: "unknown" | "unfulfilled" | "packed" | "shipped" | "delivered";
+  shipping_status?: "unknown" | "pending" | "in_transit" | "delayed" | "delivered";
+  shipping_carrier?: string | null;
+  tracking_number?: string | null;
+  tracking_url?: string | null;
+  shipped_at?: string | null;
+  delivered_at?: string | null;
   /** Currency the customer saw at checkout; amounts below are USD micros × `exchange_rate` for display */
   currency: string;
   /** USD → `currency` rate stamped at checkout (1 for USD; missing before migration 12) */
@@ -438,6 +446,8 @@ export type SiteSettings = {
   shipping_enabled: boolean;
   /** Flat checkout shipping rate in USD micro-dollars */
   shipping_rate_micros: number;
+  /** Post-discount order subtotal in USD micro-dollars at or above which shipping is free (null = no threshold) */
+  free_shipping_threshold_micros: number | null;
   /** Store-wide Ratings & Reviews feature switch (E-commerce → General). */
   reviews_enabled: boolean;
   // WooCommerce → Payment

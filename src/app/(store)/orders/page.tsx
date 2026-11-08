@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { PackageIcon } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyOrders } from "@/lib/data/orders";
+import { resolveOrderTracking } from "@/lib/order-tracking";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
 import { OrderStatusBadge } from "@/components/order-status-badge";
@@ -65,6 +66,7 @@ async function OrdersList() {
         ]}
         rows={orders.map((order) => {
           const itemCount = (order.order_items ?? []).reduce((n, i) => n + i.quantity, 0);
+          const tracking = resolveOrderTracking(order);
           return {
             id: order.id,
             cells: [
@@ -74,7 +76,16 @@ async function OrdersList() {
               <span key="d" className="text-muted-foreground">
                 {formatDate(order.created_at)}
               </span>,
-              <OrderStatusBadge key="s" status={order.status} />,
+              <div key="s">
+                <OrderStatusBadge status={order.status} />
+                {tracking.hasTracking && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {tracking.fulfillmentLabel}
+                    {tracking.carrier ? ` · ${tracking.carrier}` : ""}
+                    {tracking.trackingNumber ? ` · ${tracking.trackingNumber}` : ""}
+                  </p>
+                )}
+              </div>,
               <span key="t">
                 <span className="font-medium tabular-nums">{formatMoney(order.total_micros, orderMoney(order))}</span>
                 <span className="text-muted-foreground">

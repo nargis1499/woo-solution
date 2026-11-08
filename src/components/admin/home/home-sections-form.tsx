@@ -359,7 +359,10 @@ export function HomeSectionsForm({
 
   const fallbackTitle = defaultHomeHeroTitle(settings.store_name);
   const fallbackSubtitle = defaultHomeHeroSubtitle(
-    formatMoney(FREE_SHIPPING_THRESHOLD_MICROS, moneyFromSettings(settings)),
+    formatMoney(
+      settings.free_shipping_threshold_micros || FREE_SHIPPING_THRESHOLD_MICROS,
+      moneyFromSettings(settings),
+    ),
   );
 
   const [defaultLayout, setDefaultLayout] = useState<HomeCategoryDisplayMode>(
