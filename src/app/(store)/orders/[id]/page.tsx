@@ -3,20 +3,23 @@ import { NOINDEX } from "@/lib/seo";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
-import { AlertTriangleIcon, CircleCheckIcon, Clock3Icon, CreditCardIcon } from "lucide-react";
+import { AlertTriangleIcon, CircleCheckIcon, Clock3Icon, CreditCardIcon, ExternalLinkIcon, TruckIcon } from "lucide-react";
 import { resumeStripeCheckout } from "@/app/(store)/checkout/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyOrder } from "@/lib/data/orders";
 import { listOrderMessagesOrNull } from "@/lib/order-messages";
 import { parseOrderPaymentInfo } from "@/lib/order-payment";
+import { resolveOrderTracking } from "@/lib/order-tracking";
 import { getStorePresence } from "@/lib/presence.server";
 import { syncStripeCheckoutSession } from "@/lib/stripe.server";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
+import { cn } from "@/lib/utils";
 import { OrderChat } from "@/components/order-chat/order-chat";
 import { OrderStatusBadge } from "@/components/order-status-badge";
 import { ProductImage } from "@/components/product-image";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -61,6 +64,7 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
   if (!order) notFound();
   const items = order.order_items ?? [];
   const paymentInfo = parseOrderPaymentInfo(order);
+  const tracking = resolveOrderTracking(order);
   const stripePaid = paymentInfo.isStripe && order.payment_status === "paid";
   const stripeUnpaid =
     paymentInfo.isStripe && order.payment_status === "unpaid" && order.status !== "cancelled";
@@ -152,6 +156,89 @@ async function OrderDetails({ params, searchParams }: { params: Params; searchPa
                 Pay with Stripe
               </Button>
             </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {tracking.hasTracking && (
+        <Card className="border-primary/25 bg-primary/[0.02]" data-testid="order-tracking-card">
+          <CardHeader className="pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CardTitle className="flex items-center gap-2.5 text-base">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/12 text-primary">
+                  <TruckIcon className="size-4" aria-hidden />
+                </span>
+                <span>Shipment &amp; tracking</span>
+              </CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={tracking.fulfillmentStatus === "delivered" ? "default" : "secondary"}>
+                  {tracking.fulfillmentLabel}
+                </Badge>
+                {tracking.trackingUrl && (
+                  <a
+                    href={tracking.trackingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={buttonVariants({ size: "xs", variant: "outline" })}
+                    data-testid="order-track-package-link"
+                  >
+                    Track package
+                    <ExternalLinkIcon className="size-3.5" aria-hidden />
+                  </a>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ol className="grid grid-cols-4 gap-2 text-xs" aria-label="Fulfillment progress">
+              {(["Order placed", "Packed", "Shipped", "Delivered"] as const).map((label, idx) => {
+                const done = idx <= tracking.stepIndex;
+                return (
+                  <li key={label} className="space-y-1.5">
+                    <div
+                      className={cn(
+                        "h-1.5 rounded-full transition-colors",
+                        done ? "bg-primary" : "bg-muted",
+                      )}
+                    />
+                    <p className={cn("font-medium", done ? "text-foreground" : "text-muted-foreground")}>
+                      {label}
+                    </p>
+                  </li>
+                );
+              })}
+            </ol>
+
+            {(tracking.carrier || tracking.trackingNumber || tracking.shippedAt || tracking.deliveredAt) && (
+              <dl className="grid gap-3 border-t pt-3 text-sm sm:grid-cols-3">
+                {tracking.carrier && (
+                  <div>
+                    <dt className="text-xs font-medium text-muted-foreground">Carrier</dt>
+                    <dd className="mt-0.5 font-medium" data-testid="order-tracking-carrier">
+                      {tracking.carrier}
+                    </dd>
+                  </div>
+                )}
+                {tracking.trackingNumber && (
+                  <div>
+                    <dt className="text-xs font-medium text-muted-foreground">Tracking number</dt>
+                    <dd className="mt-0.5 font-mono text-xs font-semibold break-all" data-testid="order-tracking-number">
+                      {tracking.trackingNumber}
+                    </dd>
+                  </div>
+                )}
+                {(tracking.deliveredAt || tracking.shippedAt) && (
+                  <div>
+                    <dt className="text-xs font-medium text-muted-foreground">
+                      {tracking.deliveredAt ? "Delivered on" : "Shipped on"}
+                    </dt>
+                    <dd className="mt-0.5 font-medium">
+                      {formatDate((tracking.deliveredAt ?? tracking.shippedAt)!)}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            )}
           </CardContent>
         </Card>
       )}

@@ -156,7 +156,10 @@ export default async function HomePage() {
   const heroSubtitle =
     settings.home_hero_subtitle ||
     defaultHomeHeroSubtitle(
-      formatMoney(FREE_SHIPPING_THRESHOLD_MICROS, moneyFromSettings(settings)),
+      formatMoney(
+        settings.free_shipping_threshold_micros || FREE_SHIPPING_THRESHOLD_MICROS,
+        moneyFromSettings(settings),
+      ),
     );
   const primaryCtaText = settings.home_hero_primary_cta_text;
   const primaryCtaHref = settings.home_hero_primary_cta_href || DEFAULT_HOME_HERO_PRIMARY_CTA_HREF;

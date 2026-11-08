@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { getSiteSettingsFresh } from "@/lib/site-settings";
 import { listOrderMessagesOrNull } from "@/lib/order-messages";
 import { parseOrderPaymentInfo } from "@/lib/order-payment";
+import { resolveOrderTracking } from "@/lib/order-tracking";
 import { getCustomerVisibility, getPersonPresence } from "@/lib/presence.server";
 import { formatDate, formatOrderNumber } from "@/lib/format";
 import { formatMoney, orderMoney } from "@/lib/money";
@@ -48,6 +49,7 @@ export default async function AdminOrderPage({
   ]);
   const items = order.order_items ?? [];
   const paymentInfo = parseOrderPaymentInfo(order);
+  const tracking = resolveOrderTracking(order);
 
   return (
     <>
@@ -365,6 +367,50 @@ export default async function AdminOrderPage({
                   ),
                 },
                 { label: "Customer notes", value: paymentInfo.customerNotes },
+                {
+                  label: "Fulfillment",
+                  value: (
+                    <span data-testid="admin-order-fulfillment-badge">
+                      <ToneBadge
+                        tone={
+                          tracking.fulfillmentStatus === "delivered"
+                            ? "emerald"
+                            : tracking.fulfillmentStatus === "shipped" || tracking.fulfillmentStatus === "packed"
+                              ? "blue"
+                              : "neutral"
+                        }
+                      >
+                        {tracking.fulfillmentLabel}
+                      </ToneBadge>
+                    </span>
+                  ),
+                },
+                { label: "Shipping carrier", value: tracking.carrier },
+                {
+                  label: "Tracking number",
+                  value: tracking.trackingNumber ? (
+                    <div className="flex flex-wrap items-center gap-2" data-testid="admin-order-tracking-number">
+                      <code className="rounded-md border border-primary/30 bg-primary/[0.08] px-2.5 py-1 font-mono text-xs font-semibold">
+                        {tracking.trackingNumber}
+                      </code>
+                      <CopyValueButton value={tracking.trackingNumber} label="Copy tracking" />
+                    </div>
+                  ) : null,
+                },
+                {
+                  label: "Tracking link",
+                  value: tracking.trackingUrl ? (
+                    <a
+                      href={tracking.trackingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-medium text-primary hover:underline break-all"
+                      data-testid="admin-order-tracking-link"
+                    >
+                      {tracking.trackingUrl}
+                    </a>
+                  ) : null,
+                },
               ]}
             />
           </Section>

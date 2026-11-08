@@ -6,6 +6,7 @@ import { updateGeneralSettings, updateSeoSettings, updateShopSettings, type Admi
 import {
   CURRENCIES,
   CURRENCY_CODES,
+  DEFAULT_PRICE_MICROS,
   formatExchangeRate,
   formatMoney,
   inputFromMicros,
@@ -325,13 +326,31 @@ export function ShopSettingsForm({ settings }: { settings: SiteSettings }) {
 function ShopSettingsBody({ settings, v, err }: { settings: SiteSettings; v: Record<string, string>; err: Record<string, string> }) {
   const [currency, setCurrency] = useState<CurrencyCode>(isCurrencyCode(v.currency) ? v.currency : settings.currency);
   const [rateText, setRateText] = useState<string>(
-    v.usd_to_bdt_rate ?? (settings.usd_to_bdt_rate ? formatExchangeRate(settings.usd_to_bdt_rate) : ""),
+    v.usd_to_bdt_rate ??
+      (settings.usd_to_bdt_rate
+        ? formatExchangeRate(settings.usd_to_bdt_rate)
+        : settings.currency !== "USD"
+          ? formatExchangeRate(CURRENCIES[settings.currency].suggestedRate)
+          : ""),
   );
+
+  function handleCurrencyChange(next: CurrencyCode) {
+    if (next !== "USD") {
+      const currentRate = parseExchangeRate(rateText);
+      const isPreviousSuggested =
+        !rateText.trim() ||
+        (currency !== "USD" && Number.isFinite(currentRate) && currentRate === CURRENCIES[currency].suggestedRate);
+      if (isPreviousSuggested) {
+        setRateText(formatExchangeRate(CURRENCIES[next].suggestedRate));
+      }
+    }
+    setCurrency(next);
+  }
 
   const parsedRate = parseExchangeRate(rateText);
   const activeMoney: Money =
-    currency === "BDT" && Number.isFinite(parsedRate) && parsedRate > 0
-      ? { currency: "BDT", rate: parsedRate }
+    currency !== "USD" && Number.isFinite(parsedRate) && parsedRate > 0
+      ? { currency, rate: parsedRate }
       : moneyFromSettings({ currency, usd_to_bdt_rate: settings.usd_to_bdt_rate });
 
   return (
@@ -348,9 +367,10 @@ function ShopSettingsBody({ settings, v, err }: { settings: SiteSettings; v: Rec
       <FieldSeparator />
       <CurrencyFields
         currency={currency}
-        onCurrencyChange={setCurrency}
+        onCurrencyChange={handleCurrencyChange}
         rateText={rateText}
         onRateTextChange={setRateText}
+        activeMoney={activeMoney}
         err={err}
       />
       <FieldSeparator />
@@ -424,22 +444,25 @@ function ReviewsFields({ settings, v }: { settings: SiteSettings; v: Record<stri
 }
 
 /**
- * Store currency + the USD→BDT rate. Prices stay in USD in the database; the rate field
- * only exists while BDT is selected (a failed save keeps whatever was typed).
+ * Store currency + the USD→currency exchange rate. Prices stay in USD in the database;
+ * the rate field is shown for any non-USD currency (a failed save keeps whatever was typed).
  */
 function CurrencyFields({
   currency,
   onCurrencyChange,
   rateText,
   onRateTextChange,
+  activeMoney,
   err,
 }: {
   currency: CurrencyCode;
   onCurrencyChange: (next: CurrencyCode) => void;
   rateText: string;
   onRateTextChange: (next: string) => void;
+  activeMoney: Money;
   err: Record<string, string>;
 }) {
+  const suggested = formatExchangeRate(CURRENCIES[currency].suggestedRate);
   return (
     <FieldSet data-testid="currency-settings">
       <FieldLegend variant="label">Currency</FieldLegend>
@@ -447,7 +470,7 @@ function CurrencyFields({
         <Field>
           <FieldLabel htmlFor="currency">Store currency</FieldLabel>
           <Select name="currency" selectedKey={currency} onSelectionChange={(key) => isCurrencyCode(key) && onCurrencyChange(key)} aria-label="Store currency">
-            <SelectTrigger id="currency" className="w-full sm:max-w-xs">
+            <SelectTrigger id="currency" className="w-full sm:max-w-xs" data-testid="currency-select-trigger">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -458,28 +481,49 @@ function CurrencyFields({
               ))}
             </SelectContent>
           </Select>
+          <p className="text-xs text-muted-foreground">
+            Catalog prices are stored in USD micro-dollars so switching currency never rewrites your products.
+          </p>
         </Field>
-        {currency === "BDT" && (
+        {currency !== "USD" && (
           <Field data-invalid={Boolean(err.usd_to_bdt_rate) || undefined}>
-            <FieldLabel htmlFor="usd_to_bdt_rate">Exchange rate</FieldLabel>
-            <InputGroup className="sm:max-w-xs">
-              <InputGroupAddon>
-                <InputGroupText>1 USD =</InputGroupText>
-              </InputGroupAddon>
-              <InputGroupInput
-                id="usd_to_bdt_rate"
-                name="usd_to_bdt_rate"
-                inputMode="decimal"
-                placeholder="120"
-                required
-                value={rateText}
-                onChange={(e) => onRateTextChange(e.target.value)}
-                aria-invalid={Boolean(err.usd_to_bdt_rate) || undefined}
-              />
-              <InputGroupAddon align="inline-end">
-                <InputGroupText>BDT</InputGroupText>
-              </InputGroupAddon>
-            </InputGroup>
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:max-w-md">
+              <FieldLabel htmlFor="usd_to_bdt_rate">Exchange rate</FieldLabel>
+              <button
+                type="button"
+                onClick={() => onRateTextChange(suggested)}
+                className="text-xs font-medium text-primary hover:underline"
+                data-testid="currency-use-suggested-rate"
+              >
+                Use suggested (1 USD = {suggested} {currency})
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <InputGroup className="sm:max-w-xs">
+                <InputGroupAddon>
+                  <InputGroupText>1 USD =</InputGroupText>
+                </InputGroupAddon>
+                <InputGroupInput
+                  id="usd_to_bdt_rate"
+                  name="usd_to_bdt_rate"
+                  inputMode="decimal"
+                  placeholder={suggested}
+                  required
+                  value={rateText}
+                  onChange={(e) => onRateTextChange(e.target.value)}
+                  aria-invalid={Boolean(err.usd_to_bdt_rate) || undefined}
+                  data-testid="currency-exchange-rate-input"
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupText>{currency}</InputGroupText>
+                </InputGroupAddon>
+              </InputGroup>
+              {activeMoney.currency === currency && (
+                <Badge variant="outline" className="h-7 px-2.5 text-xs font-medium tabular-nums" data-testid="currency-conversion-preview">
+                  $19.99 USD → {formatMoney(DEFAULT_PRICE_MICROS, activeMoney)}
+                </Badge>
+              )}
+            </div>
             <FieldError>{err.usd_to_bdt_rate}</FieldError>
           </Field>
         )}
@@ -489,6 +533,7 @@ function CurrencyFields({
 }
 
 const SHIPPING_PRESET_USD = [0, 5, 10, 15] as const;
+const FREE_SHIPPING_THRESHOLD_PRESET_USD = [0, 50, 75, 100, 150] as const;
 
 function ShippingFields({
   settings,
@@ -517,16 +562,38 @@ function ShippingFields({
     setShippingRate(initialRateInput);
   }
 
+  const initialThresholdInput =
+    settings.free_shipping_threshold_micros && settings.free_shipping_threshold_micros > 0
+      ? inputFromMicros(settings.free_shipping_threshold_micros, money)
+      : "";
+  const [freeThreshold, setFreeThreshold] = useState<string>(v.free_shipping_threshold ?? initialThresholdInput);
+  const [seenInitialThreshold, setSeenInitialThreshold] = useState<string>(initialThresholdInput);
+  if (seenInitialThreshold !== initialThresholdInput) {
+    setSeenInitialThreshold(initialThresholdInput);
+    setFreeThreshold(initialThresholdInput);
+  }
+
   const parsedMinor = parseMoneyInput(shippingRate);
   const previewMicros =
     parsedMinor !== null && !Number.isNaN(parsedMinor)
       ? toBaseMicros(parsedMinor, money)
       : settings.shipping_rate_micros;
+
+  const parsedThresholdMinor = parseMoneyInput(freeThreshold);
+  const previewThresholdMicros =
+    !freeThreshold.trim()
+      ? null
+      : parsedThresholdMinor !== null && !Number.isNaN(parsedThresholdMinor) && parsedThresholdMinor > 0
+        ? toBaseMicros(parsedThresholdMinor, money)
+        : null;
+
   const previewLabel = !shippingEnabled
     ? "Disabled"
     : previewMicros === 0
       ? "Free"
-      : formatMoney(previewMicros, money);
+      : previewThresholdMicros && previewThresholdMicros > 0
+        ? `${formatMoney(previewMicros, money)} · Free at ${formatMoney(previewThresholdMicros, money)}+`
+        : formatMoney(previewMicros, money);
 
   return (
     <FieldSet data-testid="shipping-settings">
@@ -576,13 +643,13 @@ function ShippingFields({
         </div>
 
         {shippingEnabled && (
-          <div className="border-t border-border/70 bg-background/50 p-4" data-testid="shipping-rate-panel">
+          <div className="space-y-4 border-t border-border/70 bg-background/50 p-4" data-testid="shipping-rate-panel">
             <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
               <Field data-invalid={Boolean(err.shipping_rate) || undefined}>
                 <FieldLabel htmlFor="shipping_rate">Shipping rate</FieldLabel>
                 <InputGroup className="sm:max-w-xs">
                   <InputGroupAddon>
-                    <InputGroupText>{CURRENCIES[money.currency].symbol}</InputGroupText>
+                    <InputGroupText>{CURRENCIES[money.currency].symbol.trim()}</InputGroupText>
                   </InputGroupAddon>
                   <InputGroupInput
                     id="shipping_rate"
@@ -620,6 +687,57 @@ function ShippingFields({
                       )}
                     >
                       {usd === 0 ? "Free" : formatMoney(micros, money)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-4 border-t border-border/60 pt-4 sm:grid-cols-[1fr_auto] sm:items-end" data-testid="free-shipping-threshold-panel">
+              <Field data-invalid={Boolean(err.free_shipping_threshold) || undefined}>
+                <FieldLabel htmlFor="free_shipping_threshold">Free shipping minimum order (optional)</FieldLabel>
+                <InputGroup className="sm:max-w-xs">
+                  <InputGroupAddon>
+                    <InputGroupText>{CURRENCIES[money.currency].symbol.trim()}</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    id="free_shipping_threshold"
+                    name="free_shipping_threshold"
+                    inputMode="decimal"
+                    placeholder="No minimum (always charge flat rate)"
+                    value={freeThreshold}
+                    onChange={(e) => setFreeThreshold(e.target.value)}
+                    aria-invalid={Boolean(err.free_shipping_threshold) || undefined}
+                    data-testid="free-shipping-threshold-input"
+                  />
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupText>{money.currency}</InputGroupText>
+                  </InputGroupAddon>
+                </InputGroup>
+                <p className="text-xs text-muted-foreground">
+                  Orders whose post-discount subtotal reaches this amount automatically unlock free shipping.
+                </p>
+                <FieldError>{err.free_shipping_threshold}</FieldError>
+              </Field>
+
+              <div className="flex flex-wrap items-center gap-1.5 pb-0.5">
+                {FREE_SHIPPING_THRESHOLD_PRESET_USD.map((usd) => {
+                  const micros = usdMicros(usd);
+                  const val = usd === 0 ? "" : inputFromMicros(micros, money);
+                  const active = usd === 0 ? !freeThreshold.trim() : freeThreshold === val;
+                  return (
+                    <button
+                      key={usd}
+                      type="button"
+                      onClick={() => setFreeThreshold(val)}
+                      className={cn(
+                        "inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium tabular-nums transition-colors",
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                      )}
+                    >
+                      {usd === 0 ? "No minimum" : `${formatMoney(micros, money)}+`}
                     </button>
                   );
                 })}

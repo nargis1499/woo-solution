@@ -1,3 +1,4 @@
+import { CURRENCY_CODES } from "@/lib/money";
 import type { AiToolSpec } from "../client";
 const numeric = {
   type: ["object", "null"],
@@ -95,7 +96,7 @@ export const PRODUCT_QUERY_TOOL: AiToolSpec = {
         description:
           "Variable parent matches if any active option discounted; price remains cheapest active option.",
       },
-      currency: { type: ["string", "null"], enum: ["USD", "BDT", null] },
+      currency: { type: ["string", "null"], enum: [...CURRENCY_CODES, null] },
       createdFrom: str("Inclusive UTC creation date."),
       createdTo: str("Exclusive UTC creation date."),
       updatedFrom: str("Inclusive UTC update date."),

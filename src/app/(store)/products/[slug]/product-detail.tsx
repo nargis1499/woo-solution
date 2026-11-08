@@ -47,11 +47,13 @@ export function ProductShowcase({
   manageStock: globalManageStock,
   shippingEnabled,
   shippingRateMicros,
+  freeShippingThresholdMicros = FREE_SHIPPING_THRESHOLD_MICROS,
 }: {
   product: Product;
   manageStock: boolean;
   shippingEnabled: boolean;
   shippingRateMicros: number;
+  freeShippingThresholdMicros?: number | null;
 }) {
   const manageStock = product.manage_stock ?? globalManageStock;
   const money = useMoney();
@@ -190,7 +192,16 @@ export function ProductShowcase({
         </div>
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-slate-800 pt-4 text-xs text-slate-300 sm:text-sm">
-          {shippingEnabled && <div className="flex items-center gap-2"><TruckIcon className="size-4 shrink-0 text-indigo-300" />{shippingRateMicros === 0 ? "Free shipping" : `Shipping from ${formatMoney(shippingRateMicros, money)} · free over ${formatMoney(FREE_SHIPPING_THRESHOLD_MICROS, money)}`}</div>}
+          {shippingEnabled && (
+            <div className="flex items-center gap-2">
+              <TruckIcon className="size-4 shrink-0 text-indigo-300" />
+              {shippingRateMicros === 0
+                ? "Free shipping"
+                : freeShippingThresholdMicros && freeShippingThresholdMicros > 0
+                  ? `Shipping from ${formatMoney(shippingRateMicros, money)} · free over ${formatMoney(freeShippingThresholdMicros, money)}`
+                  : `Flat-rate shipping (${formatMoney(shippingRateMicros, money)})`}
+            </div>
+          )}
           <div className="flex items-center gap-2"><BanknoteIcon className="size-4 shrink-0 text-indigo-300" />Cash on delivery available</div>
           <div className="flex items-center gap-2"><ShieldCheckIcon className="size-4 shrink-0 text-indigo-300" />Secure checkout</div>
           {(selected?.sku || product.sku || !isVariable) && <div className="flex min-w-0 items-center gap-2"><PackageCheckIcon className="size-4 shrink-0 text-indigo-300" /><span className="truncate">SKU: {selected?.sku ?? product.sku ?? product.id.slice(0, 8).toUpperCase()}</span></div>}

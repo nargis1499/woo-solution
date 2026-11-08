@@ -1,3 +1,4 @@
+import { CURRENCY_CODES } from "@/lib/money";
 import { COMPARISONS, type NumericRule, type ProductFilters } from "./types";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const enums = {
@@ -8,7 +9,7 @@ const enums = {
   stockStatus: ["all", "tracked", "untracked", "in_stock", "out_of_stock"],
   sortBy: ["name", "stock", "price", "created_at", "updated_at"],
   sortDirection: ["asc", "desc"],
-  currency: ["USD", "BDT"],
+  currency: CURRENCY_CODES,
 };
 const textKeys = ["search", "name", "sku", "brand", "category", "categorySlug"];
 const dateKeys = ["createdFrom", "createdTo", "updatedFrom", "updatedTo"];

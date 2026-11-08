@@ -116,6 +116,7 @@ export default async function ProductPage({ params }: { params: Params }) {
           manageStock={settings.manage_stock}
           shippingEnabled={settings.shipping_enabled}
           shippingRateMicros={settings.shipping_rate_micros}
+          freeShippingThresholdMicros={settings.free_shipping_threshold_micros}
         />
         {product.content?.trim() && (
           <section className="mt-10 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-8" aria-labelledby="product-description-heading">
